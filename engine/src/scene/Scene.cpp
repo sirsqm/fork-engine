@@ -5,7 +5,10 @@
 #include "fe/core/Assert.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <memory>
 #include <string_view>
+#include <utility>
 
 namespace fe {
 
@@ -39,6 +42,38 @@ std::unique_ptr<Node> Scene::remove_root(Node* node) {
     owned->detach_recursive(*this);
     owned->set_parent(nullptr);
     return owned;
+}
+
+Node* Scene::add_root(std::unique_ptr<Node> node) {
+    return add_root(std::move(node), roots_.size());
+}
+
+Node* Scene::add_root(std::unique_ptr<Node> node, usize index) {
+    FE_CHECK(node != nullptr);
+    // Detach from any previous owner so a node has exactly one parent and one
+    // scene at a time. If it was a root of this same scene, remove it first so
+    // the roots_ list does not hold a duplicate.
+    if (node->parent() != nullptr) {
+        Node* previous = node->parent();
+        auto detached = previous->remove_child(node.get());
+        node = std::move(detached);
+    } else if (node->scene() == this) {
+        for (auto it = roots_.begin(); it != roots_.end(); ++it) {
+            if (it->get() == node.get()) {
+                std::unique_ptr<Node> owned = std::move(*it);
+                roots_.erase(it);
+                node = std::move(owned);
+                break;
+            }
+        }
+    }
+
+    Node* raw = node.get();
+    raw->set_parent(nullptr);
+    raw->attach_recursive(*this);
+    const usize clamped = index < roots_.size() ? index : roots_.size();
+    roots_.insert(roots_.begin() + static_cast<std::ptrdiff_t>(clamped), std::move(node));
+    return raw;
 }
 
 Node* Scene::find_node(const Uuid& id) const noexcept {

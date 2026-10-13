@@ -194,6 +194,7 @@ public:
     [[nodiscard]] u32 width() const noexcept override { return width_; }
     [[nodiscard]] u32 height() const noexcept override { return height_; }
     [[nodiscard]] GLuint handle() const noexcept { return handle_; }
+    [[nodiscard]] u64 native_handle() const noexcept override { return static_cast<u64>(handle_); }
 
     // Allocates color storage without uploading pixels. Used for render-target
     // attachments, whose contents are produced by drawing.

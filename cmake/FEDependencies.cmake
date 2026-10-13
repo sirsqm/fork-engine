@@ -20,6 +20,11 @@ set(FE_JSON_TAG "v3.11.3" CACHE STRING "Pinned nlohmann/json release tag")
 # doctest 2.4.12 raised its `cmake_minimum_required` to 3.5, which CMake 4.x
 # requires (it dropped compatibility with < 3.5). Do not downgrade below 2.4.12.
 set(FE_DOCTEST_TAG "v2.4.12" CACHE STRING "Pinned doctest release tag")
+# Dear ImGui's docking branch is published as tags of the form
+# `<version>-docking`; these are immutable and safe to pin. The editor's ADR
+# (docs/adr/0007-editor-ui-toolkit.md) records why the docking branch, and no
+# other, is used.
+set(FE_IMGUI_TAG "v1.92.9-docking" CACHE STRING "Pinned Dear ImGui docking tag")
 
 # ---------------------------------------------------------------------------
 # glad - OpenGL function loader (vendored, generated once, committed).
@@ -151,3 +156,65 @@ if(FE_BUILD_TESTS)
   # units; treat its headers as external so they never warn (MSVC C5285).
   fe_mark_system(${FE_DOCTEST_TARGET})
 endif()
+
+# ---------------------------------------------------------------------------
+# Dear ImGui - editor tooling UI (docking branch).
+#
+# Used only by the editor targets; the engine library never includes an ImGui
+# header. The docking branch supplies DockSpace/panels. See
+# docs/adr/0007-editor-ui-toolkit.md for the decision and its trade-offs.
+#
+# Fetched only when the editor is being built, so a headless engine build pulls
+# nothing extra.
+#
+# We compile ImGui ourselves as a static target instead of consuming upstream's
+# CMake, so the exact file list is explicit, no examples/backends we do not use
+# are built, and the sources are never given our warning flags. Its include
+# directory is marked SYSTEM, exactly like GLFW and nlohmann/json.
+# ---------------------------------------------------------------------------
+if(FE_BUILD_EDITOR)
+set(FE_IMGUI_SOURCE_DIR "${CMAKE_BINARY_DIR}/_deps/imgui-src")
+FetchContent_Declare(
+  imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG ${FE_IMGUI_TAG}
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(imgui)
+
+# ImGui's OpenGL3 backend ships its own embedded GL3 loader, so it does not
+# need the engine's glad loader and pulls in no GL header of ours. The two
+# loaders coexist harmlessly: both resolve the same driver entry points, and
+# ImGui's are private to its backend translation unit. Attempting to force the
+# backend onto glad (IMGUI_IMPL_OPENGL_LOADER_CUSTOM) would require injecting a
+# GL header into ImGui's source, which is exactly the coupling the editor ADR
+# avoids.
+add_library(fe_imgui STATIC
+    "${FE_IMGUI_SOURCE_DIR}/imgui.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/imgui_draw.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/imgui_tables.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/imgui_widgets.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/imgui_demo.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/backends/imgui_impl_glfw.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp"
+)
+add_library(FE::imgui ALIAS fe_imgui)
+
+# misc/cpp is added so std::string text widgets (imgui_stdlib.h) are available
+# to the panels.
+target_include_directories(
+  fe_imgui
+  SYSTEM PUBLIC "${FE_IMGUI_SOURCE_DIR}" "${FE_IMGUI_SOURCE_DIR}/backends" "${FE_IMGUI_SOURCE_DIR}/misc/cpp"
+)
+target_compile_definitions(fe_imgui PUBLIC GLFW_INCLUDE_NONE)
+target_link_libraries(fe_imgui PUBLIC ${FE_GLFW_TARGET})
+target_compile_features(fe_imgui PUBLIC cxx_std_20)
+
+# ImGui is single-translation-unit-friendly and warning-noisy under our strict
+# flags; it is third-party code and is never built with fe_warnings.
+if(NOT MSVC)
+  target_compile_options(fe_imgui PRIVATE -w)
+endif()
+fe_mark_system(fe_imgui)
+endif() # FE_BUILD_EDITOR

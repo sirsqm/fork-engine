@@ -62,6 +62,12 @@ public:
     // parent. Returns the child.
     Node* add_child(std::unique_ptr<Node> child);
 
+    // As add_child(), but inserts the child at `index` among this node's
+    // children (clamped to [0, child_count()]). The editor uses this to undo a
+    // delete or a reparent without disturbing the order of the siblings that
+    // were not touched, which a plain append would change.
+    Node* add_child(std::unique_ptr<Node> child, usize index);
+
     // Creates and attaches a child of concrete type T.
     template <typename T, typename... Args>
     T* create_child(Args&&... args) {
@@ -151,6 +157,19 @@ public:
 
     [[nodiscard]] const std::vector<std::unique_ptr<Component>>& components() const noexcept { return components_; }
     [[nodiscard]] usize component_count() const noexcept { return components_.size(); }
+
+    // Detaches the component at `index` and returns ownership to the caller.
+    // Returns nullptr when `index` is out of range. This is what the editor's
+    // "remove component" uses: it acts on the specific component the user
+    // clicked, which remove_component<T>() (first of type) cannot address when a
+    // node carries more than one component of the same type.
+    [[nodiscard]] std::unique_ptr<Component> detach_component(usize index);
+
+    // Reattaches a component previously taken by detach_component(), at `index`
+    // (clamped to [0, component_count()]). Restores the on_attach back-reference
+    // and lifecycle callback, so the component behaves exactly as if it had
+    // never been removed. Returns the component.
+    Component* insert_component(usize index, std::unique_ptr<Component> component);
 
     // The scene that owns this node, or nullptr when detached.
     [[nodiscard]] Scene* scene() const noexcept { return scene_; }

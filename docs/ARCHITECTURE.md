@@ -403,9 +403,9 @@ This is the foundation of the asset pipeline. Import settings, GUID-based
 references that survive file moves, and a content-addressed cache build on top of
 it without changing the load/cache/release contract.
 
-## 8. Editor (planned)
+## 8. Editor
 
-The editor is designed as a client of the engine, not a second copy of it:
+The editor is a client of the engine, not a second copy of it:
 
 - It embeds an `Engine` and drives frames itself, so the viewport and
   play-in-editor share the exact runtime the game uses.
@@ -414,9 +414,68 @@ The editor is designed as a client of the engine, not a second copy of it:
 - The property inspector is driven by the same type information the serializer
   uses. Reflection is the bridge; see [ADR-0005](adr/0005-reflection-and-serialization.md).
 
-The editor is not implemented. Its requirements are being kept in mind so the
-runtime interfaces stay editor-friendly, but no editor-facing abstraction is
-built until there is an editor to need it.
+The editor lives outside the engine library, under `editor/`, and adds no edge
+to the module graph above: the dependency points from the editor to the engine,
+never back. It is built as three targets:
+
+| Target | Responsibility | Depends on |
+| --- | --- | --- |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
+| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
+| `fork_editor_shell` | The executable entry point. | `fork_editor` |
+
+The split exists so the editable, testable logic has no UI dependency: the
+document, the hierarchy view model, the play-scene copy, and the property
+helpers are exercised headlessly. The panels are a thin projection of that
+logic. The UI toolkit choice and its consequences are recorded in
+[ADR-0007](adr/0007-editor-ui-toolkit.md).
+
+Play-in-editor copies the authored scene into a play scene, drives frames of the
+copy through the embedded `Engine`, and discards the copy when play stops, so
+playing can never mutate what the user is editing. Each tick the session runs a
+`SceneSchedule` over the play scene - the same `Scene + SceneSchedule` pairing
+`Application` uses (ADR-0008) - so play exercises real gameplay (at least
+`SpriteAnimationSystem`) through the identical execution path. Panel-to-host
+actions are a one-shot request (`PlayRequest`) rather than a direct call, which
+keeps the panels free of the engine.
+
+The viewport renders the scene into an off-screen `rhi::RenderTarget` sized to
+the panel, then shows the target's colour texture as an `ImGui::Image`. This
+reuses the runtime's own `Renderer2D` and `Camera2D` rather than a second render
+path, and is why the RHI grew render targets. Showing a backend texture inside
+the toolkit needs an interop identifier, which `rhi::Texture::native_handle()`
+provides as a deliberately narrow escape hatch. Camera pan/zoom and node picking
+live in the headless `Viewport` (screen/world transforms and a smallest-quad
+hit-test), so the interaction is unit-testable without a window; `ViewportPanel`
+is its thin toolkit projection.
+
+The inspector is driven entirely by the reflection registry
+([ADR-0006](adr/0006-component-reflection.md)): for the selected node it looks
+up each component's `TypeDesc` and draws one widget per `Property`, reading
+through the property's getter and writing through its setter. It never names a
+component type or field, so a newly reflected component appears without an
+editor change. A type that is not registered is shown read-only rather than
+crashing, and resource references are resolved through the document's
+`ResourceManager` (null in a headless document, where the field is shown but not
+editable). Text widgets need a buffer that outlives the frame, so the panel
+holds that scratch state.
+
+Editing is reversible through a command stack in `fork_editor_core`
+([ADR-0015](adr/0015-editor-undo-redo.md)), not by snapshotting the scene. Each
+edit is a `Command` with an exact `execute()`/`undo()` pair; the panels build
+commands and hand them to `EditorContext`, which owns the stack and never lets a
+panel mutate the scene directly. Commands address their objects by `Uuid` and
+hold whatever they detach (a node's subtree, a component), so undo restores the
+identical object - ids, sibling order, and component order intact. Property
+edits go through one generic `SetPropertyCommand` that resolves its setter
+through the reflection registry, so a newly reflected field is undoable with no
+new code. A command may report a coalescing key: consecutive edits of the same
+property (the frames of a drag) merge into one undo step, and the editor ends
+the group when the widget's gesture finishes. Editing is refused while
+play-in-editor is running, because play shows a copy and an edit to the hidden
+authored scene would be invisible.
+
+Still to come under M2: the asset browser and project settings.
 
 ## 9. Scripting (planned)
 
@@ -447,7 +506,12 @@ not a rewrite.
   actually drawn (pixel values, batching and draw counts, camera clear colour,
   depth ordering, the point/spot lighting paths, and shadow casting). They cover
   both the 2D and 3D renderers. They skip cleanly when no context is available,
-  so CI stays green on machines without a GPU.
+  so CI stays green on machines without a GPU. Play-in-editor and the full
+  editor host (panels and all) live here too, because both need a context.
+- **Editor tests** (`fork_editor_tests`) cover the headless editor logic: the
+  hierarchy view model, the document, the play-scene copy, the command stack,
+  the property helpers, and the viewport's camera maths and picking. They link
+  `fork_editor_core` only, never the UI toolkit.
 - Tests exercise real code paths. Mocks are avoided; where one is used, it is
   justified in the pull request.
 
@@ -471,8 +535,10 @@ Every milestone must build and pass its tests before the next one begins.
 - The parts of audio not in the first cut: 3D positional attenuation, streaming
   and large-file playback, compressed codecs, and audio buses / mixing groups
   (see [ADR-0016](adr/0016-audio-module.md)).
+- The editor's asset browser, 3D viewport, scripting workflow, and project
+  settings (the editor shell, hierarchy, inspector, 2D viewport,
+  play-in-editor, and undo/redo exist; see section 8).
 - Tilemaps, particles, animation clips and state machines.
-- The editor.
 - Scripting.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread).
