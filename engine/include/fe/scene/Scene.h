@@ -75,6 +75,12 @@ public:
     [[nodiscard]] Node* find_node(const Uuid& id) const noexcept;
     [[nodiscard]] Node* find_node_by_name(std::string_view name) const noexcept;
 
+    // Rebuilds the id index from the current node tree. Deserialization assigns
+    // saved ids to nodes after they are attached, so it must call this once the
+    // whole tree is loaded for `find_node` (and any component that stores a node
+    // reference, such as a joint) to resolve those ids.
+    void rebuild_index() noexcept;
+
     // --- Traversal ---------------------------------------------------------
     // Visits every node depth-first (pre-order). The callback receives Node&.
     template <typename Fn>
