@@ -25,6 +25,10 @@
 //   Q / E              zoom out / in
 //   Escape             quit
 
+#include "fe/audio/AudioBackend.h"
+#include "fe/audio/AudioSource.h"
+#include "fe/audio/AudioSystem.h"
+#include "fe/audio/WavLoader.h"
 #include "fe/core/Log.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DSystem.h"
@@ -50,6 +54,7 @@
 namespace {
 
 constexpr const char* kTexturePath = "tex:assets/textures/checker.png";
+constexpr const char* kAudioPath = "wav:assets/audio/beep.wav";
 
 // A tiny demo application. It builds a scene in on_start(), moves the camera in
 // on_update(), and lets the base class render it.
@@ -81,7 +86,59 @@ protected:
             request_exit();
         }
 
+        setup_audio();
         return fe::Error::none();
+    }
+
+    // Sets up the demo sound. This is the only place the sandbox touches audio,
+    // and it is additive: the rest of the demo is unchanged.
+    //
+    // The engine's audio system is always adopted, so the mixer runs in the
+    // frame loop and produces data even when no device can be opened. Opening
+    // the real device is attempted separately, and a failure (a CI machine, a
+    // sandbox with no sound card) only means the mixed frames are not heard -
+    // they are still produced, and on_stop() still reports them.
+    void setup_audio() {
+        auto system = engine().take_audio_system();
+        if (system == nullptr) {
+            FE_LOG_WARN("audio: the engine had no audio system; skipping the demo sound");
+            return;
+        }
+        audio_report_ = system.get();
+        schedule().add_system(std::move(system));
+
+        // Try the real backend. A device that will not open is not an error: the
+        // mixer runs regardless, into no sink.
+        auto device = fe::audio::create_audio_device();
+        if (!device) {
+            FE_LOG_WARN("audio: no output backend (%s); mixing silently", device.error().message().c_str());
+        } else {
+            auto opened = device.value()->open(48000, 2);
+            if (!opened) {
+                FE_LOG_WARN("audio: could not open the device (%s); mixing silently", opened.error().message().c_str());
+            } else if (fe::Error error = device.value()->start(); error) {
+                FE_LOG_WARN("audio: could not start playback (%s); mixing silently", error.message().c_str());
+            } else {
+                audio_device_ = std::move(device.value());
+                audio_report_->set_device(audio_device_.get());
+                FE_LOG_INFO("audio: opened %s backend at %u Hz, %u channels",
+                            std::string(audio_device_->backend()).c_str(), audio_device_->format().sample_rate,
+                            audio_device_->format().channels);
+            }
+        }
+
+        auto clip = engine().resources().load(kAudioPath);
+        if (!clip) {
+            FE_LOG_WARN("audio: could not load '%s' (%s)", kAudioPath, clip.error().message().c_str());
+            return;
+        }
+
+        fe::Node* node = scene().create_node("Beep");
+        auto* source = node->add_component<fe::audio::AudioSource>();
+        source->clip = clip.value();
+        source->gain = 0.8f;
+        source->loop = true; // so a short demo run is still audible
+        FE_LOG_INFO("audio: playing '%s'", kAudioPath);
     }
 
     void on_update(fe::f32 delta_time) override {
@@ -131,6 +188,15 @@ protected:
             // long the run took - proof the system ran, not a resting position.
             FE_LOG_INFO("crate ended at (%.1f, %.1f)", static_cast<double>(crate_->transform().position.x),
                         static_cast<double>(crate_->transform().position.y));
+        }
+        if (audio_report_ != nullptr) {
+            // The machine-checkable proof that audio data was produced, whether
+            // or not a device was opened and whether or not anyone heard it. A
+            // CI run greps this line to confirm the mixer ran and emitted
+            // non-silent samples.
+            FE_LOG_INFO("audio: mixed %llu frames, peak sample %.4f",
+                        static_cast<unsigned long long>(audio_report_->mixed_frames()),
+                        static_cast<double>(audio_report_->last_peak()));
         }
     }
 
@@ -243,6 +309,11 @@ private:
 
     fe::Camera2D* camera_ = nullptr;
     fe::Node* crate_ = nullptr;
+    // Owned by the sandbox; declared before the system that borrows it so the
+    // system is destroyed first. The system itself is owned by the schedule;
+    // audio_report_ is a borrowed pointer to it for reporting.
+    std::unique_ptr<fe::audio::AudioDevice> audio_device_;
+    fe::audio::AudioSystem* audio_report_ = nullptr;
     std::string scene_to_load_;
     std::string scene_to_save_;
 };

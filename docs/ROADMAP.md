@@ -90,10 +90,15 @@ needed a concrete mechanism before gameplay could grow. See
 ## M6 — Animation and audio
 
 - [x] 2D sprite-sheet animation (frame playback; the first system) — see M2 prerequisite
+- [~] Audio playback and mixing (in progress): `AudioDevice` with a real
+      (miniaudio) and a null backend, `AudioClip` + `WavLoader`, `AudioSource`,
+      and `AudioSystem` with a pure mixer — see
+      [ADR-0012](adr/0012-audio-module.md)
+- [ ] Audio refinements: 3D positional attenuation, streaming / large-file
+      playback, compressed codecs, and audio buses / mixing groups
 - [ ] Tilemaps
 - [ ] Skeletal animation and skinning
 - [ ] Animation state machines
-- [ ] Audio playback, mixing, and 3D spatialisation
 
 ## M7 — Scripting
 
