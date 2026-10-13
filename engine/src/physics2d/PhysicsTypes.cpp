@@ -56,6 +56,8 @@ void register_collider2d(Registry& registry) {
         "half_extent", &physics2d::Collider2D::half_extent, "Vec2", {"x", "y"}));
     desc.properties.push_back(
         make_scalar<physics2d::Collider2D, f32>("radius", &physics2d::Collider2D::radius, ValueKind::Float, &defaults));
+    desc.properties.push_back(
+        make_vector_group<physics2d::Collider2D, Vec2>("offset", &physics2d::Collider2D::offset, "Vec2", {"x", "y"}));
     desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>(
         "restitution", &physics2d::Collider2D::restitution, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>("friction", &physics2d::Collider2D::friction,

@@ -79,6 +79,7 @@ void copy_collider(const Node& source_node, Node& destination_node) {
     destination->shape = source->shape;
     destination->half_extent = source->half_extent;
     destination->radius = source->radius;
+    destination->offset = source->offset;
     destination->restitution = source->restitution;
     destination->friction = source->friction;
 }
