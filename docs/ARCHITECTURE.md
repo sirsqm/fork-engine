@@ -378,7 +378,22 @@ crashing, and resource references are resolved through the document's
 editable). Text widgets need a buffer that outlives the frame, so the panel
 holds that scratch state.
 
-Still to come under M2: the asset browser, undo/redo, and project settings.
+Editing is reversible through a command stack in `fork_editor_core`
+([ADR-0011](adr/0011-editor-undo-redo.md)), not by snapshotting the scene. Each
+edit is a `Command` with an exact `execute()`/`undo()` pair; the panels build
+commands and hand them to `EditorContext`, which owns the stack and never lets a
+panel mutate the scene directly. Commands address their objects by `Uuid` and
+hold whatever they detach (a node's subtree, a component), so undo restores the
+identical object - ids, sibling order, and component order intact. Property
+edits go through one generic `SetPropertyCommand` that resolves its setter
+through the reflection registry, so a newly reflected field is undoable with no
+new code. A command may report a coalescing key: consecutive edits of the same
+property (the frames of a drag) merge into one undo step, and the editor ends
+the group when the widget's gesture finishes. Editing is refused while
+play-in-editor is running, because play shows a copy and an edit to the hidden
+authored scene would be invisible.
+
+Still to come under M2: the asset browser and project settings.
 
 ## 9. Scripting (planned)
 
@@ -428,8 +443,8 @@ Every milestone must build and pass its tests before the next one begins.
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).
 - Audio, tilemaps, particles, animation clips and state machines.
-- The editor's asset browser, undo/redo, and project settings (the editor shell,
-  hierarchy, inspector, 2D viewport, and play-in-editor exist; see section 8).
+- The editor's asset browser and project settings (the editor shell, hierarchy,
+  inspector, 2D viewport, play-in-editor, and undo/redo exist; see section 8).
 - Scripting.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread).

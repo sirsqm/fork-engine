@@ -3,10 +3,13 @@
 #pragma once
 
 #include "fe/core/Error.h"
+#include "fe/editor/Command.h"
+#include "fe/editor/Commands.h"
 #include "fe/editor/HierarchyViewModel.h"
 #include "fe/editor/PlaySession.h"
 #include "fe/scene/Scene.h"
 
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -99,10 +102,39 @@ public:
         return request;
     }
 
+    // --- Editing -----------------------------------------------------------
+    // The undo/redo history. Every scene edit made through the editor goes
+    // through here, so it is reversible; see docs/adr/0011-editor-undo-redo.md.
+    [[nodiscard]] CommandStack& commands() noexcept { return commands_; }
+    [[nodiscard]] const CommandStack& commands() const noexcept { return commands_; }
+
+    // Executes `command` against the scene and refreshes the hierarchy, which
+    // every structural command can change. Returns true when the command was
+    // applied. Coalescing is handled by the stack.
+    bool execute(std::unique_ptr<Command> command);
+
+    // Undoes/redoes the last command and refreshes the hierarchy. Returns false
+    // when there is nothing to undo/redo. Both are refused while play is
+    // running, because play shows a copy and an edit to the hidden authored
+    // scene would be invisible.
+    bool undo();
+    bool redo();
+
+    [[nodiscard]] bool can_undo() const noexcept { return !play_.is_playing() && commands_.can_undo(); }
+    [[nodiscard]] bool can_redo() const noexcept { return !play_.is_playing() && commands_.can_redo(); }
+
+    // True when the scene may be edited: not while playing.
+    [[nodiscard]] bool is_editable() const noexcept { return !play_.is_playing(); }
+
+    // Ends the current coalescing group, so the next property edit is a new undo
+    // step. The panels call this when an edit gesture finishes.
+    void break_undo_coalescing() noexcept { commands_.break_coalescing(); }
+
 private:
     Scene scene_;
     HierarchyViewModel hierarchy_;
     PlaySession play_;
+    CommandStack commands_;
     std::string scene_path_;
     ResourceManager* resources_ = nullptr;
     PlayRequest play_request_ = PlayRequest::None;

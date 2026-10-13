@@ -174,6 +174,22 @@ void EditorUi::draw_toolbar(EditorContext& context) {
         return;
     }
 
+    if (ImGui::BeginMenu("Edit")) {
+        // The label names the operation undo/redo would perform, which is the
+        // convention users expect. Disabled while playing (the scene is hidden).
+        const std::string undo_label =
+            context.can_undo() ? std::string("Undo ") + std::string(context.commands().undo_label()) : "Undo";
+        const std::string redo_label =
+            context.can_redo() ? std::string("Redo ") + std::string(context.commands().redo_label()) : "Redo";
+        if (ImGui::MenuItem(undo_label.c_str(), "Ctrl+Z", false, context.can_undo())) {
+            context.undo();
+        }
+        if (ImGui::MenuItem(redo_label.c_str(), "Ctrl+Y", false, context.can_redo())) {
+            context.redo();
+        }
+        ImGui::EndMenu();
+    }
+
     const PlaySession& play = context.play();
     if (play.is_playing()) {
         if (ImGui::Button("Stop")) {
@@ -195,6 +211,25 @@ void EditorUi::draw_toolbar(EditorContext& context) {
     }
 
     ImGui::EndMainMenuBar();
+
+    // Keyboard shortcuts, handled outside the menu so they work regardless of
+    // which panel has focus. Suppressed while a text field is active so typing
+    // does not trigger them. ImGui's Ctrl+Y redo and Ctrl+Shift+Z are both
+    // accepted, matching common conventions.
+    const ImGuiIO& io = ImGui::GetIO();
+    if (!io.WantTextInput && !play.is_playing()) {
+        const bool ctrl = io.KeyCtrl;
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+            if (io.KeyShift) {
+                context.redo();
+            } else {
+                context.undo();
+            }
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+            context.redo();
+        }
+    }
 }
 
 void EditorUi::end_frame() {

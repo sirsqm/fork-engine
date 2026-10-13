@@ -3,6 +3,7 @@
 #include "fe/editor/PlaySession.h"
 
 #include "fe/core/Log.h"
+#include "fe/physics2d/Physics2DSystem.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/systems/SpriteAnimationSystem.h"
@@ -14,6 +15,13 @@ void PlaySession::register_default_systems() {
     // the editor added) in place, and only add the defaults that are missing.
     if (schedule_.find("SpriteAnimationSystem") == nullptr) {
         schedule_.add_system<SpriteAnimationSystem>();
+    }
+    // Physics runs after animation, so a body's transform is integrated against
+    // the state the other systems produced this frame. The order is the
+    // schedule's, and it is explicit here because it is semantically
+    // significant (ADR-0008).
+    if (schedule_.find("Physics2DSystem") == nullptr) {
+        schedule_.add_system<physics2d::Physics2DSystem>();
     }
 }
 
@@ -101,6 +109,14 @@ Error PlaySession::start(const Scene& authored_scene) {
     return Error::none();
 }
 
+Error PlaySession::advance(const FrameContext& context) {
+    if (state_ != State::Playing) {
+        return Error("PlaySession::advance called while not playing");
+    }
+    schedule_.update(context, play_scene_);
+    return Error::none();
+}
+
 Result<usize> PlaySession::tick(Engine& engine) {
     if (state_ != State::Playing) {
         return Error("PlaySession::tick called while not playing");
@@ -110,15 +126,17 @@ Result<usize> PlaySession::tick(Engine& engine) {
     play_time_ = engine.elapsed_time();
 
     // Run gameplay before rendering: the systems advance component state (an
-    // animator's current cell, and the UVs it writes to its sprite), and the
-    // renderer then draws the world the systems produced. This is the same
-    // Scene + SceneSchedule pairing `Application` uses, so play-in-editor is not
-    // a second execution path.
+    // animator's current cell, a body's transform), and the renderer then draws
+    // the world the systems produced. This is the same Scene + SceneSchedule
+    // pairing `Application` uses, so play-in-editor is not a second execution
+    // path.
     FrameContext frame;
     frame.delta_time = engine.delta_time();
     frame.elapsed_time = engine.elapsed_time();
     frame.resources = &engine.resources();
-    schedule_.update(frame, play_scene_);
+    if (Error error = advance(frame); error) {
+        return error;
+    }
 
     const u32 width = engine.window().framebuffer_width();
     const u32 height = engine.window().framebuffer_height();

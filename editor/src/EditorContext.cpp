@@ -3,6 +3,8 @@
 #include "fe/editor/EditorContext.h"
 
 #include "fe/core/Log.h"
+#include "fe/physics2d/Collider2D.h"
+#include "fe/physics2d/RigidBody2D.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
@@ -12,6 +14,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace fe::editor {
 namespace {
@@ -67,6 +70,32 @@ void copy_animator(const Node& source_node, Node& destination_node) {
     destination->current_frame = source->current_frame;
 }
 
+void copy_collider(const Node& source_node, Node& destination_node) {
+    const auto* source = source_node.get_component<physics2d::Collider2D>();
+    if (source == nullptr) {
+        return;
+    }
+    auto* destination = destination_node.add_component<physics2d::Collider2D>();
+    destination->shape = source->shape;
+    destination->half_extent = source->half_extent;
+    destination->radius = source->radius;
+    destination->restitution = source->restitution;
+    destination->friction = source->friction;
+}
+
+void copy_rigid_body(const Node& source_node, Node& destination_node) {
+    const auto* source = source_node.get_component<physics2d::RigidBody2D>();
+    if (source == nullptr) {
+        return;
+    }
+    auto* destination = destination_node.add_component<physics2d::RigidBody2D>();
+    destination->velocity = source->velocity;
+    destination->mass = source->mass;
+    destination->linear_damping = source->linear_damping;
+    destination->kinematic = source->kinematic;
+    destination->affected_by_gravity = source->affected_by_gravity;
+}
+
 } // namespace
 
 EditorContext::EditorContext() = default;
@@ -75,12 +104,18 @@ void EditorContext::register_default_component_factories() {
     play_.register_component_factory(Camera2D::kTypeName, copy_camera);
     play_.register_component_factory(Sprite2D::kTypeName, copy_sprite);
     play_.register_component_factory(SpriteAnimator::kTypeName, copy_animator);
+    // Physics components copy too, so a play session simulates the authored
+    // colliders and bodies (Physics2DSystem runs in the play schedule).
+    play_.register_component_factory(physics2d::Collider2D::kTypeName, copy_collider);
+    play_.register_component_factory(physics2d::RigidBody2D::kTypeName, copy_rigid_body);
 }
 
 Error EditorContext::new_scene(ResourceManager* resources) {
     scene_.clear();
     scene_.set_name("Untitled");
     scene_path_.clear();
+    // A new document has no history: undo must not reach back across documents.
+    commands_.clear();
 
     // A camera plus a small sprite cluster. When a resource manager is present,
     // load the sample checker texture so the scene renders something; otherwise
@@ -139,6 +174,9 @@ Error EditorContext::load_scene(std::string_view path, ResourceManager* resource
     }
 
     scene_path_ = std::string(path);
+    // Loading replaces the document, so the previous document's history no
+    // longer applies to what is on screen.
+    commands_.clear();
     refresh_hierarchy();
     FE_LOG_INFO("editor: loaded '%s' (%zu nodes)", scene_path_.c_str(), scene_.node_count());
     return Error::none();
@@ -159,6 +197,42 @@ Error EditorContext::save_scene(std::string_view path) {
 
 void EditorContext::refresh_hierarchy() {
     hierarchy_.rebuild(scene_);
+}
+
+bool EditorContext::execute(std::unique_ptr<Command> command) {
+    if (!is_editable() || command == nullptr) {
+        return false;
+    }
+    if (!commands_.execute(scene_, std::move(command))) {
+        return false;
+    }
+    // Structural commands change the tree, and property commands can change a
+    // node's name, so the hierarchy is rebuilt unconditionally: it is cheap and
+    // the alternative is a stale panel.
+    refresh_hierarchy();
+    return true;
+}
+
+bool EditorContext::undo() {
+    if (!can_undo()) {
+        return false;
+    }
+    const bool undone = commands_.undo(scene_);
+    if (undone) {
+        refresh_hierarchy();
+    }
+    return undone;
+}
+
+bool EditorContext::redo() {
+    if (!can_redo()) {
+        return false;
+    }
+    const bool redone = commands_.redo(scene_);
+    if (redone) {
+        refresh_hierarchy();
+    }
+    return redone;
 }
 
 } // namespace fe::editor
