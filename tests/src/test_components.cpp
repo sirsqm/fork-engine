@@ -49,8 +49,8 @@ TEST_CASE("a node can hold and retrieve components by type") {
     REQUIRE(camera != nullptr);
 
     CHECK(node->component_count() == 2);
-    CHECK(node->get_component<Sprite2D>() == sprite);
-    CHECK(node->get_component<Camera2D>() == camera);
+    CHECK((node->get_component<Sprite2D>() == sprite));
+    CHECK((node->get_component<Camera2D>() == camera));
     CHECK(node->get_component<LifecycleProbe>() == nullptr);
 }
 
@@ -58,7 +58,7 @@ TEST_CASE("a component knows its owning node") {
     Scene scene;
     Node* node = scene.create_node("Entity");
     auto* sprite = node->add_component<Sprite2D>();
-    CHECK(sprite->node() == node);
+    CHECK((sprite->node() == node));
 }
 
 TEST_CASE("adding a component to a node already in a scene fires on_attach") {

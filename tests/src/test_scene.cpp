@@ -15,7 +15,7 @@ TEST_CASE("a new scene is empty and can create root nodes") {
     Node* node = scene.create_node("Root");
     REQUIRE(node != nullptr);
     CHECK(node->name() == "Root");
-    CHECK(node->scene() == &scene);
+    CHECK((node->scene() == &scene));
     CHECK(scene.root_count() == 1);
     CHECK(scene.node_count() == 1);
 }
@@ -25,8 +25,8 @@ TEST_CASE("nodes are looked up by id and by name") {
     Node* parent = scene.create_node("Parent");
     Node* child = parent->create_child<Node>("Child");
 
-    CHECK(scene.find_node(parent->id()) == parent);
-    CHECK(scene.find_node(child->id()) == child);
+    CHECK((scene.find_node(parent->id()) == parent));
+    CHECK((scene.find_node(child->id()) == child));
     CHECK(scene.find_node_by_name("Child") == child);
     CHECK(scene.find_node_by_name("Missing") == nullptr);
 
@@ -83,7 +83,7 @@ TEST_CASE("reparenting a node moves it under a new parent") {
 
     b->add_child(a->remove_child(child));
 
-    CHECK(child->parent() == b);
+    CHECK((child->parent() == b));
     CHECK(a->child_count() == 0);
     CHECK(b->child_count() == 1);
     CHECK(scene.node_count() == 3);
