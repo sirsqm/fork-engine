@@ -47,6 +47,7 @@ if(FE_BUILD_EDITOR)
   add_executable(fork_editor_tests
       src/editor_main.cpp
       src/test_hierarchy_view_model.cpp
+      src/test_asset_browser.cpp
       src/test_editor_context.cpp
       src/test_play_session.cpp
       src/test_property_editor.cpp

@@ -486,8 +486,8 @@ never back. It is built as three targets:
 
 | Target | Responsibility | Depends on |
 | --- | --- | --- |
-| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
-| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, asset browser view model (`AssetBrowserViewModel`), play-in-editor (`PlaySession`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
+| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), the `AssetBrowserPanel`, and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
 | `fork_editor_shell` | The executable entry point. | `fork_editor` |
 
 The split exists so the editable, testable logic has no UI dependency: the
@@ -541,7 +541,18 @@ the group when the widget's gesture finishes. Editing is refused while
 play-in-editor is running, because play shows a copy and an edit to the hidden
 authored scene would be invisible.
 
-Still to come under M2: the asset browser and project settings.
+The asset browser lists what the resource system has indexed. Its logic lives in
+the headless `AssetBrowserViewModel`, which reads the `AssetDatabase` the
+`ResourceManager` already maintains, so the browser shows exactly the assets the
+engine can load rather than a second, parallel view of the filesystem. It
+sorts by path, filters by a case-insensitive substring, and holds the selection
+by `AssetId`, so a rescan (a file move, an import) is reflected without the
+browser knowing about paths. The one thing it produces that outlives the session
+is an asset's stable `guid:<uuid>` reference, which is what a drag out of the
+browser hands to a drop target such as a sprite's texture field. Listing is
+read-only; importing and moving assets are later work.
+
+Still to come under M2: asset import and project settings.
 
 ### Collaborative editing (planned)
 
