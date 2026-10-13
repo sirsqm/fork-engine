@@ -47,7 +47,7 @@ struct ContactEvent {
 // what the systems layer (ADR-0008) was built for. It is a single-threaded,
 // fixed-iteration solver, not a full physics engine: it has linear and angular
 // motion, gravity, restitution, and friction. Angular dynamics were added in a
-// later cut (ADR-0012); a collider stays axis-aligned, so a rotated body is
+// later cut (ADR-0013); a collider stays axis-aligned, so a rotated body is
 // drawn rotated but collided as its AABB.
 //
 // Shape and motion are separate components. A node with a Collider2D alone is a

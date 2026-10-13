@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 #include "fe/runtime/Engine.h"
 
+#include "fe/audio/AudioSystem.h"
+#include "fe/audio/AudioTypes.h"
+#include "fe/audio/WavLoader.h"
 #include "fe/core/Assert.h"
 #include "fe/core/Log.h"
 #include "fe/mesh/ObjLoader.h"
@@ -35,6 +38,10 @@ Engine::~Engine() {
     shutdown();
 }
 
+std::unique_ptr<audio::AudioSystem> Engine::take_audio_system() noexcept {
+    return std::move(audio_system_);
+}
+
 Error Engine::initialize(const Config& config) {
     if (initialized_) {
         return Error("Engine::initialize called twice");
@@ -48,6 +55,7 @@ Error Engine::initialize(const Config& config) {
     reflect::register_builtin_types();
     reflect::register_physics_types();
     reflect::register_scene3d_types();
+    reflect::register_audio_types();
 
     auto window = Window::create(config.window);
     if (!window) {
@@ -85,6 +93,14 @@ Error Engine::initialize(const Config& config) {
         return error;
     }
 
+    // Register the decoded-audio loader so "wav:path.wav" resolves to an
+    // AudioClip through the ordinary resource path. The device itself is not
+    // opened here: audio output is opt-in, so a machine with no sound card still
+    // initialises. A caller (the sandbox, a game, the editor) opens a device and
+    // attaches it to the audio system.
+    resources_->register_loader(std::make_unique<audio::WavLoader>());
+    audio_system_ = std::make_unique<audio::AudioSystem>(nullptr);
+
     last_tick_time_ = now_seconds();
     initialized_ = true;
     FE_LOG_INFO("engine initialised");
@@ -98,6 +114,7 @@ void Engine::shutdown() {
 
     // Reverse creation order. GPU resources must be released while the device
     // is still alive, and the device while the context is still current.
+    audio_system_.reset();
     renderer_3d_.reset();
     renderer_2d_.reset();
     if (resources_ != nullptr) {

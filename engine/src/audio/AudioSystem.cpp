@@ -1,0 +1,122 @@
+// Copyright (c) 2026 sqm
+// SPDX-License-Identifier: MIT
+#include "fe/audio/AudioSystem.h"
+
+#include "fe/audio/AudioClip.h"
+#include "fe/scene/Node.h"
+#include "fe/scene/Scene.h"
+
+#include <cmath>
+
+namespace fe::audio {
+namespace {
+
+// Rounds a duration in seconds to a whole number of frames. A non-positive
+// duration yields zero frames, so a paused or zero-length step produces no
+// output and does not advance any voice.
+[[nodiscard]] u32 frames_for(f32 delta_time, u32 sample_rate) noexcept {
+    if (delta_time <= 0.0f || sample_rate == 0) {
+        return 0;
+    }
+    return static_cast<u32>(std::lround(static_cast<f64>(delta_time) * sample_rate));
+}
+
+} // namespace
+
+AudioSystem::AudioSystem(AudioDevice* device) : device_(device) {}
+
+u32 AudioSystem::sample_rate() const noexcept {
+    if (device_ != nullptr && device_->is_open()) {
+        return device_->format().sample_rate;
+    }
+    return sample_rate_;
+}
+
+usize AudioSystem::playing_voice_count() const noexcept {
+    usize count = 0;
+    for (const Entry& entry : entries_) {
+        if (entry.voice.active()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+void AudioSystem::update(const FrameContext& context, Scene& scene) {
+    // Reconcile: keep an entry for each source still in the scene, adopting the
+    // voice it had last frame; add an entry for a source seen for the first
+    // time; drop an entry whose node left the scene. This is the same
+    // gather/carry-state shape SpriteAnimationSystem uses, and it is what keeps
+    // playback continuous across frames without the node owning a voice.
+    std::vector<Entry> previous = std::move(entries_);
+    entries_.clear();
+    entries_.reserve(previous.size());
+
+    scene.for_each_node([&](Node& node) {
+        auto* source = node.get_component<AudioSource>();
+        if (source == nullptr) {
+            return;
+        }
+
+        Entry entry;
+        entry.source = source;
+        for (Entry& prior : previous) {
+            if (prior.source == source) {
+                entry = std::move(prior);
+                break;
+            }
+        }
+
+        auto* clip = dynamic_cast<AudioClip*>(source->clip.get());
+        if (entry.voice.clip != clip) {
+            // The clip was set or swapped: restart from the top, and honour
+            // play_on_start for the new sound. A source created stopped (or with
+            // no clip) stays silent until it is explicitly started.
+            entry.voice = Voice{};
+            entry.voice.clip = clip;
+            entry.voice.playing = source->play_on_start && clip != nullptr;
+        }
+
+        // Apply the source's current settings every frame, so an inspector tweak
+        // is audible on the next update with no extra plumbing.
+        entry.voice.gain = source->gain;
+        entry.voice.pitch = source->pitch;
+        entry.voice.loop = source->loop;
+        if (entry.voice.clip == nullptr) {
+            entry.voice.playing = false;
+        }
+
+        entries_.push_back(std::move(entry));
+    });
+
+    const u32 frames = frames_for(context.delta_time, sample_rate());
+
+    // Flatten into a contiguous voice array for the pure mixer. This is once per
+    // frame over a handful of voices, so the copy back is not worth avoiding
+    // with a strided view.
+    std::vector<Voice> voices;
+    voices.reserve(entries_.size());
+    for (const Entry& entry : entries_) {
+        voices.push_back(entry.voice);
+    }
+
+    if (frames > 0 && !voices.empty()) {
+        mix_buffer_.resize(static_cast<usize>(frames) * channels_);
+        last_peak_ = mix_voices(voices.data(), voices.size(), mix_buffer_.data(), frames, channels_, sample_rate());
+        mixed_frames_ += frames;
+
+        if (device_ != nullptr && device_->is_playing()) {
+            static_cast<void>(device_->submit(mix_buffer_.data(), frames));
+        }
+    } else {
+        last_peak_ = 0.0f;
+    }
+
+    // Copy the advanced state (read positions, finished flags) back so the next
+    // frame resumes where this one stopped.
+    for (usize i = 0; i < entries_.size(); ++i) {
+        entries_[i].voice = voices[i];
+    }
+}
+
+} // namespace fe::audio
