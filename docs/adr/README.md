@@ -28,6 +28,7 @@ rather than editing it.
 | [0017](0017-performance-strategy.md) | Performance strategy: measurement first, a data-oriented seam | Proposed |
 | [0018](0018-multi-platform-shipping.md) | Multi-platform shipping: one runtime, many targets | Proposed |
 | [0019](0019-collaborative-editing.md) | Collaborative editing: operations, a replicated log, an authority | Proposed |
+| [0020](0020-resource-identity-guid-sidecar.md) | Stable resource identity via a per-asset GUID sidecar | Accepted |
 
 ## Format
 

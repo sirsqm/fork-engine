@@ -436,9 +436,26 @@ not repeated. A component that references a texture stores the **cache key**
 same GPU resource after a scene reload. See
 [ADR-0004](adr/0004-resource-ownership-weak-cache.md).
 
-This is the foundation of the asset pipeline. Import settings, GUID-based
-references that survive file moves, and a content-addressed cache build on top of
-it without changing the load/cache/release contract.
+This is the foundation of the asset pipeline. Import settings, a
+content-addressed cache, and hot reload build on top of it without changing the
+load/cache/release contract.
+
+### Asset identity
+
+A reference that is a file path breaks when the file moves. To fix that, an
+asset can carry a **stable GUID** in a sidecar metadata file next to it
+(`assets/hero.png` and `assets/hero.png.meta`). The `AssetDatabase` owns the
+sidecars, indexes them by GUID and by path, and is the only component that turns
+a `guid:<uuid>` reference into the asset's **current** path. A scene therefore
+stores `guid:` references, and a moved asset still resolves.
+
+The sidecars are the source of truth; the in-memory index is a cache rebuilt by
+scanning (`AssetDatabase::rescan`), so losing the index is never a data loss. The
+serializer writes a GUID when its `ResourceManager` has an asset database that
+knows the referenced asset, and falls back to the path key otherwise, so
+path-based references keep working in headless tests and tools. A version-1 scene
+document (path keys) is migrated to GUIDs at load time. See
+[ADR-0020](adr/0020-resource-identity-guid-sidecar.md).
 
 ## 8. Editor
 

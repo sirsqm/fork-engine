@@ -54,5 +54,12 @@ namespace fs {
 // the filesystem and does not resolve "..".
 [[nodiscard]] std::string normalize(std::string_view path);
 
+// Recursively lists the files under `directory`, returning paths relative to
+// it, normalized with forward slashes and sorted lexicographically so the
+// result is deterministic. Directories are not returned. A directory that does
+// not exist (or is not a directory) yields an empty list, not an error: callers
+// that scan for optional asset trees treat absence as "nothing to scan".
+[[nodiscard]] std::vector<std::string> list_files_recursive(std::string_view directory);
+
 } // namespace fs
 } // namespace fe
