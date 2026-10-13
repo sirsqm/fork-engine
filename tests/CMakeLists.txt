@@ -50,6 +50,7 @@ if(FE_BUILD_EDITOR)
       src/test_hierarchy_view_model.cpp
       src/test_asset_browser.cpp
       src/test_editor_context.cpp
+      src/test_project_settings.cpp
       src/test_play_session.cpp
       src/test_property_editor.cpp
       src/test_viewport.cpp

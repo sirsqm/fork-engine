@@ -54,6 +54,20 @@ namespace fs {
 // the filesystem and does not resolve "..".
 [[nodiscard]] std::string normalize(std::string_view path);
 
+// Returns `path` expressed relative to `base` when `path` is inside `base`
+// (lexically, after normalization), or `path` unchanged when it is not. Both
+// are treated as absolute-or-not exactly as given; no filesystem access, and
+// ".." is not resolved. This is what a project file uses to store a path that
+// travels with the project instead of one that names the machine it was
+// authored on.
+[[nodiscard]] std::string relative_to(std::string_view base, std::string_view path);
+
+// True when `path` is absolute for the host platform. On Windows this means a
+// drive letter or a UNC prefix; elsewhere, a leading '/'. This is the one place
+// platform path syntax is decided, so callers that need to know whether a path
+// can be joined onto a base ask here rather than testing the first character.
+[[nodiscard]] bool is_absolute(std::string_view path);
+
 // Recursively lists the files under `directory`, returning paths relative to
 // it, normalized with forward slashes and sorted lexicographically so the
 // result is deterministic. Directories are not returned. A directory that does

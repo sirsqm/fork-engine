@@ -188,6 +188,31 @@ std::string normalize(std::string_view path) {
     return result;
 }
 
+std::string relative_to(std::string_view base, std::string_view path) {
+    std::string normalized_base = normalize(base);
+    const std::string normalized_path = normalize(path);
+    if (normalized_base.empty()) {
+        return normalized_path;
+    }
+    // Drop a trailing separator so the prefix test compares directory names:
+    // "/proj/" contains "/proj/assets" the same way "/proj" does. A bare root
+    // ("/", "C:/") is left intact.
+    if (normalized_base.size() > 1 && normalized_base.back() == '/') {
+        normalized_base.pop_back();
+    }
+    // The separator after the base is part of the prefix, so "/proj" contains
+    // "/proj/assets" but not "/project/assets".
+    const std::string prefix = normalized_base == "/" ? std::string("/") : normalized_base + "/";
+    if (normalized_path.compare(0, prefix.size(), prefix) == 0) {
+        return normalized_path.substr(prefix.size());
+    }
+    return normalized_path;
+}
+
+bool is_absolute(std::string_view path) {
+    return to_native(path).is_absolute();
+}
+
 std::vector<std::string> list_files_recursive(std::string_view directory) {
     std::vector<std::string> files;
 
