@@ -13,15 +13,23 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/core/FileSystem.h"
 #include "fe/platform/Window.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/resources/ImageLoader.h"
+#include "fe/resources/ImportSettings.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/resources/Texture2D.h"
+#include "fe/resources/Texture2DLoader.h"
 #include "fe/rhi/Device.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
 
+#include <array>
+#include <cmath>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
@@ -357,4 +365,139 @@ TEST_CASE("a render target can expose its depth as a sampleable texture") {
     REQUIRE((sampled_target.value()->depth_texture() != nullptr));
     CHECK(sampled_target.value()->depth_texture()->width() == 32);
     CHECK(sampled_target.value()->depth_texture()->height() == 32);
+}
+
+namespace {
+
+// Runs a block with the process working directory set to `path`, then restores
+// it. The engine resolves a loaded asset's path relative to the process, as the
+// sandbox does, so a test that loads a real file from a temp directory must run
+// with its working directory there.
+class ScopedWorkingDirectory {
+public:
+    explicit ScopedWorkingDirectory(const std::filesystem::path& path) : previous_(std::filesystem::current_path()) {
+        std::filesystem::current_path(path);
+    }
+    ~ScopedWorkingDirectory() {
+        std::error_code ec;
+        std::filesystem::current_path(previous_, ec);
+    }
+
+    ScopedWorkingDirectory(const ScopedWorkingDirectory&) = delete;
+    ScopedWorkingDirectory& operator=(const ScopedWorkingDirectory&) = delete;
+
+private:
+    std::filesystem::path previous_;
+};
+
+// Writes a 2x2 black/white checker TGA (uncompressed, 32-bit, top-left origin)
+// so the image loader can decode a real file whose filtering is observable in a
+// read-back pixel.
+[[nodiscard]] std::vector<u8> checker_tga_bytes() {
+    std::vector<u8> tga = {
+        0, 0, 2, 0, 0,  0,    0, 0, 0, 0, 0, 0, // header: no colour map, uncompressed true-colour
+        2, 0, 2, 0, 32, 0x28,                   // 2x2, 32-bit BGRA, top-left origin
+    };
+    const std::array<u8, 4> black{0, 0, 0, 255};
+    const std::array<u8, 4> white{255, 255, 255, 255};
+    for (const auto& texel : {black, white, white, black}) {
+        tga.insert(tga.end(), texel.begin(), texel.end());
+    }
+    return tga;
+}
+
+// A camera at the origin and a sprite sized to fill the whole viewport, so the
+// centre sample lands where the four checker texels meet.
+void build_checker_sprite(Scene& scene, const std::shared_ptr<Resource>& texture) {
+    scene.create_node("Camera")->add_component<Camera2D>();
+    Node* sprite_node = scene.create_node("Sprite");
+    auto* sprite = sprite_node->add_component<Sprite2D>();
+    sprite->texture = texture;
+    sprite->size = Vec2{64.0f, 64.0f};
+}
+
+} // namespace
+
+TEST_CASE("a texture's import filter setting changes how the GPU samples it") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fe_tex_import_gfx";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "assets");
+    const auto bytes = checker_tga_bytes();
+    REQUIRE_FALSE(fs::write_binary_file((dir / "assets/checker.tga").string(), bytes.data(), bytes.size()));
+
+    // Run with the asset root as the working directory so the engine's relative
+    // asset paths resolve, exactly as the sandbox does from the repository root.
+    ScopedWorkingDirectory working_directory(dir);
+
+    const auto load_with = [&](rhi::TextureFilter filter) -> Pixel {
+        ResourceManager manager;
+        manager.register_loader(std::make_unique<ImageLoader>());
+        manager.register_loader(std::make_unique<Texture2DLoader>(*context.device, manager));
+        manager.assets().set_root(dir.string());
+
+        ImportSettings settings = ImportSettings::texture_defaults();
+        settings.filter = filter;
+        auto imported = manager.assets().import("assets/checker.tga", "tex", settings);
+        REQUIRE(imported);
+        auto texture = manager.load_as<Texture2D>(to_reference(imported.value().id));
+        REQUIRE(texture);
+
+        Scene scene;
+        build_checker_sprite(scene, texture.value());
+        return render_and_sample_centre(context, scene, 64, 64);
+    };
+
+    // The centre pixel sits where the four checker texels meet, so it
+    // discriminates the two filters: nearest snaps to one texel's extreme value,
+    // linear blends them into a mid grey.
+    const Pixel nearest = load_with(rhi::TextureFilter::Nearest);
+    const Pixel linear = load_with(rhi::TextureFilter::Linear);
+
+    CHECK((nearest.r < 40 || nearest.r > 215));
+    // A mid value also proves the sprite covered the centre (the clear colour is
+    // a dark ~26, not a mid grey).
+    CHECK(linear.r > 80);
+    CHECK(linear.r < 180);
+    // The two loads produced visibly different results, which is the point.
+    CHECK(std::abs(static_cast<int>(nearest.r) - static_cast<int>(linear.r)) > 60);
+}
+
+TEST_CASE("a texture with no import settings behaves like linear (the default)") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fe_tex_import_default";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "assets");
+    const auto bytes = checker_tga_bytes();
+    REQUIRE_FALSE(fs::write_binary_file((dir / "assets/checker.tga").string(), bytes.data(), bytes.size()));
+
+    ScopedWorkingDirectory working_directory(dir);
+
+    ResourceManager manager;
+    manager.register_loader(std::make_unique<ImageLoader>());
+    manager.register_loader(std::make_unique<Texture2DLoader>(*context.device, manager));
+    manager.assets().set_root(dir.string());
+
+    // A two-argument import records the importer's defaults, i.e. the behaviour
+    // from before import settings existed.
+    auto imported = manager.assets().import("assets/checker.tga", "tex");
+    REQUIRE(imported);
+    auto texture = manager.load_as<Texture2D>(to_reference(imported.value().id));
+    REQUIRE(texture);
+
+    Scene scene;
+    build_checker_sprite(scene, texture.value());
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
+    CHECK(centre.r > 80);
+    CHECK(centre.r < 180);
 }

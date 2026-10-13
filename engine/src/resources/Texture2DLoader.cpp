@@ -27,6 +27,14 @@ bool Texture2DLoader::supports(std::string_view extension) const noexcept {
 }
 
 Result<std::shared_ptr<Resource>> Texture2DLoader::load(std::string_view path) {
+    // Capture the asset's import settings before decoding: the decode step loads
+    // the CPU image through the manager, which re-enters load() and would
+    // otherwise leave the texture's own settings scoped behind it.
+    ImportSettings settings = ImportSettings::texture_defaults();
+    if (const ImportSettings* current = manager_->current_import_settings(); current != nullptr) {
+        settings = *current;
+    }
+
     // Decode (or reuse a decoded) CPU image first. The ImageLoader registers
     // under the default scheme, so a bare path resolves to the Image.
     auto image_result = manager_->load_as<Image>(std::string(path));
@@ -40,6 +48,14 @@ Result<std::shared_ptr<Resource>> Texture2DLoader::load(std::string_view path) {
     desc.width = image->width();
     desc.height = image->height();
     desc.pixels = image->pixels().data();
+    // Honour the per-asset import settings. The defaults reproduce the
+    // behaviour from before import settings existed, so an asset with no
+    // settings is unchanged.
+    desc.min_filter = settings.filter;
+    desc.mag_filter = settings.filter;
+    desc.wrap_u = settings.wrap;
+    desc.wrap_v = settings.wrap;
+    desc.generate_mipmaps = settings.mipmaps;
 
     auto texture = device_->create_texture(desc);
     if (!texture) {
