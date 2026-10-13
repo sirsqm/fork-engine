@@ -51,6 +51,7 @@ core  <-  serialization  <-  scene, resources, reflect
 core  <-  jobs  <-  systems
 core, scene, resources  <-  systems
 core, scene, systems, reflect  <-  physics2d
+core, scene, systems, reflect  <-  physics3d
 core, scene, resources  <-  mesh
 core, scene, resources  <-  scene3d
 core, rhi, resources, scene, mesh  <-  renderer3d
@@ -71,6 +72,7 @@ core  <-  net                     (planned: collaborative editing)
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
 | `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
+| `physics3d` | 3D collision shapes (box, sphere), a rigid-body simulation system (gravity, restitution, friction, damping) with a uniform-grid broad phase, joints, queries, and contact events | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
@@ -282,6 +284,16 @@ pass after it, both by design. The state is observable (`is_sleeping`,
 `sleeping_body_count()`, `island_count()`, `same_island()`) and controllable
 (`can_sleep`, `sleep()`, `wake()`), and the authored knobs serialize while the
 live state does not. See [ADR-0026](adr/0026-physics2d-islands-sleeping.md).
+
+**3D physics** is a sibling module (`physics3d`), not a mode of the 2D one, and
+shares its shape: `Collider3D` (box or sphere) and `RigidBody3D` are separate
+components, `Physics3DSystem` flattens the scene, integrates, runs a uniform-grid
+broad phase, solves contacts with the same sequential-impulse form, solves
+`DistanceJoint3D` constraints, and writes back. It is deliberately a **first
+cut** -- linear only (no angular dynamics), one joint type, and no islands or
+sleeping yet -- and it is kept behind a component-and-query boundary so a
+third-party solver (Jolt) can replace it without touching gameplay or the editor.
+See [ADR-0031](adr/0031-physics3d-and-backend-seam.md).
 
 ### Audio as a module
 
