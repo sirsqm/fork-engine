@@ -16,6 +16,7 @@ namespace fe {
 class Node;
 class Scene;
 class Component;
+class ResourceManager;
 
 namespace editor {
 
@@ -165,6 +166,44 @@ private:
     std::vector<std::string> path_;
     reflect::Value new_value_;
     reflect::Value old_value_{};
+    bool captured_ = false;
+};
+
+// Sets a resource-reference property of one component, resolved through the
+// reflection registry. It exists beside `SetPropertyCommand` because resolving a
+// reference needs a `ResourceManager` - the registry's `resolve_resource`
+// callback loads the resource and stores the resolved pointer - which
+// `SetPropertyCommand` does not carry. Like `SetPropertyCommand`, it captures
+// the previous reference on the first execute and restores it on undo, so a
+// resource edit is undoable and coalesces across a drag from the asset browser.
+//
+// An empty `reference` clears the slot (a null resource), which is what "remove
+// the texture" means.
+//
+// The manager is borrowed, not owned. The editor owns the manager through the
+// embedded engine and destroys the document (and this command with it) before
+// the engine, so the pointer outlives the command. A command built with a null
+// manager is a no-op, which is the headless case where there is nothing to
+// resolve against.
+class SetResourceCommand final : public Command {
+public:
+    SetResourceCommand(Uuid node_id, usize component_index, std::string property_name, std::string reference,
+                       ResourceManager* resources);
+
+    void execute(Scene& scene) override;
+    void undo(Scene& scene) override;
+    [[nodiscard]] std::string_view label() const noexcept override { return "Set Resource"; }
+
+    [[nodiscard]] std::string coalesce_key() const override;
+    [[nodiscard]] bool merge_with(const Command& newer) override;
+
+private:
+    Uuid node_id_;
+    usize component_index_;
+    std::string property_name_;
+    std::string reference_;
+    std::string old_reference_;
+    ResourceManager* resources_ = nullptr;
     bool captured_ = false;
 };
 

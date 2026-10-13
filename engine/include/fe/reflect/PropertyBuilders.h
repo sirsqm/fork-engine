@@ -131,6 +131,21 @@ template <typename Class, typename FieldT>
     return property;
 }
 
+// Attaches a numeric-range hint, so the inspector shows a bounded slider or
+// drag. `step` of 0 means "no fixed step" (the inspector chooses). Kept
+// separate from make_scalar because only some numeric properties are bounded.
+[[nodiscard]] inline Property with_range(Property property, f64 minimum, f64 maximum, f64 step = 0.0) {
+    property.range = RangeHint{minimum, maximum, step};
+    return property;
+}
+
+// Attaches a colour hint, so a float group is shown as a colour picker. The
+// group's member count (three or four) is what selects RGB vs RGBA.
+[[nodiscard]] inline Property with_color(Property property) {
+    property.color = ColorHint{};
+    return property;
+}
+
 // A group over a fixed-size vector field (Vec2, Vec3, Vec4), with one float
 // member per component. The vector must be standard-layout and hold only floats
 // so that its storage can be read as a float array; that is asserted, not
@@ -216,13 +231,19 @@ template <typename Class, typename MemberT>
     Property property;
     property.name = std::move(name);
     property.value_kind = ValueKind::ResourceRef;
-    property.hint = Hint::Resource;
-    property.resource_type = std::move(resource_type);
+    property.resource = ResourceHint{std::move(resource_type)};
     property.resource_ref = [field, key_of](const void* object) -> std::string {
         return key_of(static_cast<const Class*>(object)->*field);
     };
     property.resolve_resource = [field, assign](void* object, std::string_view key,
                                                 ResourceManager& manager) -> std::shared_ptr<Resource> {
+        // An empty key clears the slot. This is the explicit "remove the
+        // resource" edit; a non-empty key that fails to load leaves the slot
+        // untouched so a typo never discards a good reference.
+        if (key.empty()) {
+            assign(static_cast<Class*>(object)->*field, nullptr);
+            return nullptr;
+        }
         auto loaded = manager.load(key);
         if (!loaded) {
             return nullptr;

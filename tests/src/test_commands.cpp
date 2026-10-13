@@ -13,6 +13,8 @@
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Registry.h"
 #include "fe/reflect/TypeDesc.h"
+#include "fe/resources/Resource.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -342,6 +344,109 @@ TEST_CASE("different properties never coalesce") {
                                                               reflect::Value{static_cast<f64>(5.0)}));
     CHECK(stack.undo_count() == 2);
     CHECK(sprite->size.x == doctest::Approx(5.0f));
+}
+
+// ---------------------------------------------------------------------------
+// SetResourceCommand
+//
+// A resource edit resolves a reference through the registry and is undoable
+// like any other property. The resolver needs a ResourceManager, so the test
+// uses a stub loader (the same shape test_serialization uses) rather than a GPU.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+class StubTexture final : public Resource {
+public:
+    explicit StubTexture(std::string path) : Resource(std::move(path)) {}
+    [[nodiscard]] const char* type_name() const noexcept override { return "Texture2D"; }
+};
+
+class StubTextureLoader final : public ResourceLoader {
+public:
+    [[nodiscard]] std::string_view scheme() const noexcept override { return "tex"; }
+    [[nodiscard]] bool supports(std::string_view extension) const noexcept override { return extension == ".png"; }
+    [[nodiscard]] Result<std::shared_ptr<Resource>> load(std::string_view path) override {
+        return std::static_pointer_cast<Resource>(std::make_shared<StubTexture>(std::string(path)));
+    }
+};
+
+} // namespace
+
+TEST_CASE("setting a resource reference is undoable through the registry") {
+    reflect::register_builtin_types();
+
+    ResourceManager resources;
+    resources.register_loader(std::make_unique<StubTextureLoader>());
+
+    Scene scene;
+    Node* node = scene.create_node("Hero");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = std::make_shared<StubTexture>("assets/old.png");
+    const Uuid node_id = node->id();
+
+    CommandStack stack;
+    stack.execute(scene, std::make_unique<SetResourceCommand>(node_id, 0, "texture", "tex:assets/new.png", &resources));
+    REQUIRE(sprite->texture != nullptr);
+    CHECK(sprite->texture->path() == "assets/new.png");
+
+    CHECK(stack.undo(scene));
+    REQUIRE(sprite->texture != nullptr);
+    CHECK(sprite->texture->path() == "assets/old.png");
+}
+
+TEST_CASE("clearing a resource reference with an empty key is undoable") {
+    reflect::register_builtin_types();
+
+    ResourceManager resources;
+    resources.register_loader(std::make_unique<StubTextureLoader>());
+
+    Scene scene;
+    Node* node = scene.create_node("Hero");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = std::make_shared<StubTexture>("assets/old.png");
+    const Uuid node_id = node->id();
+
+    CommandStack stack;
+    stack.execute(scene, std::make_unique<SetResourceCommand>(node_id, 0, "texture", std::string{}, &resources));
+    CHECK(sprite->texture == nullptr);
+
+    CHECK(stack.undo(scene));
+    REQUIRE(sprite->texture != nullptr);
+    CHECK(sprite->texture->path() == "assets/old.png");
+}
+
+TEST_CASE("a resource edit without a manager is a no-op, not a corruption") {
+    reflect::register_builtin_types();
+
+    Scene scene;
+    Node* node = scene.create_node("Hero");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = std::make_shared<StubTexture>("assets/old.png");
+
+    CommandStack stack;
+    stack.execute(scene, std::make_unique<SetResourceCommand>(node->id(), 0, "texture", "tex:assets/new.png", nullptr));
+    // Nothing to resolve against, so the existing reference is untouched.
+    REQUIRE(sprite->texture != nullptr);
+    CHECK(sprite->texture->path() == "assets/old.png");
+}
+
+TEST_CASE("a failed resource resolve leaves the previous reference intact") {
+    reflect::register_builtin_types();
+
+    // No loader is registered for the extension, so the resolve fails.
+    ResourceManager resources;
+
+    Scene scene;
+    Node* node = scene.create_node("Hero");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = std::make_shared<StubTexture>("assets/old.png");
+
+    CommandStack stack;
+    stack.execute(scene,
+                  std::make_unique<SetResourceCommand>(node->id(), 0, "texture", "tex:assets/missing.png", &resources));
+    REQUIRE(sprite->texture != nullptr);
+    CHECK(sprite->texture->path() == "assets/old.png");
 }
 
 // ---------------------------------------------------------------------------
