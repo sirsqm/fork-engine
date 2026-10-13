@@ -1,0 +1,7 @@
+{
+  "format": "fork_project",
+  "format_version": 1,
+  "name": "Demo",
+  "asset_root": "assets",
+  "startup_scene": "scenes/main.fescene"
+}
