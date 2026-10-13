@@ -111,4 +111,9 @@ void Scene::unregister_node(Node& node) {
     }
 }
 
+void Scene::rebuild_index() noexcept {
+    index_.clear();
+    for_each_node([&](Node& node) { index_[node.id()] = &node; });
+}
+
 } // namespace fe
