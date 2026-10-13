@@ -29,10 +29,12 @@
 #include "fe/audio/AudioSource.h"
 #include "fe/audio/AudioSystem.h"
 #include "fe/audio/WavLoader.h"
+#include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/RigidBody2D.h"
+#include "fe/resources/AssetDatabase.h"
 #include "fe/resources/Image.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/runtime/Application.h"
@@ -60,11 +62,16 @@ constexpr const char* kAudioPath = "wav:assets/audio/beep.wav";
 // on_update(), and lets the base class render it.
 class Sandbox final : public fe::Application {
 public:
-    Sandbox(fe::Engine::Config config, std::string scene_to_load, std::string scene_to_save)
-        : fe::Application(config), scene_to_load_(std::move(scene_to_load)), scene_to_save_(std::move(scene_to_save)) {}
+    Sandbox(fe::Engine::Config config, std::string scene_to_load, std::string scene_to_save, std::string assets_root)
+        : fe::Application(config), scene_to_load_(std::move(scene_to_load)), scene_to_save_(std::move(scene_to_save)),
+          assets_root_(std::move(assets_root)) {}
 
 protected:
     fe::Error on_start() override {
+        if (fe::Error error = configure_assets(); error) {
+            return error;
+        }
+
         if (!scene_to_load_.empty()) {
             if (fe::Error error = fe::serialization::scene::load(scene_to_load_, scene(), &engine().resources());
                 error) {
@@ -78,7 +85,8 @@ protected:
         }
 
         if (!scene_to_save_.empty()) {
-            if (fe::Error error = fe::serialization::scene::save(scene(), scene_to_save_); error) {
+            if (fe::Error error = fe::serialization::scene::save(scene(), scene_to_save_, &engine().resources());
+                error) {
                 return error;
             }
             FE_LOG_INFO("saved scene to '%s'", scene_to_save_.c_str());
@@ -307,6 +315,26 @@ private:
         return fe::Error::none();
     }
 
+    // Points the resource manager at an asset tree and imports the demo texture,
+    // so its references are written as stable GUIDs. With no --assets root the
+    // scene saves with path references, exactly as before.
+    [[nodiscard]] fe::Error configure_assets() {
+        if (assets_root_.empty()) {
+            return fe::Error::none();
+        }
+        fe::AssetDatabase& assets = engine().resources().assets();
+        assets.set_root(assets_root_);
+        if (fe::fs::exists(fe::fs::join(assets_root_, "assets/textures/checker.png"))) {
+            auto imported = assets.import("assets/textures/checker.png", "tex");
+            if (!imported) {
+                return imported.error();
+            }
+            FE_LOG_INFO("imported '%s' as asset %s", imported.value().path.c_str(),
+                        imported.value().id.to_string().c_str());
+        }
+        return fe::Error::none();
+    }
+
     fe::Camera2D* camera_ = nullptr;
     fe::Node* crate_ = nullptr;
     // The device is owned by the sandbox; the system (owned by the schedule)
@@ -317,6 +345,7 @@ private:
     fe::audio::AudioSystem* audio_report_ = nullptr;
     std::string scene_to_load_;
     std::string scene_to_save_;
+    std::string assets_root_;
 };
 
 struct Options {
@@ -324,6 +353,7 @@ struct Options {
     fe::u32 headless_frames = 0;
     std::string scene_to_load;
     std::string scene_to_save;
+    std::string assets_root;
     fe::LogLevel log_level = fe::LogLevel::Info;
 };
 
@@ -341,12 +371,14 @@ struct Options {
             options.scene_to_load = argv[++i];
         } else if (arg == "--save-scene" && i + 1 < argc) {
             options.scene_to_save = argv[++i];
+        } else if (arg == "--assets" && i + 1 < argc) {
+            options.assets_root = argv[++i];
         } else if (arg == "--verbose") {
             options.log_level = fe::LogLevel::Debug;
         } else if (arg == "--quiet") {
             options.log_level = fe::LogLevel::Warn;
         } else if (arg == "--help" || arg == "-h") {
-            std::puts("usage: sandbox [--headless [frames]] [--scene PATH] [--save-scene PATH] "
+            std::puts("usage: sandbox [--headless [frames]] [--scene PATH] [--save-scene PATH] [--assets DIR] "
                       "[--verbose] [--quiet]");
             std::exit(0);
         }
@@ -371,7 +403,7 @@ int main(int argc, char** argv) {
         config.window.vsync = false;
     }
 
-    Sandbox app(config, options.scene_to_load, options.scene_to_save);
+    Sandbox app(config, options.scene_to_load, options.scene_to_save, options.assets_root);
     if (options.headless) {
         app.set_headless(options.headless_frames);
     }

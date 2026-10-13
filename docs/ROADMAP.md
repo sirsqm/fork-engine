@@ -67,7 +67,9 @@ needed a concrete mechanism before gameplay could grow. See
 ## M3 — Reflection and a real asset pipeline
 
 - [ ] Property inspector integration with editor hints (Range, Color, Resource)
-- [ ] GUID-based resource references that survive file moves
+- [x] GUID-based resource references that survive file moves — a per-asset GUID
+      sidecar and an asset database; see
+      [ADR-0020](adr/0020-resource-identity-guid-sidecar.md)
 - [ ] Import settings per asset type, and an import cache
 - [ ] Hot reload of resources
 
