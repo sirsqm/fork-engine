@@ -1,6 +1,6 @@
 # ADR-0005: Reflection and serialization strategy
 
-- **Status:** Accepted (implementation deferred)
+- **Status:** Accepted (implementation in [ADR-0006](0006-component-reflection.md))
 - **Date:** 2026-01
 - **Related:** [ADR-0002](0002-hybrid-scene-ecs-architecture.md)
 

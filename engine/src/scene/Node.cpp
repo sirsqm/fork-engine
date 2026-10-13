@@ -15,6 +15,16 @@ Node::Node(std::string name) : id_(Uuid::generate()), name_(std::move(name)) {}
 
 Node::~Node() = default;
 
+// Shared tail of both add_component entry points: set the back-reference,
+// fire on_attach when the node is already in a scene, and take ownership.
+void Node::attach_component(std::unique_ptr<Component> component) {
+    component->set_node(this);
+    if (scene_ != nullptr) {
+        component->on_attach(*this);
+    }
+    components_.push_back(std::move(component));
+}
+
 Node* Node::add_child(std::unique_ptr<Node> child) {
     FE_CHECK(child != nullptr);
     FE_CHECK(child.get() != this);

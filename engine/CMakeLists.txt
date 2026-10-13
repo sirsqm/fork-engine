@@ -7,7 +7,8 @@
 #
 # Modules may depend "downwards" only:
 #   core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
-#   core  <-  serialization  <-  scene
+#   core  <-  reflect  <-  scene, resources
+#   core  <-  serialization  <-  scene, resources, reflect
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 
@@ -27,6 +28,8 @@ set(FE_ENGINE_SOURCES
     src/scene/Scene.cpp
     src/scene/Camera2D.cpp
     src/scene/Components.cpp
+    src/reflect/Registry.cpp
+    src/reflect/ComponentTypes.cpp
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/renderer2d/Renderer2D.cpp
