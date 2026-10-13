@@ -7,7 +7,13 @@
 add_library(fe_warnings INTERFACE)
 
 if(MSVC)
-  target_compile_options(fe_warnings INTERFACE /W4)
+  # /W4 for our code. Dependencies are pulled in as external headers (CMake
+  # emits SYSTEM include directories as /external:I), and /external:W0 drops
+  # warnings from those headers. Without it MSVC keeps external warnings at the
+  # /W4 level, so a warning inside a dependency header (doctest's tuple
+  # specialization, C5285) would still be reported inside our translation
+  # units and break the /WX build.
+  target_compile_options(fe_warnings INTERFACE /W4 /external:W0 /external:anglebrackets)
 else()
   target_compile_options(
     fe_warnings
