@@ -182,3 +182,112 @@ TEST_CASE("guid references format and parse") {
     CHECK_FALSE(parse_reference("tex:assets/hero.png", parsed));
     CHECK_FALSE(parse_reference("guid:not-a-uuid", parsed));
 }
+
+TEST_CASE("import stores per-asset settings in the sidecar and they round-trip") {
+    TempDir dir("settings");
+    AssetDatabase db;
+    db.set_root(dir.str());
+    make_asset_file(dir.file("assets/hero.png"));
+
+    ImportSettings settings = ImportSettings::texture_defaults();
+    settings.filter = rhi::TextureFilter::Nearest;
+    settings.wrap = rhi::TextureWrap::Repeat;
+    settings.mipmaps = true;
+
+    auto imported = db.import("assets/hero.png", "tex", settings);
+    REQUIRE(imported);
+    CHECK(imported.value().settings.filter == rhi::TextureFilter::Nearest);
+    CHECK(imported.value().settings.wrap == rhi::TextureWrap::Repeat);
+    CHECK(imported.value().settings.mipmaps);
+
+    // The sidecar carries the settings, and a fresh database reads them back.
+    auto meta = read_asset_meta(dir.file("assets/hero.png.meta"));
+    REQUIRE(meta);
+    CHECK(meta.value().settings.filter == rhi::TextureFilter::Nearest);
+
+    AssetDatabase reopened;
+    reopened.set_root(dir.str());
+    const AssetDatabase::Asset* found = reopened.find_by_path("assets/hero.png");
+    REQUIRE(found != nullptr);
+    CHECK(found->settings.filter == rhi::TextureFilter::Nearest);
+    CHECK(found->settings.wrap == rhi::TextureWrap::Repeat);
+    CHECK(found->settings.mipmaps);
+}
+
+TEST_CASE("a two-argument texture import records the texture defaults") {
+    TempDir dir("texdefaults");
+    AssetDatabase db;
+    db.set_root(dir.str());
+    make_asset_file(dir.file("assets/hero.png"));
+
+    auto imported = db.import("assets/hero.png", "tex");
+    REQUIRE(imported);
+    // The scheme selects the importer, and its defaults are the pre-settings
+    // behaviour; because they are defaults the sidecar omits them.
+    CHECK(imported.value().settings.kind == ImportSettings::Kind::Texture);
+    CHECK(imported.value().settings.is_default());
+
+    auto meta = read_asset_meta(dir.file("assets/hero.png.meta"));
+    REQUIRE(meta);
+    CHECK(meta.value().settings.kind == ImportSettings::Kind::Texture);
+}
+
+TEST_CASE("a sidecar written before import settings existed still loads") {
+    TempDir dir("legacy");
+    make_asset_file(dir.file("assets/hero.png"));
+
+    // Exactly the document the old engine wrote: no "settings" key.
+    REQUIRE_FALSE(fs::write_text_file(
+        dir.file("assets/hero.png.meta"),
+        R"({"format":"fork_asset","format_version":1,"guid":"3f2504e0-4f89-41d3-9a0c-0305e82c3301","source":"hero.png","scheme":"tex"})"));
+
+    AssetDatabase db;
+    db.set_root(dir.str());
+    const AssetDatabase::Asset* found = db.find_by_path("assets/hero.png");
+    REQUIRE(found != nullptr);
+    CHECK(found->scheme == "tex");
+    // Absent settings are the generic default, not an error.
+    CHECK(found->settings.kind == ImportSettings::Kind::Generic);
+    CHECK(found->settings.is_default());
+}
+
+TEST_CASE("a malformed settings block in a sidecar is reported, not ignored") {
+    TempDir dir("badsettings");
+    make_asset_file(dir.file("assets/hero.png"));
+    REQUIRE_FALSE(fs::write_text_file(
+        dir.file("assets/hero.png.meta"),
+        R"({"format":"fork_asset","format_version":1,"guid":"3f2504e0-4f89-41d3-9a0c-0305e82c3301","source":"hero.png","scheme":"tex","settings":{"kind":"texture","filter":"cubic"}})"));
+
+    auto meta = read_asset_meta(dir.file("assets/hero.png.meta"));
+    CHECK_FALSE(meta);
+    CHECK(meta.error().message().find("unknown texture filter") != std::string::npos);
+
+    // The scan drops the bad entry rather than indexing it with wrong settings.
+    AssetDatabase db;
+    db.set_root(dir.str());
+    CHECK(db.asset_count() == 0);
+}
+
+TEST_CASE("re-importing with new settings keeps the GUID and rewrites the sidecar") {
+    TempDir dir("reimport_settings");
+    AssetDatabase db;
+    db.set_root(dir.str());
+    make_asset_file(dir.file("assets/hero.png"));
+
+    auto first = db.import("assets/hero.png", "tex");
+    REQUIRE(first);
+
+    ImportSettings nearest = ImportSettings::texture_defaults();
+    nearest.filter = rhi::TextureFilter::Nearest;
+    auto second = db.import("assets/hero.png", "tex", nearest);
+    REQUIRE(second);
+    // Changing how an asset is imported must not break references to it.
+    CHECK(second.value().id == first.value().id);
+    CHECK(second.value().settings.filter == rhi::TextureFilter::Nearest);
+
+    // The change survives a rescan.
+    db.rescan();
+    const AssetDatabase::Asset* found = db.find(first.value().id);
+    REQUIRE(found != nullptr);
+    CHECK(found->settings.filter == rhi::TextureFilter::Nearest);
+}

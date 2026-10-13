@@ -3,6 +3,7 @@
 #include "fe/editor/AssetBrowserViewModel.h"
 
 #include "fe/resources/AssetDatabase.h"
+#include "fe/resources/ImportSettings.h"
 #include "fe/resources/ResourceManager.h"
 
 #include <algorithm>
@@ -82,6 +83,7 @@ void AssetBrowserViewModel::rebuild(const ResourceManager* resources) {
             entry.name = file_name_of(asset.path);
             entry.directory = directory_of(asset.path);
             entry.scheme = asset.scheme;
+            entry.settings_kind = to_string(asset.settings.kind);
             entries_.push_back(std::move(entry));
         }
     }
