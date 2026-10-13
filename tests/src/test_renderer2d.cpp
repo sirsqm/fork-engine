@@ -17,6 +17,7 @@
 #include "fe/platform/Window.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/resources/ImageLoader.h"
+#include "fe/resources/ImportCache.h"
 #include "fe/resources/ImportSettings.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/resources/Texture2D.h"
@@ -500,4 +501,55 @@ TEST_CASE("a texture with no import settings behaves like linear (the default)")
     const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
     CHECK(centre.r > 80);
     CHECK(centre.r < 180);
+}
+
+// A warm decode cache must produce a texture identical to a cold one: the cache
+// removes the decode, not the upload, so a texture loaded after a cache hit
+// renders exactly as a texture loaded by decoding from scratch. This proves the
+// seam the ADR describes - the GPU Texture2D reuses the decoded Image artifact
+// without a texture-specific cache. See docs/adr/0029-import-cache.md.
+TEST_CASE("a texture loaded through a warm decode cache renders identically to a cold one") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fe_tex_import_cache";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "assets");
+    const auto bytes = checker_tga_bytes();
+    REQUIRE_FALSE(fs::write_binary_file((dir / "assets/checker.tga").string(), bytes.data(), bytes.size()));
+
+    ScopedWorkingDirectory working_directory(dir);
+
+    // Load once with a rooted cache, then again with a fresh manager sharing the
+    // same cache root (so the second load hits the decoded-image artifact).
+    const auto render_with_cache = [&](bool use_cache) -> Pixel {
+        ResourceManager manager;
+        if (use_cache) {
+            manager.import_cache().set_root(dir.string());
+        }
+        manager.register_loader(std::make_unique<ImageLoader>(&manager.import_cache()));
+        manager.register_loader(std::make_unique<Texture2DLoader>(*context.device, manager));
+        manager.assets().set_root(dir.string());
+
+        auto imported = manager.assets().import("assets/checker.tga", "tex");
+        REQUIRE(imported);
+        auto texture = manager.load_as<Texture2D>(to_reference(imported.value().id));
+        REQUIRE(texture);
+
+        Scene scene;
+        build_checker_sprite(scene, texture.value());
+        return render_and_sample_centre(context, scene, 64, 64);
+    };
+
+    const Pixel priming = render_with_cache(true); // decodes and stores the artifact
+    const Pixel cold = render_with_cache(false);   // decodes from scratch
+    const Pixel warm = render_with_cache(true);    // hits the stored artifact
+
+    CHECK(warm.r == cold.r);
+    CHECK(warm.g == cold.g);
+    CHECK(warm.b == cold.b);
+    CHECK(warm.r == priming.r);
 }
