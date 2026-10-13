@@ -3,6 +3,7 @@
 #include "fe/runtime/Engine.h"
 
 #include "fe/core/Log.h"
+#include "fe/physics2d/PhysicsTypes.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/resources/ImageLoader.h"
@@ -39,6 +40,7 @@ Error Engine::initialize(const Config& config) {
     // Make the engine's component types visible to the serializer, the
     // inspector, and any scene loaded later. Idempotent.
     reflect::register_builtin_types();
+    reflect::register_physics_types();
 
     auto window = Window::create(config.window);
     if (!window) {

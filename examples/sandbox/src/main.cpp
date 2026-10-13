@@ -11,6 +11,7 @@
 //   * scene     - builds a node hierarchy with a camera and sprites
 //   * serialization - saves the scene to JSON and loads it back
 //   * renderer2d - batches the sprites and draws them
+//   * systems   - animates a sprite and drops a physics crate
 //   * runtime   - runs the frame loop
 //
 // Usage:
@@ -25,6 +26,9 @@
 //   Escape             quit
 
 #include "fe/core/Log.h"
+#include "fe/physics2d/Collider2D.h"
+#include "fe/physics2d/Physics2DSystem.h"
+#include "fe/physics2d/RigidBody2D.h"
 #include "fe/resources/Image.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/runtime/Application.h"
@@ -121,6 +125,13 @@ protected:
         // Report what the pipeline actually produced, so a headless CI run has a
         // machine-checkable signal that geometry reached the GPU.
         FE_LOG_INFO("rendered %zu sprites in the final frame", last_sprite_count());
+        if (crate_ != nullptr) {
+            // The crate starts at y = 160 and falls. Headless frames run in
+            // real time, so this reports where physics left it after however
+            // long the run took - proof the system ran, not a resting position.
+            FE_LOG_INFO("crate ended at (%.1f, %.1f)", static_cast<double>(crate_->transform().position.x),
+                        static_cast<double>(crate_->transform().position.y));
+        }
     }
 
 private:
@@ -191,11 +202,47 @@ private:
         animated_node->transform().position = fe::Vec3{-320.0f, 160.0f, 0.0f};
         schedule().add_system<fe::SpriteAnimationSystem>();
 
+        // A physics demo: a static floor and a crate that falls onto it. The
+        // floor is a collider with no rigid body (a static obstacle); the crate
+        // is a collider plus a dynamic rigid body. Same two components, two
+        // configurations - the composition model at work.
+        fe::Node* floor = scene().create_node("Floor");
+        auto* floor_collider = floor->add_component<fe::physics2d::Collider2D>();
+        floor_collider->shape = fe::physics2d::ShapeType::Box;
+        floor_collider->half_extent = fe::Vec2{480.0f, 16.0f};
+        floor->transform().position = fe::Vec3{0.0f, -256.0f, 0.0f};
+        auto* floor_sprite = floor->add_component<fe::Sprite2D>();
+        floor_sprite->texture = typed;
+        floor_sprite->size = fe::Vec2{960.0f, 32.0f};
+        floor_sprite->color = fe::Vec4{0.4f, 0.4f, 0.5f, 1.0f};
+
+        fe::Node* crate = scene().create_node("Crate");
+        auto* crate_collider = crate->add_component<fe::physics2d::Collider2D>();
+        crate_collider->shape = fe::physics2d::ShapeType::Box;
+        crate_collider->half_extent = fe::Vec2{48.0f, 48.0f};
+        crate_collider->restitution = 0.3f;
+        auto* crate_body = crate->add_component<fe::physics2d::RigidBody2D>();
+        crate_body->mass = 1.0f;
+        crate_body->velocity = fe::Vec2{120.0f, 0.0f};
+        crate->transform().position = fe::Vec3{-400.0f, 160.0f, 0.0f};
+        auto* crate_sprite = crate->add_component<fe::Sprite2D>();
+        crate_sprite->texture = typed;
+        crate_sprite->size = fe::Vec2{96.0f, 96.0f};
+        crate_sprite->color = fe::Vec4{1.0f, 0.7f, 0.4f, 1.0f};
+        crate_ = crate;
+        // The engine is unit-agnostic: physics works in whatever units the
+        // scene uses. This demo is authored at roughly pixel scale (a crate is
+        // 96 units), so gravity is scaled to match; at a 1-unit-per-metre scale
+        // the default -9.81 would be correct and this line would be omitted.
+        auto* physics = schedule().add_system<fe::physics2d::Physics2DSystem>();
+        physics->gravity = fe::Vec2{0.0f, -980.0f};
+
         FE_LOG_INFO("built demo scene: %zu nodes", scene().node_count());
         return fe::Error::none();
     }
 
     fe::Camera2D* camera_ = nullptr;
+    fe::Node* crate_ = nullptr;
     std::string scene_to_load_;
     std::string scene_to_save_;
 };

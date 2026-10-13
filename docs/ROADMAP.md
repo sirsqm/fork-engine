@@ -72,7 +72,13 @@ needed a concrete mechanism before gameplay could grow. See
 
 ## M5 — Physics
 
-- [ ] 2D physics (bodies, colliders, queries)
+- [x] 2D physics: box and circle colliders, dynamic and static bodies, a
+      sequential-impulse solver (gravity, restitution, friction), as a system
+      (`Collider2D`, `RigidBody2D`, `Physics2DSystem`) — see
+      [ADR-0009](adr/0009-physics2d-system.md)
+- [ ] 2D physics refinements: angular dynamics, collider offsets, joints,
+      continuous collision detection, sleeping, a spatial partition
+- [ ] Physics queries (raycast, overlap) and contact events
 - [ ] 3D physics
 - [ ] Integration with the scene and the editor
 - [ ] Debug drawing
