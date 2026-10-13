@@ -321,9 +321,9 @@ This is the foundation of the asset pipeline. Import settings, GUID-based
 references that survive file moves, and a content-addressed cache build on top of
 it without changing the load/cache/release contract.
 
-## 8. Editor (planned)
+## 8. Editor
 
-The editor is designed as a client of the engine, not a second copy of it:
+The editor is a client of the engine, not a second copy of it:
 
 - It embeds an `Engine` and drives frames itself, so the viewport and
   play-in-editor share the exact runtime the game uses.
@@ -332,9 +332,31 @@ The editor is designed as a client of the engine, not a second copy of it:
 - The property inspector is driven by the same type information the serializer
   uses. Reflection is the bridge; see [ADR-0005](adr/0005-reflection-and-serialization.md).
 
-The editor is not implemented. Its requirements are being kept in mind so the
-runtime interfaces stay editor-friendly, but no editor-facing abstraction is
-built until there is an editor to need it.
+The editor lives outside the engine library, under `editor/`, and adds no edge
+to the module graph above: the dependency points from the editor to the engine,
+never back. It is built as three targets:
+
+| Target | Responsibility | Depends on |
+| --- | --- | --- |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`). No toolkit, no window. | `fork_engine` |
+| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
+| `fork_editor_shell` | The executable entry point. | `fork_editor` |
+
+The split exists so the editable, testable logic has no UI dependency: the
+document, the hierarchy view model, and the play-scene copy are exercised
+headlessly. The panels are a thin projection of that logic. The UI toolkit
+choice and its consequences are recorded in
+[ADR-0007](adr/0007-editor-ui-toolkit.md).
+
+Play-in-editor copies the authored scene into a play scene, drives frames of the
+copy through the embedded `Engine`, and discards the copy when play stops, so
+playing can never mutate what the user is editing. Panel-to-host actions are a
+one-shot request (`PlayRequest`) rather than a direct call, which keeps the
+panels free of the engine.
+
+Still to come under M2: the reflection-driven property inspector, an in-panel
+2D viewport, the asset browser, undo/redo, and project settings. Reflection is
+built separately (ADR-0005); the inspector is the first consumer.
 
 ## 9. Scripting (planned)
 
@@ -378,7 +400,8 @@ Every milestone must build and pass its tests before the next one begins.
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).
 - Audio, tilemaps, particles, animation clips and state machines.
-- The editor.
+- The editor's inspector, viewport, asset browser, undo/redo, and project
+  settings (the editor shell, hierarchy, and play-in-editor exist; see section 8).
 - Scripting.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread).
