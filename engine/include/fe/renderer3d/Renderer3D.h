@@ -26,20 +26,30 @@ namespace renderer3d {
 // Responsibilities:
 //   * Walk the scene, collect mesh renderers, and pair each with its world
 //     transform.
+//   * Reject instances whose world-space bounds lie outside the camera frustum,
+//     so they never reach the GPU.
 //   * Cache GPU vertex/index buffers per mesh, uploading on first use and
 //     evicting buffers for meshes that are no longer alive.
-//   * Bind the lit shader once per frame and issue one indexed draw per mesh
-//     instance.
+//   * Bind the lit shader once per frame and issue one indexed draw per visible
+//     mesh instance.
 //
 // Non-responsibilities: it does not own the window or the frame, does not
 // resolve the depth policy beyond enabling depth testing for its pass, and does
 // not know how a mesh was authored. It is a pure consumer of scene data and RHI
 // resources, exactly like Renderer2D.
 //
-// Batching model: for the first 3D cut every instance is its own draw call. The
-// mesh buffer cache removes the per-frame upload cost, which is the real win;
-// instance batching, material sorting, and a spatial partition are later
-// revisions that do not change this interface.
+// Batching model: for the first 3D cut every visible instance is its own draw
+// call. The mesh buffer cache removes the per-frame upload cost, and frustum
+// culling removes off-screen instances, which are the two real wins. Instance
+// batching and material sorting are later revisions that do not change this
+// interface.
+//
+// Culling model: culling tests each mesh's world-space AABB against the six
+// frustum planes and is conservative - a box that straddles a plane is kept - so
+// it can only save a draw, never hide a visible mesh. It is a flat pass, not a
+// spatial hierarchy: the renderer still visits every node. A tree over static
+// geometry is a later revision, and this AABB test is the leaf operation it
+// would call.
 //
 // Depth: the 3D pass enables depth testing and writes depth. It expects the
 // caller's frame to have a depth buffer available. The window's default
@@ -67,6 +77,11 @@ public:
 
     [[nodiscard]] u32 last_draw_calls() const noexcept { return last_draw_calls_; }
     [[nodiscard]] usize cached_mesh_count() const noexcept { return buffers_.size(); }
+
+    // The number of instances skipped by frustum culling in the last frame.
+    // Draw calls + culled instances is the number of drawable instances seen;
+    // both are reported so a test can assert culling happened without guessing.
+    [[nodiscard]] u32 last_culled() const noexcept { return last_culled_; }
 
     // Selects the camera that should drive rendering for `scene`: the first
     // camera with `primary` set, or the first camera found if none is primary,
@@ -103,6 +118,7 @@ private:
     std::unordered_map<const Mesh*, GpuMesh> buffers_;
 
     u32 last_draw_calls_ = 0;
+    u32 last_culled_ = 0;
 };
 
 } // namespace renderer3d

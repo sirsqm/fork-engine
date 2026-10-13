@@ -18,6 +18,7 @@ rather than editing it.
 | [0008](0008-systems-and-frame-schedule.md) | Systems and the frame schedule | Accepted |
 | [0009](0009-physics2d-system.md) | 2D physics as the first gameplay system | Accepted |
 | [0010](0010-3d-rendering-foundation.md) | A 3D rendering foundation on the shared RHI | Accepted |
+| [0011](0011-frustum-culling.md) | Conservative frustum culling in the 3D renderer | Accepted |
 
 ## Format
 

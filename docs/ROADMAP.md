@@ -66,9 +66,11 @@ needed a concrete mechanism before gameplay could grow. See
 - [x] Meshes, materials, cameras, and a 3D renderer — the first lit pass; see
       [ADR-0010](adr/0010-3d-rendering-foundation.md)
 - [x] A directional light
+- [x] Frustum culling (world-AABB, conservative) — see
+      [ADR-0011](adr/0011-frustum-culling.md)
 - [ ] Directional, point, and spot lights
 - [ ] Shadow mapping
-- [ ] Spatial hierarchy and frustum culling
+- [ ] A spatial hierarchy (BVH/octree) over static geometry
 - [ ] Environment rendering and a post-processing chain
 - [ ] A glTF importer
 
