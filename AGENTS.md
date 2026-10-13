@@ -21,6 +21,11 @@ noise.
 
 - Run `clang-format -i` on every file you touch. CI pins clang-format 23.1.3;
   other versions may format differently.
+- Format with the same file list CI uses, not `git status`:
+  `clang-format -i $(git ls-files '*.h' '*.hpp' '*.cpp' '*.cc' | grep -v '^third_party/')`.
+  `git status --porcelain` lists untracked *directories* (`?? engine/include/fe/physics2d/`),
+  not the files inside them, so a new module can pass a `git status`-based
+  format step and still fail the CI check.
 - Warnings are errors. The warning flags live on the `fe_warnings` interface
   target (`cmake/FEWarnings.cmake`); do not call `add_compile_options()` for
   warnings, because that is directory-scoped and leaks into dependency builds.
