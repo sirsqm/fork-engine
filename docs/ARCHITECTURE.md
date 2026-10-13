@@ -51,7 +51,7 @@ everything  <-  runtime
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
-| `physics2d` | 2D collision shapes and a rigid-body simulation system | core, scene, systems, reflect |
+| `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular), queries, and contact events | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
@@ -162,18 +162,32 @@ bodies the same code:
 | `Collider2D` only | Static obstacle: collided with, never moved |
 | `Collider2D` + `RigidBody2D` (mass > 0) | Dynamic body: pushed by gravity and collisions |
 
-Each update integrates velocity (gravity, damping) and position, then runs a
-fixed number of sequential-impulse iterations over every pair: a bounding-box
-broad phase, a narrow phase (`intersect` for box/box, circle/circle, circle/box),
-a normal impulse with restitution, a Coulomb friction impulse, and Baumgarte
-positional correction. Positions are written back to `Node::transform()`;
-velocities back to the `RigidBody2D`.
+Each update integrates linear velocity (gravity, damping) and position, and
+angular velocity (torque, damping) and rotation, then runs a fixed number of
+sequential-impulse iterations over every pair: a bounding-box broad phase, a
+narrow phase (`intersect` for box/box, circle/circle, circle/box), a normal
+impulse with restitution, a Coulomb friction impulse, and Baumgarte positional
+correction. Positions and rotation are written back to `Node::transform()`;
+linear and angular velocities back to the `RigidBody2D`.
 
-The first cut deliberately has **no angular dynamics**, so a `Collider2D` is an
-AABB or a circle and a shape is centred on its node. That limit is stated rather
-than hidden: an offset that broke under rotation would be worse than no offset.
-See [ADR-0009](adr/0009-physics2d-system.md) for the full scope and the
-alternatives considered (a third-party library, node subclasses, a full ECS).
+**Queries** are free functions over a scene (`Physics2DQueries.h`): `raycast`,
+`overlap_circle`, `overlap_box`, and `overlap_point`. They are not a system, so
+the editor can pick without running a schedule, and they reuse the same geometry
+the solver uses. A raycast returns a single value; the overlap queries append to
+a caller-owned buffer, so a hot loop does not allocate.
+
+**Contact events** are collected on the system and read after the step:
+`Physics2DSystem::contact_events()` returns the contacts that began or ended
+during the last update, keyed by node pair and ordered deterministically. A
+gameplay system that runs after physics reads them; no event bus is introduced,
+because the systems layer (ADR-0008) deliberately has none.
+
+Angular dynamics was added in a later cut, extending the same impulse equations
+rather than replacing the solver. A `Collider2D` is still an AABB or a circle,
+so a rotated box is drawn rotated but collided as its unrotated AABB. See
+[ADR-0009](adr/0009-physics2d-system.md) for the first cut and
+[ADR-0013](adr/0013-physics2d-queries-events-angular.md) for queries, contact
+events, and angular dynamics.
 
 ### Identity
 
@@ -404,15 +418,19 @@ Every milestone must build and pass its tests before the next one begins.
 
 ## 12. What is deliberately not here yet
 
-- The parts of 3D rendering beyond the forward lit pass: shadows, batching,
-  skeletal animation, a spatial hierarchy over static geometry, environment
-  rendering and post-processing, and a material graph (see
+- The parts of 3D rendering beyond the forward lit pass and directional shadows:
+  batching, point/spot shadows, cascaded shadow maps, skeletal animation, a
+  spatial hierarchy over static geometry, environment rendering and
+  post-processing, and a material graph (see
   [ADR-0010](adr/0010-3d-rendering-foundation.md),
-  [ADR-0011](adr/0011-frustum-culling.md), and
-  [ADR-0012](adr/0012-forward-lighting-model.md)).
-- 3D physics, and the parts of 2D physics not in the first cut: angular
-  dynamics, collider offsets, joints, continuous collision detection, sleeping,
-  and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).
+  [ADR-0011](adr/0011-frustum-culling.md),
+  [ADR-0012](adr/0012-forward-lighting-model.md), and
+  [ADR-0014](adr/0014-directional-shadow-mapping.md)).
+- 3D physics, and the parts of 2D physics not in the first cuts: collider
+  offsets, oriented-box colliders, joints, continuous collision detection,
+  sleeping, and a spatial partition (see
+  [ADR-0009](adr/0009-physics2d-system.md) and
+  [ADR-0013](adr/0013-physics2d-queries-events-angular.md)).
 - Audio, tilemaps, particles, animation clips and state machines.
 - The editor.
 - Scripting.

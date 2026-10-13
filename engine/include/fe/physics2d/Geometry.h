@@ -79,4 +79,43 @@ struct Contact2D {
 [[nodiscard]] Contact2D intersect_shapes(ShapeType a_type, const Aabb2D& a_box, const Circle2D& a_circle,
                                          ShapeType b_type, const Aabb2D& b_box, const Circle2D& b_circle) noexcept;
 
+// --- Ray casts -------------------------------------------------------------
+//
+// A ray is an origin and a unit direction; the test reports the distance along
+// the ray to the first intersection. The functions return a negative distance
+// when there is no hit (the ray misses, or starts past the shape and points
+// away), which is a total, allocation-free answer the query layer turns into an
+// explicit miss.
+
+// Distance along `direction` from `origin` to the nearest face of `box`, or -1
+// if the ray misses. `direction` must be unit length. A ray that starts inside
+// the box hits at distance 0.
+[[nodiscard]] f32 raycast_aabb(const Vec2& origin, const Vec2& direction, const Aabb2D& box) noexcept;
+
+// Distance along `direction` from `origin` to `circle`, or -1 if the ray
+// misses. A ray that starts inside the circle hits at distance 0.
+[[nodiscard]] f32 raycast_circle(const Vec2& origin, const Vec2& direction, const Circle2D& circle) noexcept;
+
+// Dispatches to the right ray test for a shape type.
+[[nodiscard]] f32 raycast_shape(const Vec2& origin, const Vec2& direction, ShapeType type, const Aabb2D& box,
+                                const Circle2D& circle) noexcept;
+
+// The surface normal at the hit point, pointing back towards the ray origin.
+// `direction` must be the unit direction used for the cast and `distance` a hit
+// distance it returned. The AABB form picks the axis of the face that was
+// crossed; the circle form is the radial direction. A distance <= 0 yields a
+// normal opposite the ray, which is well defined for a ray starting inside.
+[[nodiscard]] Vec2 raycast_aabb_normal(const Vec2& origin, const Vec2& direction, const Aabb2D& box,
+                                       f32 distance) noexcept;
+[[nodiscard]] Vec2 raycast_circle_normal(const Vec2& origin, const Vec2& direction, const Circle2D& circle,
+                                         f32 distance) noexcept;
+[[nodiscard]] Vec2 raycast_shape_normal(const Vec2& origin, const Vec2& direction, ShapeType type, const Aabb2D& box,
+                                        const Circle2D& circle, f32 distance) noexcept;
+
+// True when `point` is inside the shape.
+[[nodiscard]] bool contains(const Aabb2D& box, const Vec2& point) noexcept;
+[[nodiscard]] bool contains(const Circle2D& circle, const Vec2& point) noexcept;
+[[nodiscard]] bool contains_shape(ShapeType type, const Aabb2D& box, const Circle2D& circle,
+                                  const Vec2& point) noexcept;
+
 } // namespace fe::physics2d
