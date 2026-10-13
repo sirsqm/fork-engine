@@ -157,7 +157,6 @@ private:
     static void respawn_ball(fe::Scene& scene);
 
     BreakoutState* state_ = nullptr;
-    bool logged_launch_ready_ = false;
 };
 
 } // namespace breakout
