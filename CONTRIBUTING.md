@@ -18,6 +18,12 @@ feature so we can agree on the design first.
   welcome.
 - **Add tests.** Coverage of existing behaviour is always useful.
 
+Three capabilities shape where the project is going — performance, shipping to
+every platform players use, and collaborative editing — and are planned in
+[`docs/STRATEGY.md`](docs/STRATEGY.md). Work that advances one of them is
+especially welcome; check [`docs/ROADMAP.md`](docs/ROADMAP.md) first so we do
+not duplicate effort.
+
 ## Getting started
 
 ### Prerequisites
@@ -83,9 +89,18 @@ change and should be called out in the pull request.
 
 ```
 core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
-core  <-  serialization  <-  scene
+core  <-  reflect  <-  scene, resources
+core  <-  serialization  <-  scene, resources, reflect
+core, scene, resources  <-  systems
+core, scene, systems, reflect  <-  physics2d
+core, scene, resources  <-  mesh  <-  renderer3d
+core, scene, resources  <-  scene3d
+core, scene, systems, resources  <-  audio
 everything  <-  runtime
 ```
+
+The editor (`editor/`) sits outside the engine library and may depend on it, never
+the reverse.
 
 If you need an architectural change, write a short ADR in `docs/adr/` (copy the
 template used by the existing records) and reference it from the pull request.
@@ -96,9 +111,14 @@ template used by the existing records) and reference it from the pull request.
   would have caught it is incomplete.
 - Put pure-logic tests in `tests/src/`. Graphics tests that need a GL context go
   in `tests/src/test_renderer2d.cpp` and must skip cleanly when no context is
-  available.
+  available. Editor tests that need only editor logic go in the editor test
+  target and link `fork_editor_core`, never the UI toolkit.
 - Test real code paths. Avoid mocks; if you must use one, justify it in the pull
   request.
+- Write tests that are platform-independent. Paths, line endings, and locale are
+  common sources of Windows-only failures; compare `std::filesystem::path` values
+  rather than raw strings, and wrap raw-pointer identity checks in an extra pair
+  of parentheses for doctest (`CHECK((a == b))`).
 - Run the whole suite before opening a pull request:
 
   ```bash
