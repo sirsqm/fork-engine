@@ -50,15 +50,14 @@ void register_collider2d(Registry& registry) {
     desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics2d::Collider2D>()); };
 
     desc.properties.push_back(make_shape_property());
-    desc.properties.push_back(
-        make_vector_group<physics2d::Collider2D, Vec2>("half_extent", &physics2d::Collider2D::half_extent, "Vec2",
-                                                       {"x", "y"}));
+    desc.properties.push_back(make_vector_group<physics2d::Collider2D, Vec2>(
+        "half_extent", &physics2d::Collider2D::half_extent, "Vec2", {"x", "y"}));
     desc.properties.push_back(
         make_scalar<physics2d::Collider2D, f32>("radius", &physics2d::Collider2D::radius, ValueKind::Float, &defaults));
-    desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>("restitution", &physics2d::Collider2D::restitution,
+    desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>(
+        "restitution", &physics2d::Collider2D::restitution, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>("friction", &physics2d::Collider2D::friction,
                                                                       ValueKind::Float, &defaults));
-    desc.properties.push_back(
-        make_scalar<physics2d::Collider2D, f32>("friction", &physics2d::Collider2D::friction, ValueKind::Float, &defaults));
 
     registry.register_type(std::move(desc));
 }
@@ -70,19 +69,16 @@ void register_rigid_body2d(Registry& registry) {
     desc.name = physics2d::RigidBody2D::kTypeName;
     desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics2d::RigidBody2D>()); };
 
-    desc.properties.push_back(
-        make_vector_group<physics2d::RigidBody2D, Vec2>("velocity", &physics2d::RigidBody2D::velocity, "Vec2",
-                                                        {"x", "y"}));
+    desc.properties.push_back(make_vector_group<physics2d::RigidBody2D, Vec2>(
+        "velocity", &physics2d::RigidBody2D::velocity, "Vec2", {"x", "y"}));
     desc.properties.push_back(
         make_scalar<physics2d::RigidBody2D, f32>("mass", &physics2d::RigidBody2D::mass, ValueKind::Float, &defaults));
-    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>("linear_damping",
-                                                                       &physics2d::RigidBody2D::linear_damping,
-                                                                       ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
+        "linear_damping", &physics2d::RigidBody2D::linear_damping, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>("kinematic", &physics2d::RigidBody2D::kinematic,
-                                                                       ValueKind::Bool, &defaults));
-    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>("affected_by_gravity",
-                                                                       &physics2d::RigidBody2D::affected_by_gravity,
-                                                                       ValueKind::Bool, &defaults));
+                                                                        ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>(
+        "affected_by_gravity", &physics2d::RigidBody2D::affected_by_gravity, ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
 }
