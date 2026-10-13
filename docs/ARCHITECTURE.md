@@ -61,7 +61,7 @@ core  <-  net                     (planned: collaborative editing)
 
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
-| `core` | Fixed-width types, math, `Error`/`Result`, logging, assertions, UUID, filesystem helpers | — |
+| `core` | Fixed-width types, math, `Error`/`Result`, logging, assertions, UUID, filesystem helpers, frame profiler | — |
 | `platform` | Window creation, input, and the graphics context | core |
 | `rhi` | Graphics device abstraction and backend selection | core |
 | `resources` | Asset loading, caching, lifetime | core, rhi |
