@@ -22,7 +22,11 @@ public:
     // not exist, which keeps optional uniforms cheap; a missing *required*
     // uniform is a shader-authoring bug caught by the renderer's own tests.
     virtual void set_mat4(std::string_view name, const Mat4& value) = 0;
+    // Sets a 3x3 matrix uniform from 9 column-major floats. Used for the normal
+    // matrix, whose inverse-transpose form needs a non-4x4 type.
+    virtual void set_mat3(std::string_view name, const f32* value) = 0;
     virtual void set_vec4(std::string_view name, const Vec4& value) = 0;
+    virtual void set_vec3(std::string_view name, const Vec3& value) = 0;
     virtual void set_int(std::string_view name, i32 value) = 0;
     virtual void set_float(std::string_view name, f32 value) = 0;
 };

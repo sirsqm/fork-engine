@@ -1,0 +1,52 @@
+// Copyright (c) 2026 sqm
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include "fe/core/Math.h"
+#include "fe/core/Types.h"
+#include "fe/scene/Component.h"
+
+namespace fe {
+
+// A 3D camera. Attach to a node; the node's world position is the eye, and the
+// camera looks along the node's local -Z axis (the same convention as
+// look_at()). The node's world rotation therefore aims the camera.
+//
+// The camera does not own a viewport or a framebuffer. It computes a
+// view-projection matrix for a given viewport size, which is what lets the same
+// camera drive the game window and an editor viewport of a different size.
+class Camera3D final : public Component {
+public:
+    static constexpr const char* kTypeName = "Camera3D";
+
+    [[nodiscard]] const char* type_name() const noexcept override { return kTypeName; }
+
+    // Vertical field of view, in degrees. Stored in degrees because that is what
+    // a designer types into an inspector; converted to radians when the matrix
+    // is built.
+    f32 fov_degrees = 60.0f;
+
+    f32 near_plane = 0.1f;
+    f32 far_plane = 1000.0f;
+
+    // Background colour the renderer clears to when this is the active camera.
+    f32 clear_r = 0.10f;
+    f32 clear_g = 0.10f;
+    f32 clear_b = 0.12f;
+    f32 clear_a = 1.0f;
+
+    // When several cameras exist, the renderer uses the first primary one.
+    bool primary = true;
+
+    // Builds the view-projection matrix for a viewport of the given pixel size,
+    // using the owning node's world transform as the eye and orientation.
+    [[nodiscard]] Mat4 view_projection(u32 viewport_width, u32 viewport_height) const noexcept;
+
+    // The eye position and the point the camera is looking at, derived from the
+    // owning node's world transform. Exposed so tests can assert orientation
+    // without duplicating the maths.
+    [[nodiscard]] Vec3 eye() const noexcept;
+    [[nodiscard]] Vec3 forward() const noexcept;
+};
+
+} // namespace fe

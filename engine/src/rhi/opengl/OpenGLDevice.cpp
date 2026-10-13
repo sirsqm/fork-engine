@@ -64,10 +64,24 @@ public:
         }
     }
 
+    void set_mat3(std::string_view name, const f32* value) override {
+        const GLint location = location_of(name);
+        if (location >= 0) {
+            glUniformMatrix3fv(location, 1, GL_FALSE, value);
+        }
+    }
+
     void set_vec4(std::string_view name, const Vec4& value) override {
         const GLint location = location_of(name);
         if (location >= 0) {
             glUniform4f(location, value.x, value.y, value.z, value.w);
+        }
+    }
+
+    void set_vec3(std::string_view name, const Vec3& value) override {
+        const GLint location = location_of(name);
+        if (location >= 0) {
+            glUniform3f(location, value.x, value.y, value.z);
         }
     }
 
