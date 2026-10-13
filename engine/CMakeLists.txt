@@ -36,6 +36,7 @@ set(FE_ENGINE_SOURCES
     src/systems/SceneSchedule.cpp
     src/systems/SpriteAnimationSystem.cpp
     src/physics2d/Geometry.cpp
+    src/physics2d/Physics2DQueries.cpp
     src/physics2d/Physics2DSystem.cpp
     src/physics2d/PhysicsTypes.cpp
     src/mesh/Mesh.cpp
