@@ -38,6 +38,14 @@ Error EditorHost::initialize() {
     // Point the inspector's resource fields at the embedded engine's manager.
     context_.set_resources(&engine_.resources());
 
+    // Set the project's asset root before any scene is loaded, so GUID
+    // references inside the scene resolve during deserialization (the asset
+    // database must be indexed first). An empty root is a no-op that leaves the
+    // browser empty.
+    if (!config_.project_root.empty()) {
+        context_.set_project_root(config_.project_root, &engine_.resources());
+    }
+
     if (!config_.scene_to_open.empty()) {
         if (Error error = context_.load_scene(config_.scene_to_open, &engine_.resources()); error) {
             FE_LOG_ERROR("editor: could not open '%s': %s", config_.scene_to_open.c_str(), error.message().c_str());

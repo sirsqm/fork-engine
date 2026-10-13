@@ -87,6 +87,26 @@ public:
     [[nodiscard]] ResourceManager* resources() const noexcept { return resources_; }
     void set_resources(ResourceManager* resources) noexcept { resources_ = resources; }
 
+    // --- Project -----------------------------------------------------------
+    // The project's asset root: the directory the asset database indexes and
+    // that asset references resolve against. Empty means the editor has no
+    // project open, in which case the asset browser is empty and only path
+    // references (not GUID references) resolve.
+    //
+    // This is the first slice of "project settings": a real project is a file
+    // the editor opens, but the only setting that changes engine behaviour today
+    // is where the assets live, so that is what this carries. It is deliberately
+    // on the document, not on the engine: the engine's resource manager is
+    // reusable and is told the root here, so the same manager serves the editor
+    // and, later, a running game.
+    [[nodiscard]] const std::string& project_root() const noexcept { return project_root_; }
+
+    // Sets the project's asset root and rescans the asset database through
+    // `resources`. A null manager or an empty root clears the index. Rescanning
+    // on every set keeps the database and this field in step; the scan is cheap
+    // (a directory walk) and only happens when the root changes.
+    void set_project_root(std::string root, ResourceManager* resources = nullptr);
+
     // --- Play control ------------------------------------------------------
     // Records that the user asked to start or stop playing. The host consumes it
     // with take_play_request() in the same frame; nothing happens until it does.
@@ -136,6 +156,7 @@ private:
     PlaySession play_;
     CommandStack commands_;
     std::string scene_path_;
+    std::string project_root_;
     ResourceManager* resources_ = nullptr;
     PlayRequest play_request_ = PlayRequest::None;
 };
