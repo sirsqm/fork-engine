@@ -55,7 +55,7 @@ everything  <-  runtime
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
-| `renderer3d` | 3D mesh rendering with a lit pass | core, rhi, resources, scene, mesh |
+| `renderer3d` | 3D mesh rendering with a lit pass and directional shadow map | core, rhi, resources, scene, mesh |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
 
 A new edge must point down this graph. Introducing an edge is an architectural
@@ -229,10 +229,12 @@ without leaking those APIs upward.
 texture (and optional depth) that can be bound for drawing and then sampled like
 any texture. This is the seam the editor viewport uses to render a scene into a
 panel independent of the window: bind the target, draw, unbind, and blit
-`color_texture()`. It is also where a future post-processing chain and shadow
-passes will attach, which is why it lives in `rhi` rather than in `Renderer2D`.
-`Device::begin_frame` always starts on the window's default framebuffer, so a
-frame cannot leak into or out of a target.
+`color_texture()`. A depth attachment is a renderbuffer by default; setting
+`RenderTargetDesc::sample_depth` makes it a texture instead, exposed through
+`depth_texture()`, which is what the directional shadow map needs. The seam is
+also where a future post-processing chain will attach, which is why it lives in
+`rhi` rather than in `Renderer2D`. `Device::begin_frame` always starts on the
+window's default framebuffer, so a frame cannot leak into or out of a target.
 
 **`renderer2d::Renderer2D`** walks a scene, collects sprites, sorts them into a
 stable draw order, builds a vertex/index stream in CPU memory, uploads it in
@@ -286,8 +288,18 @@ extracts the six planes from a view-projection matrix; the test is conservative
 visible mesh. It is a flat pass, not a spatial hierarchy — the leaf operation a
 BVH would call.
 
-Batching, shadows, a spatial tree, and a material graph are later work behind
-these same interfaces.
+**Shadows.** When the scene has a directional light, `Renderer3D` runs a
+depth-only pass before the main pass, rendering the culled instances into a
+1024² sample-depth target (ADR-0014). The light-space matrix is an orthographic
+projection fitted to the culled instances' world bounds, sized from their
+bounding sphere so coverage is stable as the camera moves. The main pass samples
+that depth with a 3×3 PCF filter; fragments outside the map are treated as lit,
+and a slope-scaled bias removes self-shadowing acne. Only the directional light
+casts; ambient stays unshadowed so occluded areas keep fill. `last_shadow_casters()`
+reports the depth-pass draw count.
+
+Batching, point/spot shadows, a spatial tree, and a material graph are later work
+behind these same interfaces.
 
 ### Camera selection
 
@@ -382,9 +394,9 @@ not a rewrite.
 - **Graphics tests** (`fork_graphics_tests`) create a hidden window and GL
   context, render a scene, and read the framebuffer back to assert what was
   actually drawn (pixel values, batching and draw counts, camera clear colour,
-  depth ordering, and the point/spot lighting paths). They cover both the 2D and
-  3D renderers. They skip cleanly when no context is available, so CI stays green
-  on machines without a GPU.
+  depth ordering, the point/spot lighting paths, and shadow casting). They cover
+  both the 2D and 3D renderers. They skip cleanly when no context is available,
+  so CI stays green on machines without a GPU.
 - Tests exercise real code paths. Mocks are avoided; where one is used, it is
   justified in the pull request.
 

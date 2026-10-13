@@ -325,3 +325,36 @@ TEST_CASE("creating a render target with zero size fails cleanly") {
     desc.height = 16;
     CHECK_FALSE(context.device->create_render_target(desc));
 }
+
+TEST_CASE("a render target can expose its depth as a sampleable texture") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // A plain depth target uses a renderbuffer and has no depth texture; this is
+    // the editor viewport's configuration and must stay the default.
+    rhi::RenderTargetDesc plain;
+    plain.name = "plain_depth";
+    plain.width = 16;
+    plain.height = 16;
+    plain.depth = true;
+    auto plain_target = context.device->create_render_target(plain);
+    REQUIRE(plain_target);
+    CHECK(plain_target.value()->depth_texture() == nullptr);
+
+    // A sample-depth target exposes a real texture of the same size, which is
+    // what the shadow pass samples in the main pass.
+    rhi::RenderTargetDesc sampled;
+    sampled.name = "sampled_depth";
+    sampled.width = 32;
+    sampled.height = 32;
+    sampled.depth = true;
+    sampled.sample_depth = true;
+    auto sampled_target = context.device->create_render_target(sampled);
+    REQUIRE(sampled_target);
+    REQUIRE(sampled_target.value()->depth_texture() != nullptr);
+    CHECK(sampled_target.value()->depth_texture()->width() == 32);
+    CHECK(sampled_target.value()->depth_texture()->height() == 32);
+}

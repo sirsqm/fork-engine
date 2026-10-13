@@ -70,7 +70,8 @@ needed a concrete mechanism before gameplay could grow. See
       [ADR-0011](adr/0011-frustum-culling.md)
 - [x] Directional, point, and spot lights — see
       [ADR-0012](adr/0012-forward-lighting-model.md)
-- [ ] Shadow mapping
+- [x] Shadow mapping (single-cascade directional) — see
+      [ADR-0014](adr/0014-directional-shadow-mapping.md)
 - [ ] A spatial hierarchy (BVH/octree) over static geometry
 - [ ] Environment rendering and a post-processing chain
 - [ ] A glTF importer

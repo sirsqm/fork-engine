@@ -144,6 +144,13 @@ struct RenderTargetDesc {
     // Allocate a depth buffer. Off for the 2D viewport, on for future 3D
     // passes; it costs memory that a 2D-only target does not need.
     bool depth = false;
+    // Allocate the depth buffer as a sampleable texture instead of an
+    // unattachable renderbuffer, exposed through RenderTarget::depth_texture().
+    // Only meaningful when `depth` is set. A shadow pass needs this: it renders
+    // depth from the light and then reads that depth back in the main pass,
+    // which a renderbuffer cannot do. A target that only depth-tests (the
+    // editor viewport) leaves this off and keeps the cheaper renderbuffer.
+    bool sample_depth = false;
 };
 
 // Opaque GPU resource handles. Callers never see the backend's own types.
