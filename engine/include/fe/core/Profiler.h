@@ -7,9 +7,14 @@
 
 #include <array>
 #include <chrono>
+#include <string>
 #include <string_view>
 
 namespace fe {
+
+// Forward declaration: Profiler::frame_report() returns one by value, and the
+// full definition (which needs Profiler's capacities) follows the class.
+struct FrameReport;
 
 // A frame profiler: named CPU scopes and integer counters, recorded per frame
 // into a fixed ring buffer.
@@ -104,7 +109,21 @@ public:
     // Opens a scope in the current frame and returns a handle for end_scope, or
     // kInvalidIndex when the scope is not recorded (no frame in progress, or the
     // frame is full). Never allocates.
-    [[nodiscard]] u32 begin_scope(std::string_view name) noexcept;
+    //
+    // `generation` is the caller's view of frame_generation(). It is compared
+    // against the profiler's at the moment of the call: a stale caller (one that
+    // captured the generation before this frame began, or after it ended) is
+    // refused, so it can never open a scope inside a frame it does not belong
+    // to. A caller that has no generation to offer (a test opening a scope by
+    // hand) may pass the current frame_generation().
+    [[nodiscard]] u32 begin_scope(std::string_view name, u64 generation) noexcept;
+    // True when `generation` still identifies the frame currently in progress.
+    // ProfileScope uses this to skip the (very cheap) begin_scope call entirely
+    // when there is nothing to record, which is the common case when no frame is
+    // running or the profiler was swapped out mid-frame.
+    [[nodiscard]] bool scope_active(u64 generation) const noexcept {
+        return in_frame_ && generation == frame_generation_;
+    }
     // Closes the scope opened with `handle` and records its duration. The
     // `generation` is the value frame_generation() had when the scope opened: if
     // it no longer matches, the scope outlived its frame and is ignored, so a
@@ -138,6 +157,16 @@ public:
     // The interned name for a handle, or an empty view for kInvalidIndex.
     [[nodiscard]] std::string_view name_of(u32 index) const noexcept;
 
+    // Copies the most recent completed frame into a self-contained snapshot
+    // (frame offset 0 is the most recent; offset 1 the one before). The snapshot
+    // owns its data and its names, so it stays valid as the ring advances -- a
+    // caller can hand it to a UI or a log without holding the profiler.
+    //
+    // Aggregation happens here, in one walk of the frame's samples, so the
+    // snapshot is ready to print. Fails if the offset is out of range (no frame
+    // has been committed, or the offset is older than the ring).
+    [[nodiscard]] Result<FrameReport> frame_report(usize frame_offset = 0) const;
+
 private:
     using Clock = std::chrono::steady_clock;
 
@@ -164,13 +193,24 @@ private:
 // RAII scope: records a named duration from construction to destruction on the
 // thread's current profiler. A no-op when there is no current profiler, when no
 // frame is in progress, or when the frame is full.
+//
+// Cost when disabled or idle: one thread-local read and one branch. When a frame
+// is in progress, one now() sample on open and one on close. No allocation, ever.
+// Correct across early returns: the destructor runs on every exit path.
 class ProfileScope {
 public:
     explicit ProfileScope(std::string_view name) noexcept
         : profiler_(Profiler::current()), handle_(Profiler::kInvalidIndex), generation_(0) {
-        if (profiler_ != nullptr) {
-            generation_ = profiler_->frame_generation();
-            handle_ = profiler_->begin_scope(name);
+        if (profiler_ == nullptr) {
+            return;
+        }
+        // Capture the generation first; then only open the scope if that
+        // generation still matches the frame in progress. If a frame begins or
+        // ends between the two reads, the scope is simply not recorded -- it can
+        // never land in the wrong frame.
+        generation_ = profiler_->frame_generation();
+        if (profiler_->scope_active(generation_)) {
+            handle_ = profiler_->begin_scope(name, generation_);
         }
     }
 
@@ -190,5 +230,87 @@ private:
     u32 handle_;
     u64 generation_;
 };
+
+// One scope name's contribution to a frame: the total duration recorded under
+// that name (a name can appear more than once, e.g. a system that runs twice)
+// and how many samples made it up.
+struct ScopeAggregate {
+    std::string name;
+    f64 total_ms = 0.0;
+    u32 count = 0;
+};
+
+// One counter's value in a frame. Owns its name (unlike the profiler's internal
+// CounterSample, which stores an interned handle), so the snapshot is
+// self-contained.
+struct CounterAggregate {
+    std::string name;
+    i64 value = 0;
+};
+
+// A self-contained snapshot of one completed frame.
+//
+// This is the read-only surface a caller (a test, CI, a log, or the editor's
+// profiler panel) consumes. It is a value: it owns its name strings and its
+// arrays, so it is independent of the profiler's ring and safe to keep, copy,
+// and pass across threads. `total_ms` is the wall-clock length of the frame;
+// `update_ms` and `render_ms` are the two top-level regions the runtime
+// brackets, and `scopes` is the per-name breakdown of the whole frame.
+struct FrameReport {
+    f64 total_ms = 0.0;     // wall-clock length of the frame (end - begin)
+    f64 update_ms = 0.0;    // the "frame/update" region (hooks + systems)
+    f64 render_ms = 0.0;    // the "frame/render" region
+    u32 sample_count = 0;   // scope samples recorded this frame
+    u32 dropped_scopes = 0; // samples the frame capacity could not hold
+    u32 dropped_counters = 0;
+
+    // Per-name totals, sorted by descending total_ms so the biggest cost is
+    // first. Fixed capacity: a frame with more distinct names than this is
+    // truncated (counted by dropped_names).
+    static constexpr usize kMaxAggregates = Profiler::kMaxScopesPerFrame;
+    std::array<ScopeAggregate, kMaxAggregates> scopes{};
+    u32 scope_count = 0; // live entries in scopes
+    u32 dropped_names = 0;
+
+    // The counter values recorded this frame (name + accumulated value).
+    static constexpr usize kMaxCounters = Profiler::kMaxCountersPerFrame;
+    std::array<CounterAggregate, kMaxCounters> counters{};
+    u32 counter_count = 0;
+
+    // A short, stable, single-line summary of the frame, e.g.
+    //   "frame 1.23ms | update 0.90ms | render 0.30ms | 12 scopes | 2 counters"
+    // Intended for logs, tests, and CI. Deterministic given the snapshot.
+    [[nodiscard]] std::string summary() const;
+
+    // The full breakdown as text, one line per scope (descending cost) and one
+    // per counter, prefixed by summary(). For a human or a CI artifact.
+    [[nodiscard]] std::string to_string() const;
+};
+
+// --- Instrumentation macros ------------------------------------------------
+//
+// FE_PROFILE_SCOPE("name")    opens a named timing sample for the enclosing
+//                             block and closes it on scope exit (RAII).
+// FE_PROFILE_FUNCTION()       the same, named after the current function.
+//
+// When FE_PROFILING is 0 the macros expand to nothing: no object, no call, no
+// name string, no unused-variable warning. Set FE_PROFILING=0 to compile the
+// instrumentation out entirely (see docs/adr/0024-profiler-instrumentation.md).
+#ifndef FE_PROFILING
+#define FE_PROFILING 1
+#endif
+
+#if FE_PROFILING
+// Two-level concat so __COUNTER__ is expanded before pasting (a single ## would
+// paste the literal token). __COUNTER__ is unique per use, so two scopes on one
+// line still get distinct variables.
+#define FE_PROFILE_CONCAT_(a, b) a##b
+#define FE_PROFILE_CONCAT(a, b) FE_PROFILE_CONCAT_(a, b)
+#define FE_PROFILE_SCOPE(name) ::fe::ProfileScope FE_PROFILE_CONCAT(fe_profile_scope_, __COUNTER__)(name)
+#define FE_PROFILE_FUNCTION() FE_PROFILE_SCOPE(__func__)
+#else
+#define FE_PROFILE_SCOPE(name) ((void)0)
+#define FE_PROFILE_FUNCTION() ((void)0)
+#endif
 
 } // namespace fe
