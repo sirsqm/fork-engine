@@ -164,6 +164,14 @@ loader constructed with a null cache, and a headless test all behave exactly as
 before this ADR — the same guarantee ADR-0020 gives for the `AssetDatabase`. The
 sandbox opts in with `--cache DIR`; `Engine::Config` carries `cache_root`.
 
+The **editor** opts in by default. When a project is open, `fork_editor_shell`
+roots the cache at `<project>/.fork/cache`, so a scene reload and an editor
+restart read warm artifacts instead of re-decoding. `--no-cache` turns it off and
+`--cache-dir DIR` overrides the location; with no project and no `--cache-dir`
+the root stays empty and the cache is inert, which is what a bare shell (the
+built-in example scene) gets. The root sits under the project so deleting the
+project's derived directory is the whole eviction story.
+
 ## Consequences
 
 **Easier:**
