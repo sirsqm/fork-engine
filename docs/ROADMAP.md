@@ -41,9 +41,10 @@ built editor-friendly from the start rather than adapted later.
 - [x] Scene hierarchy panel — `HierarchyViewModel` + `HierarchyPanel`
 - [x] Property inspector, driven by the reflection system — `PropertyEditor` + `InspectorPanel`
 - [x] 2D viewport rendering into an editor panel — `Viewport` + `ViewportPanel` (off-screen render target)
-- [ ] Asset browser
+- [x] Asset browser — `AssetBrowserViewModel` (headless) + `AssetBrowserPanel`, listing the asset database's GUID-tagged assets with search and a copyable reference
 - [x] Undo/redo — `Command` + `CommandStack` + concrete commands in `fork_editor_core`; coalescing drags into one step ([ADR-0015](adr/0015-editor-undo-redo.md))
 - [x] Play-in-editor (embed an `Engine`, drive frames, run the scene's `SceneSchedule`) — `PlaySession`
+- [x] Project asset root — `EditorContext::set_project_root` + `--project`, indexing the asset database so the browser and GUID references resolve
 - [ ] Project settings and a build/export path
 
 ### M2 prerequisite — reflection (done)
@@ -102,8 +103,12 @@ needed a concrete mechanism before gameplay could grow. See
 - [x] 2D joints: distance and revolute constraints solved by the same
       sequential-impulse loop as contacts, with node-id body references that
       serialize — see [ADR-0021](adr/0021-physics2d-joints.md)
+- [x] A uniform-grid (spatial hash) broad phase: candidate pairs are found once
+      per step instead of once per iteration, so a step is O(candidates *
+      iterations) rather than O(bodies² * iterations) — see
+      [ADR-0023](adr/0023-physics2d-broadphase.md)
 - [ ] 2D physics refinements: collider offsets, oriented-box colliders,
-      continuous collision detection, sleeping, a spatial partition
+      continuous collision detection, sleeping
 - [ ] 3D physics
 - [ ] Integration with the scene and the editor
 - [ ] Debug drawing
