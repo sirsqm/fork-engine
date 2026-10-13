@@ -90,6 +90,12 @@ public:
     // can keep it alive and sample it with bind_texture() like any Texture.
     [[nodiscard]] virtual TextureRef color_texture() const noexcept = 0;
 
+    // The depth attachment as a sampleable texture, or nullptr when the target
+    // was created without `sample_depth`. A shadow pass keeps this handle and
+    // binds it as a regular sampler in the main pass; a target with a plain
+    // depth renderbuffer returns nullptr here.
+    [[nodiscard]] virtual TextureRef depth_texture() const noexcept = 0;
+
     // Binds the target for drawing: subsequent draws go to its color
     // attachment instead of the window. The viewport is set to the target's
     // full size. Bind the null target (bind_render_target(*device, nullptr)) or

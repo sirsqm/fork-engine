@@ -91,6 +91,11 @@ public:
     [[nodiscard]] u32 last_point_lights() const noexcept { return last_point_lights_; }
     [[nodiscard]] u32 last_spot_lights() const noexcept { return last_spot_lights_; }
 
+    // The number of mesh instances rendered into the shadow map in the last
+    // frame (0 when the scene has no directional light). Reported so a test can
+    // prove the depth pass ran without inspecting GPU state.
+    [[nodiscard]] u32 last_shadow_casters() const noexcept { return last_shadow_casters_; }
+
     // Selects the camera that should drive rendering for `scene`: the first
     // camera with `primary` set, or the first camera found if none is primary,
     // or nullptr if the scene has no 3D camera. Mirrors
@@ -111,6 +116,17 @@ public:
     static constexpr u32 kMaxPointLights = 8;
     static constexpr u32 kMaxSpotLights = 8;
 
+    // The directional shadow map is square. 1024 is a deliberate middle ground:
+    // enough texel density for a scene of a few units to show a clean edge,
+    // small enough to keep the depth pass cheap. A fixed size keeps the first
+    // cut free of a quality setting; a resolution knob is a later addition.
+    static constexpr u32 kShadowMapSize = 1024;
+
+    // Depth offset used when comparing a fragment against the shadow map, in
+    // the map's normalised depth range. Tuned to remove acne on lit surfaces
+    // without detaching a shadow from its caster.
+    static constexpr f32 kShadowBias = 0.0015f;
+
 private:
     struct GpuMesh {
         rhi::BufferRef vertex_buffer;
@@ -121,7 +137,18 @@ private:
     // Returns the GPU buffers for `mesh`, uploading on first use.
     [[nodiscard]] Result<const GpuMesh*> acquire_mesh(rhi::Device& device, const Mesh& mesh);
 
+    // Creates the shadow map render target on first use. Returns an Error if the
+    // device rejects it; the caller reports it and skips shadows for the frame.
+    [[nodiscard]] Error ensure_shadow_target(rhi::Device& device);
+
     rhi::ShaderRef shader_;
+
+    // Depth-only shader and the render target whose depth texture is the shadow
+    // map. The target is created lazily on the first frame with a directional
+    // light, so a 2D-only or unlit scene never pays for a 1024x1024 allocation.
+    rhi::ShaderRef shadow_shader_;
+    rhi::RenderTargetRef shadow_target_;
+    bool shadow_target_attempted_ = false;
 
     // Bound for untextured meshes so the sampler always reads a valid object.
     // A white texel makes the shader's albedo equal to the base colour, which
@@ -138,6 +165,7 @@ private:
     u32 last_culled_ = 0;
     u32 last_point_lights_ = 0;
     u32 last_spot_lights_ = 0;
+    u32 last_shadow_casters_ = 0;
 
     // Reused across frames to avoid per-frame allocation. Each holds one vec4
     // per light in a fixed-size array, packed as the shader expects:

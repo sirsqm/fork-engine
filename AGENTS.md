@@ -44,6 +44,14 @@ noise.
 - longjmp-based test harnesses trip MSVC C4611; suppress it at file scope with
   a comment, not globally.
 
+## ADR numbering
+
+ADR numbers are claimed by hand and branches are developed in parallel, so two
+records can claim the same number before either merges. Before writing a new
+ADR, list `docs/adr/` on `main` **and** on every open branch/PR and pick a number
+none of them use. Update the index table in `docs/adr/README.md` in the same
+change. A gap in the numbering is fine; a collision is a merge-time rename.
+
 ## Versioning
 
 The engine version has one source of truth: the `project(... VERSION ...)`
