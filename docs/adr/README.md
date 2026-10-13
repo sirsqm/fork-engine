@@ -15,6 +15,7 @@ rather than editing it.
 | [0004](0004-resource-ownership-weak-cache.md) | Resource ownership with a weak cache | Accepted |
 | [0005](0005-reflection-and-serialization.md) | Reflection and serialization strategy | Accepted |
 | [0006](0006-component-reflection.md) | Component reflection for serialization and the editor | Accepted |
+| [0008](0008-systems-and-frame-schedule.md) | Systems and the frame schedule | Accepted |
 
 ## Format
 
