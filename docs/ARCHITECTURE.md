@@ -149,6 +149,15 @@ it. The interface is intentionally small — enough to express what the engine
 draws today, and shaped so that a Vulkan or Metal backend can implement it later
 without leaking those APIs upward.
 
+**Off-screen render targets.** `rhi::RenderTarget` is a framebuffer with a color
+texture (and optional depth) that can be bound for drawing and then sampled like
+any texture. This is the seam the editor viewport uses to render a scene into a
+panel independent of the window: bind the target, draw, unbind, and blit
+`color_texture()`. It is also where a future post-processing chain and shadow
+passes will attach, which is why it lives in `rhi` rather than in `Renderer2D`.
+`Device::begin_frame` always starts on the window's default framebuffer, so a
+frame cannot leak into or out of a target.
+
 **`renderer2d::Renderer2D`** walks a scene, collects sprites, sorts them into a
 stable draw order, builds a vertex/index stream in CPU memory, uploads it in
 batches, and issues one indexed draw per texture batch. Sprites that share a

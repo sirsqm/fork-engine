@@ -165,6 +165,20 @@ public:
     [[nodiscard]] u32 height() const noexcept override { return height_; }
     [[nodiscard]] GLuint handle() const noexcept { return handle_; }
 
+    // Allocates storage for the texture without uploading pixels. Used for
+    // render-target attachments, whose contents are produced by drawing.
+    void allocate(u32 width, u32 height, TextureFilter filter) {
+        glBindTexture(GL_TEXTURE_2D, handle_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, nullptr);
+        const GLint gl_filter = filter == TextureFilter::Nearest ? GL_NEAREST : GL_LINEAR;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
     void upload(const TextureDesc& desc) {
         glBindTexture(GL_TEXTURE_2D, handle_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -192,6 +206,84 @@ private:
     u32 width_;
     u32 height_;
     GLuint handle_ = 0;
+};
+
+// ---------------------------------------------------------------------------
+// Render target
+// ---------------------------------------------------------------------------
+
+// A framebuffer object with a color texture and, optionally, a depth
+// renderbuffer. The color texture is the attachment the editor viewport blits.
+class OpenGLRenderTarget final : public RenderTarget {
+public:
+    OpenGLRenderTarget(std::string name, u32 width, u32 height, bool depth)
+        : name_(std::move(name)), width_(width), height_(height), depth_(depth) {}
+
+    ~OpenGLRenderTarget() override {
+        if (depth_buffer_ != 0) {
+            glDeleteRenderbuffers(1, &depth_buffer_);
+        }
+        if (framebuffer_ != 0) {
+            glDeleteFramebuffers(1, &framebuffer_);
+        }
+    }
+
+    [[nodiscard]] const std::string& name() const noexcept override { return name_; }
+    [[nodiscard]] u32 width() const noexcept override { return width_; }
+    [[nodiscard]] u32 height() const noexcept override { return height_; }
+    [[nodiscard]] TextureRef color_texture() const noexcept override { return color_; }
+
+    [[nodiscard]] GLuint framebuffer() const noexcept { return framebuffer_; }
+
+    void bind() override {
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+        glViewport(0, 0, static_cast<GLsizei>(width_), static_cast<GLsizei>(height_));
+    }
+
+    void unbind() override { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
+
+    void clear(const ClearColor& color) override {
+        glClearColor(color.r, color.g, color.b, color.a);
+        glClear(GL_COLOR_BUFFER_BIT | (depth_ ? GL_DEPTH_BUFFER_BIT : 0));
+    }
+
+    // Allocates the attachments. Separate from the constructor so creation can
+    // fail with an Error instead of asserting: an incomplete framebuffer is a
+    // driver or size problem the caller should see.
+    [[nodiscard]] Error create_attachments() {
+        color_ = std::make_shared<OpenGLTexture>(name_ + ".color", width_, height_);
+        // Render targets are sampled at a different scale than they are drawn,
+        // so linear filtering avoids a blocky downsample.
+        color_->allocate(width_, height_, TextureFilter::Linear);
+
+        glGenFramebuffers(1, &framebuffer_);
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_->handle(), 0);
+
+        if (depth_) {
+            glGenRenderbuffers(1, &depth_buffer_);
+            glBindRenderbuffer(GL_RENDERBUFFER, depth_buffer_);
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, static_cast<GLsizei>(width_),
+                                  static_cast<GLsizei>(height_));
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_buffer_);
+        }
+
+        const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            return Error("render target '" + name_ + "' is incomplete (GL status " + std::to_string(status) + ")");
+        }
+        return Error::none();
+    }
+
+private:
+    std::string name_;
+    u32 width_;
+    u32 height_;
+    bool depth_;
+    GLuint framebuffer_ = 0;
+    GLuint depth_buffer_ = 0;
+    std::shared_ptr<OpenGLTexture> color_;
 };
 
 // ---------------------------------------------------------------------------
@@ -297,7 +389,22 @@ public:
         return std::static_pointer_cast<Texture>(texture);
     }
 
+    Result<RenderTargetRef> create_render_target(const RenderTargetDesc& desc) override {
+        if (desc.width == 0 || desc.height == 0) {
+            return Error("create_render_target: dimensions must be non-zero");
+        }
+        auto target = std::make_shared<OpenGLRenderTarget>(desc.name, desc.width, desc.height, desc.depth);
+        if (Error error = target->create_attachments(); error) {
+            return error;
+        }
+        return std::static_pointer_cast<RenderTarget>(target);
+    }
+
     void begin_frame(u32 framebuffer_width, u32 framebuffer_height, const ClearColor& clear_color) override {
+        // A frame always starts on the window's default framebuffer, whatever an
+        // editor viewport left bound in the previous frame.
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        bound_target_ = nullptr;
         set_viewport(0, 0, framebuffer_width, framebuffer_height);
         glDisable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
@@ -307,6 +414,18 @@ public:
     }
 
     void end_frame() override { window_->swap_buffers(); }
+
+    void bind_render_target(RenderTarget* target) override {
+        if (target == nullptr) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            bound_target_ = nullptr;
+            return;
+        }
+        target->bind();
+        bound_target_ = target;
+    }
+
+    [[nodiscard]] RenderTarget* bound_render_target() const noexcept override { return bound_target_; }
 
     void set_viewport(u32 x, u32 y, u32 width, u32 height) override {
         glViewport(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width),
@@ -398,6 +517,7 @@ private:
     Window* window_;
     GLuint vao_ = 0;
     GLuint bound_shader_ = 0;
+    RenderTarget* bound_target_ = nullptr;
     std::unordered_map<GLuint, VertexLayout> layouts_;
 };
 
