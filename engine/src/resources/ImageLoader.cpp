@@ -91,6 +91,7 @@ Result<std::shared_ptr<Resource>> ImageLoader::load(std::string_view path) {
     if (cache_ != nullptr && cache_->contains(cache_key)) {
         if (auto cached = cache_->fetch(cache_key)) {
             if (auto image = decode_image_artifact(path, cached.value())) {
+                FE_LOG_DEBUG("import cache hit for '%s'", std::string(path).c_str());
                 return std::static_pointer_cast<Resource>(image);
             }
         }
