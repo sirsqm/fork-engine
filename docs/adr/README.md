@@ -39,6 +39,8 @@ rather than editing it.
 | [0028](0028-editor-hint-metadata.md) | Editor hint metadata: typed hints on a reflected property | Accepted |
 | [0029](0029-import-cache.md) | A content-addressed import cache | Accepted |
 | [0030](0030-asset-pack-format.md) | Asset packs: one container the runtime mounts like a directory | Accepted |
+| [0031](0031-physics3d-and-backend-seam.md) | 3D physics, and a backend seam so the solver can be replaced | Accepted |
+| [0032](0032-near-term-platform-scope.md) | Near-term platform scope: desktop is the target, shipping is the plan | Accepted |
 
 ## Format
 

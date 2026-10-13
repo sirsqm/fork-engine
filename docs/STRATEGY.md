@@ -107,6 +107,14 @@ consoles where the platform holders allow it.
 This is not "the editor runs on every OS". It is "**games made here reach every
 platform their players use**".
 
+**Near-term scope.** The target *today* is desktop: Linux and Windows through
+the OpenGL 3.3 core backend. macOS is buildable but not yet supported (GL 3.3 is
+deprecated there), and web, mobile, and consoles are planned, not promised. The
+README and the status table state this plainly; the wider goal below is the
+direction, and [ADR-0032](adr/0032-near-term-platform-scope.md) records why the
+claim is sequenced rather than asserted. A portability claim the engine cannot
+demonstrate costs more than it buys.
+
 ### What it implies
 
 - A **complete platform layer**: window, input (including touch and gamepad),
@@ -239,6 +247,15 @@ The three pillars pull the milestones in a clear direction:
   single "cross-platform" line into concrete targets.
 - **Collaborative editing** lands after the editor is mature, as **M10**, with
   its first steps (component identity, operations, log) also improving undo.
+
+**What comes first.** The pillars are the *direction*, not the next step. The
+next step is a **vertical slice** — one small game built end to end in the engine
+(roadmap M2.5) — followed by the **scripting seam** (M7). Nothing in the pillars
+is worth building before the engine has proven, in one finished artifact, that
+the parts work together; and nothing makes the engine usable to anyone but its
+author until scripting exists. So the near-term order is: finish a game, add
+scripting, then resume the pillars. Collaborative editing in particular is a
+north star and stays out of the next several milestones.
 
 Nothing here is a promise of a date. It is the order in which the engine earns
 each capability, with every step independently testable, in keeping with the
