@@ -37,6 +37,7 @@ rather than editing it.
 | [0026](0026-physics2d-islands-sleeping.md) | 2D island detection and body sleeping | Accepted |
 | [0027](0027-asset-import-settings.md) | Per-asset import settings stored in the sidecar | Accepted |
 | [0028](0028-editor-hint-metadata.md) | Editor hint metadata: typed hints on a reflected property | Accepted |
+| [0029](0029-import-cache.md) | A content-addressed import cache | Accepted |
 
 ## Format
 
