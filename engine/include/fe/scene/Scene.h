@@ -66,6 +66,11 @@ public:
     // a scene into a scratch instance and then adopt it). Returns the node.
     Node* add_root(std::unique_ptr<Node> node);
 
+    // As add_root(), but inserts at `index` among the roots (clamped to
+    // [0, root_count()]). Used by the editor to undo a delete or a reparent
+    // without reordering the roots that were not touched.
+    Node* add_root(std::unique_ptr<Node> node, usize index);
+
     // --- Lookup ------------------------------------------------------------
     [[nodiscard]] Node* find_node(const Uuid& id) const noexcept;
     [[nodiscard]] Node* find_node_by_name(std::string_view name) const noexcept;

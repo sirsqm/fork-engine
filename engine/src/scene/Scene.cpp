@@ -5,7 +5,10 @@
 #include "fe/core/Assert.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <memory>
 #include <string_view>
+#include <utility>
 
 namespace fe {
 
@@ -42,6 +45,10 @@ std::unique_ptr<Node> Scene::remove_root(Node* node) {
 }
 
 Node* Scene::add_root(std::unique_ptr<Node> node) {
+    return add_root(std::move(node), roots_.size());
+}
+
+Node* Scene::add_root(std::unique_ptr<Node> node, usize index) {
     FE_CHECK(node != nullptr);
     // Detach from any previous owner so a node has exactly one parent and one
     // scene at a time. If it was a root of this same scene, remove it first so
@@ -64,7 +71,8 @@ Node* Scene::add_root(std::unique_ptr<Node> node) {
     Node* raw = node.get();
     raw->set_parent(nullptr);
     raw->attach_recursive(*this);
-    roots_.push_back(std::move(node));
+    const usize clamped = index < roots_.size() ? index : roots_.size();
+    roots_.insert(roots_.begin() + static_cast<std::ptrdiff_t>(clamped), std::move(node));
     return raw;
 }
 

@@ -23,6 +23,8 @@ add_library(fork_editor_core STATIC
     src/PlaySession.cpp
     src/PropertyEditor.cpp
     src/Viewport.cpp
+    src/Command.cpp
+    src/Commands.cpp
 )
 add_library(FE::editor_core ALIAS fork_editor_core)
 
