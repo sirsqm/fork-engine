@@ -60,6 +60,12 @@ public:
     // not a root of this scene.
     [[nodiscard]] std::unique_ptr<Node> remove_root(Node* node);
 
+    // Attaches an already-owned node as a root, detaching it from any previous
+    // scene or parent. The counterpart to remove_root(), used to move a whole
+    // subtree between scenes without recreating it (the editor uses it to load
+    // a scene into a scratch instance and then adopt it). Returns the node.
+    Node* add_root(std::unique_ptr<Node> node);
+
     // --- Lookup ------------------------------------------------------------
     [[nodiscard]] Node* find_node(const Uuid& id) const noexcept;
     [[nodiscard]] Node* find_node_by_name(std::string_view name) const noexcept;
