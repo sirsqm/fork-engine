@@ -3,6 +3,7 @@
 #include "fe/editor/EditorHost.h"
 
 #include "fe/core/Log.h"
+#include "fe/editor/AssetBrowserPanel.h"
 #include "fe/editor/HierarchyPanel.h"
 #include "fe/editor/InspectorPanel.h"
 #include "fe/editor/PlayPanel.h"
@@ -60,6 +61,7 @@ Error EditorHost::initialize() {
 
     ui_.add_panel(std::make_unique<HierarchyPanel>());
     ui_.add_panel(std::make_unique<InspectorPanel>());
+    ui_.add_panel(std::make_unique<AssetBrowserPanel>());
     ui_.add_panel(std::make_unique<PlayPanel>());
 
     // The viewport renders through the embedded engine's device and 2D renderer,

@@ -47,9 +47,9 @@ Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Systems and the frame schedule | Working |
 | 2D physics (colliders, rigid bodies, solver, queries, contact events) | Working |
 | Audio (device seam, WAV loader, pure mixer, mixing system) | Working (first pass) |
-| Editor (docking shell, hierarchy, inspector, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
+| Editor (docking shell, hierarchy, inspector, asset browser, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
 | Runtime frame loop + sandbox example | Working |
-| Scripting, asset browser, project settings, build/export | Not started (see roadmap) |
+| Scripting, project settings, build/export | Not started (see roadmap) |
 | Performance tooling, extra platforms, collaborative editing | Planned (see roadmap) |
 
 Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
@@ -180,9 +180,9 @@ Interactive controls: `WASD`/arrows move the camera, `Q`/`E` zoom, `Esc` quits.
 
 - `fork_engine_tests` — pure-logic tests (math, filesystem, scene, components,
   resources, serialization, reflection, physics, mesh, systems). Run anywhere.
-- `fork_editor_tests` — headless editor logic (hierarchy view model, document,
-  play-in-editor, command stack, property helpers, viewport maths). Link only
-  `fork_editor_core`, never the UI toolkit.
+- `fork_editor_tests` — headless editor logic (hierarchy view model, asset
+  browser view model, document, play-in-editor, command stack, property helpers,
+  viewport maths). Link only `fork_editor_core`, never the UI toolkit.
 - `fork_graphics_tests` — create a hidden window and a GL context, render a
   scene, and read the framebuffer back to assert what was actually drawn. They
   skip automatically when no context is available, so `ctest` stays green on
