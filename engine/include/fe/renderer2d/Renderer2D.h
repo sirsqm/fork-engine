@@ -83,6 +83,11 @@ public:
     // divergence that produces subtle bugs.
     [[nodiscard]] static const Camera2D* find_active_camera(const Scene& scene);
 
+    // The same selection for a mutable scene, so a caller that drives the
+    // camera (the editor viewport's pan/zoom) edits exactly the camera the
+    // renderer will use. One implementation, so the two can never diverge.
+    [[nodiscard]] static Camera2D* find_active_camera(Scene& scene);
+
 private:
     // One contiguous run of quads that share a texture.
     struct Batch {

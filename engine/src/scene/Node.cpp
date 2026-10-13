@@ -6,6 +6,9 @@
 #include "fe/scene/Scene.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <memory>
+#include <utility>
 
 namespace fe {
 
@@ -26,6 +29,10 @@ void Node::attach_component(std::unique_ptr<Component> component) {
 }
 
 Node* Node::add_child(std::unique_ptr<Node> child) {
+    return add_child(std::move(child), children_.size());
+}
+
+Node* Node::add_child(std::unique_ptr<Node> child, usize index) {
     FE_CHECK(child != nullptr);
     FE_CHECK(child.get() != this);
     FE_CHECK(!is_ancestor_of(*child));
@@ -45,7 +52,8 @@ Node* Node::add_child(std::unique_ptr<Node> child) {
         raw->attach_recursive(*scene_);
     }
 
-    children_.push_back(std::move(child));
+    const usize clamped = index < children_.size() ? index : children_.size();
+    children_.insert(children_.begin() + static_cast<std::ptrdiff_t>(clamped), std::move(child));
     return raw;
 }
 
@@ -64,6 +72,30 @@ std::unique_ptr<Node> Node::remove_child(Node* child) {
     }
     owned->set_parent(nullptr);
     return owned;
+}
+
+std::unique_ptr<Component> Node::detach_component(usize index) {
+    if (index >= components_.size()) {
+        return nullptr;
+    }
+    const auto it = components_.begin() + static_cast<std::ptrdiff_t>(index);
+    std::unique_ptr<Component> owned = std::move(*it);
+    components_.erase(it);
+    owned->on_detach(*this);
+    owned->set_node(nullptr);
+    return owned;
+}
+
+Component* Node::insert_component(usize index, std::unique_ptr<Component> component) {
+    FE_CHECK(component != nullptr);
+    Component* raw = component.get();
+    raw->set_node(this);
+    if (scene_ != nullptr) {
+        raw->on_attach(*this);
+    }
+    const usize clamped = index < components_.size() ? index : components_.size();
+    components_.insert(components_.begin() + static_cast<std::ptrdiff_t>(clamped), std::move(component));
+    return raw;
 }
 
 bool Node::is_ancestor_of(const Node& other) const noexcept {
