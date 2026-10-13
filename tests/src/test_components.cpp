@@ -12,20 +12,29 @@ using namespace fe;
 
 namespace {
 
-// A component used to observe attach/detach ordering in the tests below.
+// A component used to observe attach/detach ordering in the tests below. The
+// counters live outside the component because removal destroys it; reading a
+// member of a removed component would be a use-after-free.
 class LifecycleProbe final : public Component {
 public:
     static constexpr const char* kTypeName = "LifecycleProbe";
 
-    [[nodiscard]] const char* type_name() const noexcept override { return kTypeName; }
+    struct Counters {
+        int attach = 0;
+        int detach = 0;
+    };
 
-    int attach_count = 0;
-    int detach_count = 0;
+    explicit LifecycleProbe(Counters& counters) : counters_(&counters) {}
+
+    [[nodiscard]] const char* type_name() const noexcept override { return kTypeName; }
 
     // Widened to public so the test can observe the counts directly; the base
     // class hooks stay protected.
-    void on_attach(Node&) override { ++attach_count; }
-    void on_detach(Node&) override { ++detach_count; }
+    void on_attach(Node&) override { ++counters_->attach; }
+    void on_detach(Node&) override { ++counters_->detach; }
+
+private:
+    Counters* counters_;
 };
 
 } // namespace
@@ -56,10 +65,11 @@ TEST_CASE("adding a component to a node already in a scene fires on_attach") {
     Scene scene;
     Node* node = scene.create_node("Entity");
 
-    auto* probe = node->add_component<LifecycleProbe>();
+    LifecycleProbe::Counters counters;
+    node->add_component<LifecycleProbe>(counters);
     // The node was already attached, so the component must be told immediately.
-    CHECK(probe->attach_count == 1);
-    CHECK(probe->detach_count == 0);
+    CHECK(counters.attach == 1);
+    CHECK(counters.detach == 0);
 }
 
 TEST_CASE("a component added before the node is attached fires on_attach later") {
@@ -70,20 +80,22 @@ TEST_CASE("a component added before the node is attached fires on_attach later")
     auto detached = parent->remove_child(parent->create_child<Node>("Child"));
     REQUIRE(detached != nullptr);
 
-    auto* probe = detached->add_component<LifecycleProbe>();
-    CHECK(probe->attach_count == 0);
+    LifecycleProbe::Counters counters;
+    detached->add_component<LifecycleProbe>(counters);
+    CHECK(counters.attach == 0);
 
     parent->add_child(std::move(detached));
-    CHECK(probe->attach_count == 1);
+    CHECK(counters.attach == 1);
 }
 
 TEST_CASE("removing a component fires on_detach and clears the link") {
     Scene scene;
     Node* node = scene.create_node("Entity");
-    auto* probe = node->add_component<LifecycleProbe>();
+    LifecycleProbe::Counters counters;
+    node->add_component<LifecycleProbe>(counters);
 
     CHECK(node->remove_component<LifecycleProbe>());
-    CHECK(probe->detach_count == 1);
+    CHECK(counters.detach == 1);
     CHECK(node->get_component<LifecycleProbe>() == nullptr);
     CHECK_FALSE(node->remove_component<LifecycleProbe>());
 }
@@ -91,13 +103,14 @@ TEST_CASE("removing a component fires on_detach and clears the link") {
 TEST_CASE("detaching a node from the scene detaches its components") {
     Scene scene;
     Node* root = scene.create_node("Root");
-    auto* probe = root->add_component<LifecycleProbe>();
-    CHECK(probe->attach_count == 1);
+    LifecycleProbe::Counters counters;
+    root->add_component<LifecycleProbe>(counters);
+    CHECK(counters.attach == 1);
 
     // remove_root() hands ownership back; keep the node alive through the
     // assertions that follow.
     auto removed = scene.remove_root(root);
-    CHECK(probe->detach_count == 1);
+    CHECK(counters.detach == 1);
     CHECK(removed != nullptr);
 }
 

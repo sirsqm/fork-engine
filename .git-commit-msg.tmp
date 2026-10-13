@@ -1,35 +1,28 @@
-Fix CI: doctest 2.4.12, scope warnings to our targets, format the tree
+Fix cross-platform CI: use-after-free test, MSVC narrowing, version system
 
-The first CI run failed on every platform for two independent reasons, plus
-the formatting job was misconfigured. All three are fixed and verified.
+The second CI run left Linux and clang-format green but macOS and Windows red.
+Two genuine portability bugs, plus a first-class version system.
 
-1. CMake 4.x dropped compatibility with projects that declare
-   `cmake_minimum_required(VERSION < 3.5)`. doctest 2.4.11 declares 3.0, so
-   configuration aborted on every platform. Bumped the pin to doctest 2.4.12,
-   which declares 3.5.
+macOS: test_components.cpp read detach_count from a LifecycleProbe after
+remove_component() had destroyed it. That is a use-after-free that happened to
+read 1 on Linux (the freed byte was untouched) and 0 on macOS (the allocator
+scribbled it). The probe now increments counters owned by the test frame, which
+outlive the component, so the assertion observes a live object.
 
-2. Warning flags were set with `add_compile_options()` in FESettings.cmake.
-   That form is directory-scoped but inherited by every subdirectory below it,
-   so `-Wall -Wextra -Wpedantic` leaked into the FetchContent dependencies and
-   GLFW's Wayland backend failed under `-Werror=unused-parameter`. This
-   violated the documented policy that third-party code never gets our flags.
-   Warnings are now applied per-target via the `fe_warnings` interface target
-   only; the dependency include directories (glfw, nlohmann_json, glad, stb)
-   are marked SYSTEM. `fe_mark_system` now resolves ALIAS targets, since it is
-   passed `nlohmann_json::nlohmann_json`.
+Windows: sizeof(u32) is a size_t, and passing it to OpenGLBuffer's u32
+element_size parameter is a narrowing conversion that MSVC reports as C4267.
+GLFW also failed to build again: FESettings.cmake still applied /WX with
+add_compile_options(), which is directory-scoped and leaks into FetchContent
+subdirectories. Warnings-as-errors now lives on the fe_warnings interface
+target, so /WX reaches our targets only.
 
-   This also surfaced genuine first-party warnings that were previously hidden
-   because the leak failed the build first: an unused parameter in the Node
-   attach/detach hooks, a shadowed constructor parameter, and ignored
-   [[nodiscard]] results in two tests.
+Version system: the engine version was only a project() string, invisible to
+C++ and untested. cmake/FEVersion.cmake now generates fe/version/Version.h from
+that single declaration, exposing fe::version::kEngineVersion (a SemVersion),
+kEngineVersionString, and the FE_VERSION_* macros. Engine::initialize logs the
+version on startup, and a test asserts the string matches the numeric
+components so it cannot drift. The scene file-format version stays separate,
+since it evolves on its own schedule.
 
-3. The clang-format job used a job-level `continue-on-error`, which is not a
-   valid key for that context, and the apt clang-format version varies by
-   runner image and disagrees with the checked-in .clang-format. The job now
-   installs a pinned `clang-format==23.1.3` and the tree is formatted with it,
-   so the check is a real, deterministic gate.
-
-Verified: clean configure and build with -DFE_WARNINGS_AS_ERRORS=ON on
-CMake 4.4.4 / GCC 14; no third-party or first-party warnings; 60 unit test
-cases (2218 assertions) pass; graphics tests pass with a display and skip
-cleanly without one.
+Verified on Linux/GCC 14 with -DFE_WARNINGS_AS_ERRORS=ON: clean build, 62 test
+cases / 2223 assertions pass, clang-format clean.
