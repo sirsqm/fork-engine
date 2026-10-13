@@ -92,6 +92,19 @@ void register_rigid_body2d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>(
         "fixed_rotation", &physics2d::RigidBody2D::fixed_rotation, ValueKind::Bool, &defaults));
 
+    // Sleeping. The authored knobs (whether it may sleep, how long it must be
+    // still, and the thresholds) serialize; the live state (is_sleeping and the
+    // rest timer) is runtime and deliberately does not, so a saved scene does not
+    // reload with bodies frozen mid-settle.
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>("can_sleep", &physics2d::RigidBody2D::can_sleep,
+                                                                        ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
+        "sleep_time", &physics2d::RigidBody2D::sleep_time, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
+        "sleep_linear_threshold", &physics2d::RigidBody2D::sleep_linear_threshold, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
+        "sleep_angular_threshold", &physics2d::RigidBody2D::sleep_angular_threshold, ValueKind::Float, &defaults));
+
     registry.register_type(std::move(desc));
 }
 

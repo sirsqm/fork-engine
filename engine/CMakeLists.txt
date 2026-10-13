@@ -40,6 +40,7 @@ set(FE_ENGINE_SOURCES
     src/systems/SpriteAnimationSystem.cpp
     src/physics2d/BroadPhase.cpp
     src/physics2d/Geometry.cpp
+    src/physics2d/IslandSolver.cpp
     src/physics2d/JointSolver.cpp
     src/physics2d/Physics2DQueries.cpp
     src/physics2d/Physics2DSystem.cpp
