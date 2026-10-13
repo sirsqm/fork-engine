@@ -76,6 +76,14 @@ public:
     // load or a structural change.
     void refresh_hierarchy();
 
+    // The resource manager the inspector resolves resource references against
+    // (for example a sprite's texture). Null when the document has no owning
+    // engine, which is the headless test case: resource fields then show their
+    // current key but are not editable. The host points this at the embedded
+    // engine's manager once the engine is up.
+    [[nodiscard]] ResourceManager* resources() const noexcept { return resources_; }
+    void set_resources(ResourceManager* resources) noexcept { resources_ = resources; }
+
     // --- Play control ------------------------------------------------------
     // Records that the user asked to start or stop playing. The host consumes it
     // with take_play_request() in the same frame; nothing happens until it does.
@@ -96,6 +104,7 @@ private:
     HierarchyViewModel hierarchy_;
     PlaySession play_;
     std::string scene_path_;
+    ResourceManager* resources_ = nullptr;
     PlayRequest play_request_ = PlayRequest::None;
 };
 

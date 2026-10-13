@@ -4,6 +4,7 @@
 
 #include "fe/core/Log.h"
 #include "fe/editor/HierarchyPanel.h"
+#include "fe/editor/InspectorPanel.h"
 #include "fe/editor/PlayPanel.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
@@ -19,15 +20,17 @@ EditorHost::EditorHost(Config config) : config_(std::move(config)) {}
 
 EditorHost::~EditorHost() = default;
 
-int EditorHost::run() {
+Error EditorHost::initialize() {
     if (Error error = engine_.initialize(config_.engine); error) {
         FE_LOG_CRITICAL("editor: failed to start engine: %s", error.message().c_str());
-        return 1;
+        return error;
     }
 
     // The document and its copy factories exist independently of the engine,
     // but must be registered before the first play request.
     context_.register_default_component_factories();
+    // Point the inspector's resource fields at the embedded engine's manager.
+    context_.set_resources(&engine_.resources());
 
     if (!config_.scene_to_open.empty()) {
         if (Error error = context_.load_scene(config_.scene_to_open, &engine_.resources()); error) {
@@ -44,57 +47,91 @@ int EditorHost::run() {
 
     if (Error error = ui_.initialize(engine_.window()); error) {
         FE_LOG_CRITICAL("editor: failed to initialise the UI: %s", error.message().c_str());
-        // Release the document before the engine, as the runtime does.
-        context_.scene().clear();
-        engine_.shutdown();
-        return 1;
+        // The UI failed, but the engine is up. Let shutdown() unwind in order.
+        initialized_ = true;
+        shutdown();
+        return error;
     }
+
     ui_.add_panel(std::make_unique<HierarchyPanel>());
+    ui_.add_panel(std::make_unique<InspectorPanel>());
     ui_.add_panel(std::make_unique<PlayPanel>());
 
+    initialized_ = true;
     FE_LOG_INFO("editor: ready (fork engine v%s)", version::kEngineVersionString);
+    return Error::none();
+}
 
-    u32 frame = 0;
-    while (!engine_.window().should_close()) {
-        engine_.window().input().begin_frame();
-        engine_.window().poll_events();
+bool EditorHost::should_close() const {
+    // A non-zero frame limit with a hidden window is the headless smoke test,
+    // where nothing can close the window for us.
+    if (config_.max_frames != 0 && frame_ >= config_.max_frames) {
+        return true;
+    }
+    return engine_.window().should_close();
+}
 
-        handle_play_request();
+void EditorHost::step() {
+    engine_.window().input().begin_frame();
+    engine_.window().poll_events();
 
-        // One frame: clear once, draw the scene, then the UI over it. When
-        // playing, the scene drawn is the play copy, and the engine's clock is
-        // advanced by PlaySession::tick; otherwise the authored scene is drawn
-        // and no simulation time passes.
-        ui_.begin_frame();
-        ui_.draw_panels(context_);
+    handle_play_request();
 
-        if (context_.play().is_playing()) {
-            // tick() begins the frame and draws the play scene; end_frame() is
-            // called by the host after the UI is rendered.
-            auto result = context_.play().tick(engine_);
-            if (!result) {
-                FE_LOG_ERROR("editor: play render failed: %s", result.error().message().c_str());
-            }
-        } else {
-            render_scene(context_.scene());
+    // One frame: clear once, draw the scene, then the UI over it. When playing,
+    // the scene drawn is the play copy, and the engine's clock is advanced by
+    // PlaySession::tick; otherwise the authored scene is drawn and no simulation
+    // time passes.
+    ui_.begin_frame();
+    ui_.draw_panels(context_);
+
+    if (context_.play().is_playing()) {
+        // tick() begins the frame and draws the play scene; end_frame() is
+        // called by the host after the UI is rendered.
+        auto result = context_.play().tick(engine_);
+        if (!result) {
+            FE_LOG_ERROR("editor: play render failed: %s", result.error().message().c_str());
         }
-
-        ui_.end_frame();
-        engine_.device().end_frame();
-
-        ++frame;
-        if (config_.max_frames != 0 && frame >= config_.max_frames) {
-            FE_LOG_INFO("editor: reached the frame limit (%u frames), stopping", frame);
-            break;
-        }
+    } else {
+        render_scene(context_.scene());
     }
 
-    ui_.shutdown();
+    ui_.end_frame();
+    engine_.device().end_frame();
+
+    ++frame_;
+}
+
+void EditorHost::shutdown() {
+    if (!initialized_) {
+        return;
+    }
+    initialized_ = false;
+
+    if (ui_.is_initialized()) {
+        ui_.shutdown();
+    }
     // Release the play scene, then the authored scene, then the engine. Scene
-    // tears down in reverse of the runtime's documented order.
+    // teardown runs in reverse of the runtime's documented order so components
+    // that own GPU-backed resources are gone before the device.
     context_.play().stop();
     context_.scene().clear();
     engine_.shutdown();
+}
+
+int EditorHost::run() {
+    if (Error error = initialize(); error) {
+        return 1;
+    }
+
+    while (!should_close()) {
+        step();
+    }
+
+    if (config_.max_frames != 0 && frame_ >= config_.max_frames) {
+        FE_LOG_INFO("editor: reached the frame limit (%u frames), stopping", frame_);
+    }
+
+    shutdown();
     return 0;
 }
 
