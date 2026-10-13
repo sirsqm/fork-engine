@@ -34,6 +34,7 @@ rather than editing it.
 | [0023](0023-physics2d-broadphase.md) | A uniform-grid broad phase for 2D physics | Proposed |
 | [0024](0024-profiler-instrumentation.md) | Profiler instrumentation, runtime integration, and the frame report | Proposed |
 | [0025](0025-project-file.md) | The project file: settings as a JSON document the editor opens | Accepted |
+| [0026](0026-physics2d-islands-sleeping.md) | 2D island detection and body sleeping | Accepted |
 
 ## Format
 

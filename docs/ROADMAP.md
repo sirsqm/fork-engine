@@ -109,8 +109,11 @@ needed a concrete mechanism before gameplay could grow. See
       per step instead of once per iteration, so a step is O(candidates *
       iterations) rather than O(bodies² * iterations) — see
       [ADR-0023](adr/0023-physics2d-broadphase.md)
+- [~] 2D island detection and body sleeping: bodies group into islands over the
+      contact-and-joint graph and a settled island stops being solved — see
+      [ADR-0026](adr/0026-physics2d-islands-sleeping.md)
 - [ ] 2D physics refinements: collider offsets, oriented-box colliders,
-      continuous collision detection, sleeping
+      continuous collision detection
 - [ ] 3D physics
 - [ ] Integration with the scene and the editor
 - [ ] Debug drawing

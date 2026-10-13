@@ -69,7 +69,7 @@ core  <-  net                     (planned: collaborative editing)
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
-| `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, and contact events | core, scene, systems, reflect |
+| `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
@@ -265,6 +265,21 @@ written back, using the same sequential-impulse shape as a contact. A joint end
 may be any node, not only a collider, so a pendulum can hang from a bare pivot;
 a broken reference (nil, missing, or self-referential) is skipped and reported
 through `joint_diagnostics()` rather than crashing.
+
+**Sleeping** stops a settled scene from doing solver work. Bodies are grouped
+into *islands* -- the connected components of the contact-and-joint graph over
+the dynamic bodies, with static geometry deliberately not joining islands, so two
+crates on one floor are separate. `IslandBuilder` (`IslandSolver.h`) is a pure
+union-find over body indices with no scene and no components; `Physics2DSystem`
+builds its links from overlapping bounds and from joints and calls it. A body
+that has been slow for `sleep_time` (default 0.5 s) lets its whole island sleep,
+and the solver and integrator then skip it; a contact or joint to an *awake*
+dynamic body wakes the island before the solver runs, so nothing ever passes
+through a sleeping body. The island pass runs before the solver and the sleep
+pass after it, both by design. The state is observable (`is_sleeping`,
+`sleeping_body_count()`, `island_count()`, `same_island()`) and controllable
+(`can_sleep`, `sleep()`, `wake()`), and the authored knobs serialize while the
+live state does not. See [ADR-0026](adr/0026-physics2d-islands-sleeping.md).
 
 ### Audio as a module
 

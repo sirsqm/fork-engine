@@ -7,11 +7,13 @@
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
 #include "fe/physics2d/BroadPhase.h"
+#include "fe/physics2d/IslandSolver.h"
 #include "fe/physics2d/JointSolver.h"
 #include "fe/systems/System.h"
 
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace fe {
@@ -72,6 +74,34 @@ struct ContactEvent {
 // grid cell is necessary but not sufficient: the solver still runs the
 // `bounds_overlap` prefilter and then the narrow phase on every candidate, so
 // the broad phase is free to be conservative.
+//
+// --- Sleeping and the step order -------------------------------------------
+//
+// A body that has been nearly still for a sustained number of steps is put to
+// sleep, and a sleeping body is skipped by integration and by the solver, so a
+// pile that settled long ago stops costing solver time (ADR-0026). Sleeping is
+// decided per *island*: the connected component of the contact-and-joint graph,
+// with static geometry not joining islands. A body sleeps only when every
+// dynamic body in its island is ready, and waking one body wakes the island.
+//
+// One step runs, in order:
+//
+//   1. gather        -- flatten the scene into bodies, joints, node index
+//   2. broad phase   -- find the candidate contact pairs once for the step
+//   3. islands       -- group the bodies by contacts and joints
+//   4. wake checks   -- wake an island touched by an awake dynamic body, then
+//                       propagate that wake across the whole island
+//   5. integrate     -- gravity, torque, damping, position, rotation; awake only
+//   6. solve         -- contacts and joints; awake only
+//   7. sleep checks  -- advance each awake island's rest timers, then sleep a
+//                       whole island once every body in it has been still long
+//                       enough
+//
+// The wake checks run before integration so a moving body wakes a sleeper in the
+// same step it reaches it, and the solver then resolves the pair; a body can
+// never pass through a sleeping one because a touching pair is a link, and a link
+// to a moving body wakes it before the solver runs. The sleep checks run last so
+// the decision is made on the velocity the solver actually leaves behind.
 class Physics2DSystem final : public System {
 public:
     [[nodiscard]] std::string_view name() const noexcept override { return "Physics2DSystem"; }
@@ -132,6 +162,25 @@ public:
         Error error;
     };
     [[nodiscard]] const std::vector<JointDiagnostic>& joint_diagnostics() const noexcept { return joint_diagnostics_; }
+
+    // --- Sleeping ----------------------------------------------------------
+
+    // Islands found in the most recent update: the connected components of the
+    // contact-and-joint graph over the dynamic bodies, static geometry excluded.
+    // Exposed so a test or the editor can assert the grouping without reaching
+    // into the solver.
+    [[nodiscard]] usize island_count() const noexcept { return islands_.island_count(); }
+
+    // True when the last update put the two bodies (by node id) in one island.
+    // False when either node is not a simulated dynamic body, or is in no
+    // island. Used by tests to prove a jointed pair is one island and that two
+    // separate piles are not.
+    [[nodiscard]] bool same_island(const Uuid& a, const Uuid& b) const;
+
+    // Sleeping dynamic bodies in the most recent update. A sleeping body is
+    // skipped by integration and by the solver, so this is the count that is not
+    // costing solver time.
+    [[nodiscard]] usize sleeping_body_count() const noexcept { return sleeping_bodies_; }
 
 private:
     // One simulated node, flattened out of the scene for the duration of the
@@ -208,6 +257,27 @@ private:
     // rather than silent. Never throws and never mutates the world.
     void note_joint_skipped(std::string_view type, const Uuid& body_a, const Uuid& body_b, Error error);
 
+    // Builds the island graph: one link per contact pair and per solved joint,
+    // with only dynamic bodies as vertices (a link to a static body is dropped).
+    // Contacts are read from `active_pairs_` (the pairs that touch this step),
+    // which the solve pass has already filled.
+    void build_islands();
+
+    // Wakes islands that an awake dynamic body is touching or joined to, then
+    // propagates that wake across each island. Runs before integration, so a
+    // moving body wakes a sleeper in the same step it reaches it.
+    void apply_wake_checks();
+
+    // Advances each awake island's rest timers and sleeps an island once every
+    // dynamic body in it has been still for long enough. Runs last, on the
+    // velocity the solver left behind, and writes the result back to the
+    // RigidBody2D components.
+    void apply_sleep_checks(f32 delta_time);
+
+    // Marks every body of island `index` awake, in `asleep_` and on the bodies
+    // themselves. Idempotent.
+    void wake_island(usize index);
+
     std::vector<Body> bodies_;
     usize contacts_ = 0;
 
@@ -224,6 +294,26 @@ private:
     std::vector<BodyPair> active_pairs_;
     std::vector<BodyPair> previous_pairs_;
     std::vector<ContactEvent> events_;
+
+    // Sleeping. `islands_` groups the dynamic bodies by contact and joint. The
+    // island graph has only dynamic bodies as vertices, so `island_vertex_body_`
+    // maps an island vertex back to its index in `bodies_`, and `body_vertex_`
+    // maps a body index to its vertex (or kNoVertex for a static body, which is
+    // never part of an island). `island_awake_` holds one flag per island for
+    // the wake and sleep passes; `asleep_` is one flag per body, rebuilt each
+    // step from `RigidBody2D::is_sleeping` and written back after the sleep
+    // checks. `sleeping_bodies_` is the count reported by sleeping_body_count().
+    IslandBuilder islands_;
+    std::vector<IslandLink> island_links_;
+    std::vector<usize> island_vertex_body_;
+    std::vector<usize> body_vertex_;
+    std::vector<bool> asleep_;
+    std::vector<bool> island_awake_;
+    usize sleeping_bodies_ = 0;
+
+    // Maps a node id to its index in `bodies_`, rebuilt each update, so a
+    // contact link and the same_island() query can find a body in O(1).
+    std::unordered_map<Uuid, usize> body_index_;
 
     // Joints, rebuilt each update from the scene.
     std::vector<Joint> joints_;
