@@ -11,6 +11,7 @@ add_executable(fork_engine_tests
     src/test_uuid.cpp
     src/test_filesystem.cpp
     src/test_profiler.cpp
+    src/test_profiler_disabled.cpp
     src/test_math.cpp
     src/test_frustum.cpp
     src/test_input_state.cpp
@@ -30,6 +31,11 @@ add_executable(fork_engine_tests
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_engine_tests PRIVATE cxx_std_20)
 set_target_properties(fork_engine_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# The disabled-instrumentation test must see the macros expand to nothing, so
+# this one translation unit is compiled with profiling off. The define is set
+# per-source so the rest of the suite keeps instrumentation on.
+set_source_files_properties(src/test_profiler_disabled.cpp PROPERTIES COMPILE_DEFINITIONS "FE_PROFILING=0")
 
 add_test(NAME engine_tests COMMAND fork_engine_tests)
 
@@ -68,6 +74,7 @@ add_executable(fork_graphics_tests
     src/graphics_main.cpp
     src/test_renderer2d.cpp
     src/test_renderer3d.cpp
+    src/test_application_profiler.cpp
 )
 target_link_libraries(fork_graphics_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_graphics_tests PRIVATE cxx_std_20)
