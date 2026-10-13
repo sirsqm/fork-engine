@@ -35,8 +35,11 @@ ctest --test-dir build --output-on-failure
 
 CI builds every push on Linux/GCC (Debug+Release), macOS/Clang (Debug), and
 Windows/MSVC (Debug), with warnings as errors. It also runs a clang-format
-check. Keep all five green; a warning on one compiler is a real defect, not
-noise.
+check. Two Linux-only jobs guard quality beyond a build: a sanitizer run
+(AddressSanitizer + UndefinedBehaviorSanitizer, with LeakSanitizer on for the
+pure-logic tests and off for the GL tests; ADR-0035) and a benchmark regression
+gate (ADR-0033). Keep every job green; a warning on one compiler is a real
+defect, not noise.
 
 ## Conventions that CI enforces
 
