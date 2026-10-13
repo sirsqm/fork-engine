@@ -5,7 +5,9 @@
 #include "fe/core/Log.h"
 
 #include <memory>
+#include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace fe;

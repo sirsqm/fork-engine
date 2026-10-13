@@ -7,6 +7,14 @@
 #include <csetjmp>
 #include <string>
 
+#if defined(_MSC_VER)
+// C4611: longjmp out of a frame holding C++ objects is non-portable. It is
+// deliberate here: the assertion handler is [[noreturn]] and must not throw,
+// so longjmp is how this harness unwinds out of a fatal error path. Scoped to
+// this translation unit, which exists only to test that path.
+#pragma warning(disable : 4611)
+#endif
+
 using namespace fe;
 
 namespace {
