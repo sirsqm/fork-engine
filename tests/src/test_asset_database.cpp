@@ -120,7 +120,9 @@ TEST_CASE("moving an asset and its sidecar keeps the identity and the path updat
     REQUIRE(found != nullptr);
     CHECK(found->path == "assets/textures/hero.png");
     CHECK(db.find_by_path("assets/hero.png") == nullptr);
-    CHECK(db.absolute_path(id) == dir.file("assets/textures/hero.png"));
+    // Compare as paths: absolute_path() uses '/' while the native separator is
+    // '\' on Windows, and path comparison normalises that.
+    CHECK(std::filesystem::path(db.absolute_path(id)) == std::filesystem::path(dir.file("assets/textures/hero.png")));
 }
 
 TEST_CASE("a sidecar whose asset is gone is skipped, not indexed") {
