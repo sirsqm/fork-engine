@@ -19,6 +19,7 @@
 # ---------------------------------------------------------------------------
 add_library(fork_editor_core STATIC
     src/HierarchyViewModel.cpp
+    src/AssetBrowserViewModel.cpp
     src/EditorContext.cpp
     src/PlaySession.cpp
     src/PropertyEditor.cpp
@@ -42,6 +43,7 @@ add_library(fork_editor STATIC
     src/EditorUi.cpp
     src/EditorHost.cpp
     src/HierarchyPanel.cpp
+    src/AssetBrowserPanel.cpp
     src/PlayPanel.cpp
     src/InspectorPanel.cpp
     src/ViewportPanel.cpp

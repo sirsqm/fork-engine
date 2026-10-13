@@ -69,7 +69,7 @@ core  <-  net                     (planned: collaborative editing)
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
-| `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular), joints (distance and revolute), queries, and contact events | core, scene, systems, reflect |
+| `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, and contact events | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
@@ -226,11 +226,14 @@ bodies the same code:
 
 Each update integrates linear velocity (gravity, damping) and position, and
 angular velocity (torque, damping) and rotation, then runs a fixed number of
-sequential-impulse iterations over every pair: a bounding-box broad phase, a
-narrow phase (`intersect` for box/box, circle/circle, circle/box), a normal
-impulse with restitution, a Coulomb friction impulse, and Baumgarte positional
-correction. Positions and rotation are written back to `Node::transform()`;
-linear and angular velocities back to the `RigidBody2D`.
+sequential-impulse iterations over the *candidate* pairs: a uniform-grid
+(spatial hash) broad phase finds the candidates once per step, a narrow phase
+(`intersect` for box/box, circle/circle, circle/box) tests each candidate, and
+the solver applies a normal impulse with restitution, a Coulomb friction
+impulse, and Baumgarte positional correction. The candidate set is computed once,
+before the iteration loop, so a step costs O(candidates * iterations) rather than
+O(bodies² * iterations). Positions and rotation are written back to
+`Node::transform()`; linear and angular velocities back to the `RigidBody2D`.
 
 **Queries** are free functions over a scene (`Physics2DQueries.h`): `raycast`,
 `overlap_circle`, `overlap_box`, and `overlap_point`. They are not a system, so
@@ -527,8 +530,8 @@ never back. It is built as three targets:
 
 | Target | Responsibility | Depends on |
 | --- | --- | --- |
-| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
-| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, asset browser view model (`AssetBrowserViewModel`), play-in-editor (`PlaySession`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
+| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), the `AssetBrowserPanel`, and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
 | `fork_editor_shell` | The executable entry point. | `fork_editor` |
 
 The split exists so the editable, testable logic has no UI dependency: the
@@ -582,7 +585,30 @@ the group when the widget's gesture finishes. Editing is refused while
 play-in-editor is running, because play shows a copy and an edit to the hidden
 authored scene would be invisible.
 
-Still to come under M2: the asset browser and project settings.
+The asset browser lists what the resource system has indexed. Its logic lives in
+the headless `AssetBrowserViewModel`, which reads the `AssetDatabase` the
+`ResourceManager` already maintains, so the browser shows exactly the assets the
+engine can load rather than a second, parallel view of the filesystem. It
+sorts by path, filters by a case-insensitive substring, and holds the selection
+by `AssetId`, so a rescan (a file move, an import) is reflected without the
+browser knowing about paths. The one thing it produces that outlives the session
+is an asset's stable `guid:<uuid>` reference, which is what a drag out of the
+browser hands to a drop target such as a sprite's texture field. Listing is
+read-only; importing and moving assets are later work.
+
+Still to come under M2: asset import and project settings.
+
+### The project asset root
+
+The editor has no project file yet, but it does have the one project setting
+that changes engine behaviour today: where the assets live. `EditorContext::
+set_project_root` records that directory and points the engine's `AssetDatabase`
+at it, so the browser lists the project's assets and `guid:<uuid>` references
+resolve. The host sets it before the first scene is loaded, so GUID references
+inside the scene resolve during deserialization; the shell exposes it as
+`--project DIR`. With no root the editor still runs — the browser is simply
+empty and only path references resolve. A real project file, with more settings
+and a build/export path, is the remaining M2 work.
 
 ### Collaborative editing (planned)
 
@@ -686,10 +712,11 @@ Every milestone must build and pass its tests before the next one begins.
   [ADR-0012](adr/0012-forward-lighting-model.md), and
   [ADR-0014](adr/0014-directional-shadow-mapping.md)).
 - 3D physics, and the parts of 2D physics not in the first cuts: collider
-  offsets, oriented-box colliders, continuous collision detection, sleeping, and
-  a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md),
-  [ADR-0013](adr/0013-physics2d-queries-events-angular.md), and
-  [ADR-0021](adr/0021-physics2d-joints.md)).
+  offsets, oriented-box colliders, continuous collision detection, and sleeping
+  (see [ADR-0009](adr/0009-physics2d-system.md),
+  [ADR-0013](adr/0013-physics2d-queries-events-angular.md),
+  [ADR-0021](adr/0021-physics2d-joints.md), and
+  [ADR-0023](adr/0023-physics2d-broadphase.md)).
 - The parts of audio not in the first cut: 3D positional attenuation, streaming
   and large-file playback, compressed codecs, and audio buses / mixing groups
   (see [ADR-0016](adr/0016-audio-module.md)).

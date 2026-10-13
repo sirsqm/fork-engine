@@ -235,4 +235,15 @@ bool EditorContext::redo() {
     return redone;
 }
 
+void EditorContext::set_project_root(std::string root, ResourceManager* resources) {
+    project_root_ = std::move(root);
+    if (resources == nullptr) {
+        return;
+    }
+    // Setting the root rescans the database, so the asset browser and GUID
+    // reference resolution see the new project immediately. An empty root clears
+    // the index (set_root on the database handles that).
+    resources->assets().set_root(project_root_);
+}
+
 } // namespace fe::editor
