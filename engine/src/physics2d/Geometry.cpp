@@ -4,9 +4,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace fe::physics2d {
 namespace {
+
+// Below this a direction component is treated as zero, so a ray parallel to a
+// slab does not divide by it. The value is well under any meaningful world unit
+// and well above denormal noise.
+constexpr f32 kDirectionEpsilon = 1e-8f;
 
 // Boxes are axis-aligned, so overlap on each axis is an interval test and the
 // separating axis is the one with the smallest overlap. That axis is the
@@ -147,6 +153,133 @@ Contact2D intersect_shapes(ShapeType a_type, const Aabb2D& a_box, const Circle2D
     Contact2D contact = intersect(b_circle, a_box);
     contact.normal = Vec2{-contact.normal.x, -contact.normal.y};
     return contact;
+}
+
+// --- Ray casts -------------------------------------------------------------
+
+f32 raycast_aabb(const Vec2& origin, const Vec2& direction, const Aabb2D& box) noexcept {
+    // Slab test. For each axis the ray is inside the slab for t in [t_near,
+    // t_far]; the ray enters the box at the larger of the near values and leaves
+    // at the smaller of the far values. An axis-parallel ray (a zero direction
+    // component) is inside its slab only if the origin is already between the
+    // faces, which is handled without dividing by zero.
+    f32 t_near = -std::numeric_limits<f32>::infinity();
+    f32 t_far = std::numeric_limits<f32>::infinity();
+
+    const f32 origin_axis[2] = {origin.x, origin.y};
+    const f32 direction_axis[2] = {direction.x, direction.y};
+    const f32 min_axis[2] = {box.min_x(), box.min_y()};
+    const f32 max_axis[2] = {box.max_x(), box.max_y()};
+
+    for (int axis = 0; axis < 2; ++axis) {
+        const f32 o = origin_axis[axis];
+        const f32 d = direction_axis[axis];
+        if (std::abs(d) < kDirectionEpsilon) {
+            // Parallel to this slab: a miss unless the origin is within it.
+            if (o < min_axis[axis] || o > max_axis[axis]) {
+                return -1.0f;
+            }
+            continue;
+        }
+        const f32 inv = 1.0f / d;
+        f32 t0 = (min_axis[axis] - o) * inv;
+        f32 t1 = (max_axis[axis] - o) * inv;
+        if (t0 > t1) {
+            std::swap(t0, t1);
+        }
+        t_near = std::max(t_near, t0);
+        t_far = std::min(t_far, t1);
+        if (t_near > t_far) {
+            return -1.0f;
+        }
+    }
+
+    // The origin is inside the box when t_near < 0 < t_far; report a hit at 0
+    // rather than a negative distance so callers always get a forward hit.
+    if (t_far < 0.0f) {
+        return -1.0f; // the box is entirely behind the ray
+    }
+    return t_near > 0.0f ? t_near : 0.0f;
+}
+
+f32 raycast_circle(const Vec2& origin, const Vec2& direction, const Circle2D& circle) noexcept {
+    if (circle.radius <= 0.0f) {
+        return -1.0f;
+    }
+    // Solve |origin + t*direction - center|^2 = r^2 for the smallest t >= 0.
+    const Vec2 to_origin = origin - circle.center;
+    const f32 b = to_origin.dot(direction);
+    const f32 c = to_origin.length_squared() - circle.radius * circle.radius;
+    if (c > 0.0f && b > 0.0f) {
+        return -1.0f; // origin outside and pointing away from the circle
+    }
+    const f32 discriminant = b * b - c;
+    if (discriminant < 0.0f) {
+        return -1.0f;
+    }
+    const f32 root = std::sqrt(discriminant);
+    const f32 t = -b - root;
+    if (t >= 0.0f) {
+        return t;
+    }
+    // The origin is inside the circle; the exit root is behind the far side, so
+    // report an immediate hit.
+    return 0.0f;
+}
+
+f32 raycast_shape(const Vec2& origin, const Vec2& direction, ShapeType type, const Aabb2D& box,
+                  const Circle2D& circle) noexcept {
+    return type == ShapeType::Circle ? raycast_circle(origin, direction, circle) : raycast_aabb(origin, direction, box);
+}
+
+Vec2 raycast_aabb_normal(const Vec2& origin, const Vec2& direction, const Aabb2D& box, f32 distance) noexcept {
+    if (distance <= 0.0f) {
+        // The origin is inside (or on) the box; there is no crossed face, so the
+        // normal points back along the ray.
+        return Vec2{-direction.x, -direction.y};
+    }
+    const Vec2 point = origin + direction * distance;
+    // Which face was crossed: the axis whose hit point sits on a face within a
+    // small tolerance. Prefer the axis with the smaller distance to that face.
+    const f32 dx = std::min(std::abs(point.x - box.min_x()), std::abs(point.x - box.max_x()));
+    const f32 dy = std::min(std::abs(point.y - box.min_y()), std::abs(point.y - box.max_y()));
+    if (dx <= dy) {
+        const f32 sign = (point.x < box.center.x) ? -1.0f : 1.0f;
+        return Vec2{sign, 0.0f};
+    }
+    const f32 sign = (point.y < box.center.y) ? -1.0f : 1.0f;
+    return Vec2{0.0f, sign};
+}
+
+Vec2 raycast_circle_normal(const Vec2& origin, const Vec2& direction, const Circle2D& circle, f32 distance) noexcept {
+    const Vec2 point = origin + direction * distance;
+    const Vec2 outward = point - circle.center;
+    if (outward.length_squared() <= kDirectionEpsilon * kDirectionEpsilon) {
+        return Vec2{-direction.x, -direction.y}; // degenerate: hit at the centre
+    }
+    return outward.normalized();
+}
+
+Vec2 raycast_shape_normal(const Vec2& origin, const Vec2& direction, ShapeType type, const Aabb2D& box,
+                          const Circle2D& circle, f32 distance) noexcept {
+    return type == ShapeType::Circle ? raycast_circle_normal(origin, direction, circle, distance)
+                                     : raycast_aabb_normal(origin, direction, box, distance);
+}
+
+bool contains(const Aabb2D& box, const Vec2& point) noexcept {
+    return point.x >= box.min_x() && point.x <= box.max_x() && point.y >= box.min_y() && point.y <= box.max_y();
+}
+
+bool contains(const Circle2D& circle, const Vec2& point) noexcept {
+    if (circle.radius <= 0.0f) {
+        return false;
+    }
+    const Vec2 delta = point - circle.center;
+    return delta.length_squared() <= circle.radius * circle.radius;
+}
+
+bool contains_shape(ShapeType type, const Aabb2D& box, const Circle2D& circle, const Vec2& point) noexcept {
+    return type == ShapeType::Circle ? contains(circle, point) : contains(box, point);
 }
 
 } // namespace fe::physics2d

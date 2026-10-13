@@ -54,6 +54,27 @@ public:
     [[nodiscard]] Aabb2D bounds(const Vec2& center) const noexcept {
         return shape == ShapeType::Box ? box(center) : bounds_of(circle(center));
     }
+
+    // The moment of inertia about the shape's centre for a body of `mass`. This
+    // is what lets a rigid body derive a sensible rotational inertia from its
+    // shape without the author computing one:
+    //
+    //   * solid box:    (1/12) m (w^2 + h^2), with w, h the full side lengths
+    //   * solid disc:   (1/2) m r^2
+    //
+    // A non-positive mass yields zero, matching an immovable body. The value is
+    // always >= 0; the solver treats zero as "infinite inertia".
+    [[nodiscard]] f32 inertia_about_center(f32 mass) const noexcept {
+        if (mass <= 0.0f) {
+            return 0.0f;
+        }
+        if (shape == ShapeType::Circle) {
+            return 0.5f * mass * radius * radius;
+        }
+        const f32 width = 2.0f * half_extent.x;
+        const f32 height = 2.0f * half_extent.y;
+        return mass * (width * width + height * height) / 12.0f;
+    }
 };
 
 } // namespace fe::physics2d
