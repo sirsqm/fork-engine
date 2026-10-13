@@ -212,8 +212,11 @@ Result<std::shared_ptr<Resource>> WavLoader::load(std::string_view path) {
 
 std::string WavLoader::reference_key(std::string_view file_path) {
     // An already-schemed path is returned unchanged so the helper is safe to
-    // apply to either a bare file path or an existing reference.
-    if (file_path.find(':') != std::string_view::npos) {
+    // apply to either a bare file path or an existing reference. A colon at
+    // index <= 1 is a Windows drive letter ("C:/..."), not a scheme, matching
+    // the split ResourceManager::load performs.
+    const std::size_t colon = file_path.find(':');
+    if (colon != std::string_view::npos && colon > 1) {
         return std::string(file_path);
     }
     return "wav:" + std::string(file_path);
