@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref; only the latest push matters.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux / GCC / Debug
+            os: ubuntu-latest
+            compiler: gcc
+            build_type: Debug
+          - name: Linux / GCC / Release
+            os: ubuntu-latest
+            compiler: gcc
+            build_type: Release
+          - name: macOS / Clang / Debug
+            os: macos-latest
+            compiler: clang
+            build_type: Debug
+          - name: Windows / MSVC / Debug
+            os: windows-latest
+            compiler: msvc
+            build_type: Debug
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # GLFW (fetched by CMake) needs the X11/Wayland development headers, and
+      # the graphics tests need a virtual display plus a software GL driver.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            xvfb \
+            mesa-utils
+
+      - name: Configure (Linux/macOS)
+        if: runner.os != 'Windows'
+        env:
+          CC: ${{ matrix.compiler == 'clang' && 'clang' || 'gcc' }}
+          CXX: ${{ matrix.compiler == 'clang' && 'clang++' || 'g++' }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DFE_WARNINGS_AS_ERRORS=ON
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DFE_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+      - name: Test (Linux, with a virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 640x480x24" ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }}
+
+      - name: Test (macOS/Windows)
+        if: runner.os != 'Linux'
+        run: ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }}
+
+      - name: Run the sandbox headless (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_sandbox --headless 30
+
+  format-check:
+    name: clang-format (advisory)
+    runs-on: ubuntu-latest
+    # Advisory for now: the codebase predates the .clang-format file, so the
+    # check reports drift without failing the build. Remove `continue-on-error`
+    # once the tree has been formatted with `clang-format -i`.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+      - name: Check formatting
+        run: |
+          files=$(git ls-files '*.h' '*.hpp' '*.cpp' '*.cc' | grep -v '^third_party/')
+          if [ -z "$files" ]; then
+            echo "No first-party C++ files to check."
+            exit 0
+          fi
+          clang-format --dry-run --Werror $files
