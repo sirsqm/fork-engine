@@ -10,6 +10,7 @@
 #   core  <-  reflect  <-  scene, resources
 #   core  <-  serialization  <-  scene, resources, reflect
 #   core, scene, resources  <-  systems
+#   core, scene, systems, reflect  <-  physics2d
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 
@@ -34,6 +35,9 @@ set(FE_ENGINE_SOURCES
     src/systems/System.cpp
     src/systems/SceneSchedule.cpp
     src/systems/SpriteAnimationSystem.cpp
+    src/physics2d/Geometry.cpp
+    src/physics2d/Physics2DSystem.cpp
+    src/physics2d/PhysicsTypes.cpp
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/renderer2d/Renderer2D.cpp

@@ -34,6 +34,7 @@ core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
 core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
 core, scene, resources  <-  systems
+core, scene, systems, reflect  <-  physics2d
 everything  <-  runtime
 ```
 
@@ -47,6 +48,7 @@ everything  <-  runtime
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
+| `physics2d` | 2D collision shapes and a rigid-body simulation system | core, scene, systems, reflect |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
 
@@ -137,6 +139,35 @@ component and writes the current cell's UVs onto the node's `Sprite2D`. It shows
 the shape -- gather the components you process into a flat array, advance them,
 hand the result to the subsystem that consumes it -- without the renderer
 knowing animation exists.
+
+### Physics as a system
+
+`physics2d` is the first system that *simulates* the scene rather than reading
+it. It is the real test of the hybrid model: a physics solver wants a flat array
+of bodies, while the scene is a tree of nodes, so `Physics2DSystem` flattens the
+scene into its own layout, simulates, and writes back -- the scene graph is read
+once and written once, and the inner loop never touches it.
+
+Shape and motion are separate components, which is what makes static and dynamic
+bodies the same code:
+
+| Node has | Behaviour |
+| --- | --- |
+| `Collider2D` only | Static obstacle: collided with, never moved |
+| `Collider2D` + `RigidBody2D` (mass > 0) | Dynamic body: pushed by gravity and collisions |
+
+Each update integrates velocity (gravity, damping) and position, then runs a
+fixed number of sequential-impulse iterations over every pair: a bounding-box
+broad phase, a narrow phase (`intersect` for box/box, circle/circle, circle/box),
+a normal impulse with restitution, a Coulomb friction impulse, and Baumgarte
+positional correction. Positions are written back to `Node::transform()`;
+velocities back to the `RigidBody2D`.
+
+The first cut deliberately has **no angular dynamics**, so a `Collider2D` is an
+AABB or a circle and a shape is centred on its node. That limit is stated rather
+than hidden: an offset that broke under rotation would be worse than no offset.
+See [ADR-0009](adr/0009-physics2d-system.md) for the full scope and the
+alternatives considered (a third-party library, node subclasses, a full ECS).
 
 ### Identity
 
@@ -307,12 +338,12 @@ Every milestone must build and pass its tests before the next one begins.
 ## 12. What is deliberately not here yet
 
 - 3D rendering, lighting, shadows, skeletal animation.
-- Physics, audio, animation, tilemaps, particles.
+- 3D physics, and the parts of 2D physics not in the first cut: angular
+  dynamics, collider offsets, joints, continuous collision detection, sleeping,
+  and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).
+- Audio, tilemaps, particles, animation clips and state machines.
 - The editor.
 - Scripting.
-- Reflection (the serializer currently uses a small per-component switch; a
-  registry replaces it once the component set grows, without changing the file
-  format).
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread).
 
