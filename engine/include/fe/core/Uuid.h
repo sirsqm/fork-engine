@@ -28,6 +28,10 @@ public:
     // input. Parsing never throws.
     [[nodiscard]] static bool try_parse(std::string_view text, Uuid& out) noexcept;
 
+    // Builds an id from its 16 raw bytes. The counterpart of bytes(), used when
+    // an id is read from a binary container (a pack, a future binary scene).
+    [[nodiscard]] static Uuid from_bytes(const std::array<u8, 16>& bytes) noexcept;
+
     [[nodiscard]] const std::array<u8, 16>& bytes() const noexcept { return bytes_; }
     [[nodiscard]] bool is_nil() const noexcept;
 

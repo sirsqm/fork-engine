@@ -9,8 +9,11 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fe {
+
+class ResourceSource;
 
 // Base class for every loaded asset.
 //
@@ -80,10 +83,29 @@ public:
     // (including the dot, e.g. ".png").
     [[nodiscard]] virtual bool supports(std::string_view extension) const noexcept = 0;
 
+    // The byte source this loader reads from, set by the manager around each
+    // load() call. A loader reads its input through `source->read_binary(path)`
+    // rather than the filesystem, so a mounted pack (docs/adr/0030) is served
+    // with no loader change. Null outside a manager-driven load, which is the
+    // case a unit test drives load() directly; a loader that needs bytes then
+    // reads the filesystem itself.
+    void set_source(const ResourceSource* source) noexcept { source_ = source; }
+    [[nodiscard]] const ResourceSource* source() const noexcept { return source_; }
+
+    // Reads a loader's input through the current source, falling back to the
+    // filesystem when there is none (a direct load() in a test). A loader calls
+    // these instead of the filesystem directly, so mounting a pack needs no
+    // change in the loader.
+    [[nodiscard]] Result<std::vector<u8>> read_bytes(std::string_view path) const;
+    [[nodiscard]] Result<std::string> read_text(std::string_view path) const;
+
     // Loads `path` (with the scheme already stripped). The manager is provided
     // so a loader can request other resources; for example, the GPU texture
     // loader first loads the decoded CPU image.
     [[nodiscard]] virtual Result<std::shared_ptr<Resource>> load(std::string_view path) = 0;
+
+private:
+    const ResourceSource* source_ = nullptr;
 };
 
 } // namespace fe
