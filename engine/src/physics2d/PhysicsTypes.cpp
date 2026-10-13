@@ -71,14 +71,24 @@ void register_rigid_body2d(Registry& registry) {
 
     desc.properties.push_back(make_vector_group<physics2d::RigidBody2D, Vec2>(
         "velocity", &physics2d::RigidBody2D::velocity, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
+        "angular_velocity", &physics2d::RigidBody2D::angular_velocity, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>("torque", &physics2d::RigidBody2D::torque,
+                                                                       ValueKind::Float, &defaults));
     desc.properties.push_back(
         make_scalar<physics2d::RigidBody2D, f32>("mass", &physics2d::RigidBody2D::mass, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>("inertia", &physics2d::RigidBody2D::inertia,
+                                                                       ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
         "linear_damping", &physics2d::RigidBody2D::linear_damping, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
+        "angular_damping", &physics2d::RigidBody2D::angular_damping, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>("kinematic", &physics2d::RigidBody2D::kinematic,
                                                                         ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>(
         "affected_by_gravity", &physics2d::RigidBody2D::affected_by_gravity, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>(
+        "fixed_rotation", &physics2d::RigidBody2D::fixed_rotation, ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
 }
