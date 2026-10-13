@@ -18,6 +18,7 @@
 #include "fe/systems/System.h"
 
 #include <string>
+#include <string_view>
 
 using namespace fe;
 
