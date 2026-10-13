@@ -21,6 +21,7 @@ add_library(fork_editor_core STATIC
     src/HierarchyViewModel.cpp
     src/AssetBrowserViewModel.cpp
     src/EditorContext.cpp
+    src/ProjectSettings.cpp
     src/PlaySession.cpp
     src/PropertyEditor.cpp
     src/Viewport.cpp

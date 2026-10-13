@@ -246,4 +246,38 @@ void EditorContext::set_project_root(std::string root, ResourceManager* resource
     resources->assets().set_root(project_root_);
 }
 
+Error EditorContext::load_project(std::string_view path, ResourceManager* resources) {
+    auto settings = ProjectSettings::load(path);
+    if (!settings) {
+        return settings.error();
+    }
+
+    // Adopt the settings only once they have parsed, so a bad file leaves the
+    // current project untouched. Then point the asset root at the database: this
+    // rescans it, which is what makes the browser and GUID references see the
+    // project immediately. A project with no asset root leaves the database
+    // empty, which is the "assets live elsewhere / not yet imported" state.
+    project_ = std::move(settings.value());
+    project_path_ = std::string(path);
+    set_project_root(project_.resolved_asset_root(), resources);
+    FE_LOG_INFO("editor: opened project '%s' (asset root '%s')", project_path_.c_str(), project_root_.c_str());
+    return Error::none();
+}
+
+Error EditorContext::save_project(std::string_view path) {
+    const std::string target = path.empty() ? project_path_ : std::string(path);
+    if (target.empty()) {
+        return Error("EditorContext::save_project: no path given and no project has been saved");
+    }
+    if (Error error = project_.save(target); error) {
+        return error;
+    }
+    project_path_ = target;
+    // Saving may have moved the project's directory (a save-as), so re-resolve
+    // the asset root against the new location.
+    set_project_root(project_.resolved_asset_root(), resources_);
+    FE_LOG_INFO("editor: saved project '%s'", project_path_.c_str());
+    return Error::none();
+}
+
 } // namespace fe::editor

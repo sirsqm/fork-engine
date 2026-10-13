@@ -596,19 +596,37 @@ is an asset's stable `guid:<uuid>` reference, which is what a drag out of the
 browser hands to a drop target such as a sprite's texture field. Listing is
 read-only; importing and moving assets are later work.
 
-Still to come under M2: asset import and project settings.
+Still to come under M2: asset import (import settings per asset type).
 
-### The project asset root
+### The project file
 
-The editor has no project file yet, but it does have the one project setting
-that changes engine behaviour today: where the assets live. `EditorContext::
-set_project_root` records that directory and points the engine's `AssetDatabase`
-at it, so the browser lists the project's assets and `guid:<uuid>` references
-resolve. The host sets it before the first scene is loaded, so GUID references
-inside the scene resolve during deserialization; the shell exposes it as
-`--project DIR`. With no root the editor still runs — the browser is simply
-empty and only path references resolve. A real project file, with more settings
-and a build/export path, is the remaining M2 work.
+A project is a directory with a `fork.project.json` file in it, and that file is
+what the editor opens and saves
+([ADR-0025](adr/0025-project-file.md)). It carries the settings that change
+behaviour today - the project name, the asset root, and the startup scene - as
+versioned UTF-8 JSON, the same shape and for the same reasons as a scene
+([ADR-0005](adr/0005-reflection-and-serialization.md)). Paths inside it are
+stored relative to the project directory, so a project is portable.
+
+`ProjectSettings` is a headless value type in `fork_editor_core`; it parses,
+writes, and resolves paths, and is fully testable without a display.
+`EditorContext::load_project` reads the settings and applies them through the
+engine's existing public API, pointing the `AssetDatabase` at the resolved asset
+root. The host does this **before the first scene load**, so `guid:<uuid>`
+references inside the startup scene resolve during deserialization. The engine
+never learns what a project is: it stays reusable and project-agnostic, and the
+editor - the thing that opens a project - is the owner of the concept.
+
+`fork_editor_shell --project DIR` (or a project file, or `--project-file FILE`)
+opens one. With no project the editor still runs: the browser is empty and only
+path references resolve.
+
+The "build/export path" is deliberately not here. Settings are a small,
+editor-local format; assembling a runnable build from a project is the packaging
+and export-template machinery already planned for
+[ADR-0018](adr/0018-multi-platform-shipping.md) (M8). The milestone line split
+into two: settings land here, the build/export path lands with M8's `fork
+export` work.
 
 ### Collaborative editing (planned)
 

@@ -94,3 +94,32 @@ TEST_CASE("path helpers behave consistently") {
     CHECK(fs::normalize("/abs//path") == "/abs/path");
     CHECK(fs::normalize("already/clean.png") == "already/clean.png");
 }
+
+TEST_CASE("relative_to strips a containing prefix and leaves the rest alone") {
+    CHECK(fs::relative_to("/proj", "/proj/assets") == "assets");
+    CHECK(fs::relative_to("/proj", "/proj/scenes/level.json") == "scenes/level.json");
+    // A prefix that only matches mid-segment is not a containing directory.
+    CHECK(fs::relative_to("/proj", "/project/assets") == "/project/assets");
+    // A path outside the base is returned unchanged, so an absolute path
+    // elsewhere on the machine survives a round trip.
+    CHECK(fs::relative_to("/proj", "/other/assets") == "/other/assets");
+    // The base itself, and separator/style differences, normalize first.
+    CHECK(fs::relative_to("/proj", "/proj") == "/proj");
+    CHECK(fs::relative_to("/proj/", "/proj//assets/") == "assets/");
+    CHECK(fs::relative_to("", "assets") == "assets");
+}
+
+TEST_CASE("is_absolute follows the host platform's path syntax") {
+    // Build the absolute example through std::filesystem so the expectation is
+    // the platform's, not a POSIX path asserted on Windows.
+    const std::string absolute = (std::filesystem::temp_directory_path() / "assets").string();
+    CHECK(fs::is_absolute(absolute));
+    CHECK_FALSE(fs::is_absolute("assets"));
+    CHECK_FALSE(fs::is_absolute("assets/textures"));
+    CHECK_FALSE(fs::is_absolute(""));
+#ifdef _WIN32
+    CHECK(fs::is_absolute("C:/projects/demo"));
+#else
+    CHECK(fs::is_absolute("/usr/local/assets"));
+#endif
+}

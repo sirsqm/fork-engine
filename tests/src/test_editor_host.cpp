@@ -12,7 +12,9 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/core/FileSystem.h"
 #include "fe/editor/EditorHost.h"
+#include "fe/editor/ProjectSettings.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Property.h"
 #include "fe/reflect/Registry.h"
@@ -25,6 +27,7 @@
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/serialization/SceneSerializer.h"
 
 #include <filesystem>
 #include <fstream>
@@ -184,6 +187,67 @@ TEST_CASE("a configured project root is indexed by the embedded engine") {
     // The engine's database, not a private copy, was indexed: this is what makes
     // the browser and GUID reference resolution agree.
     CHECK(host.engine().resources().assets().asset_count() == 1);
+
+    host.shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("a configured project file sets the asset root and opens its startup scene") {
+    if (!graphics_available()) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "fe_editor_host_project_file_test";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "assets");
+    std::filesystem::create_directories(root / "scenes");
+
+    // A project whose startup scene is a real file, plus one imported asset so
+    // the asset root has something to index. The sidecar is written through the
+    // engine's own importer, and the seed root is the resolved asset directory
+    // (matching the host's own root), so the index is found on rescan.
+    const std::filesystem::path asset = root / "assets" / "hero.png";
+    {
+        std::ofstream(asset, std::ios::binary) << "png";
+        fe::AssetDatabase seed;
+        seed.set_root((root / "assets").string());
+        auto imported = seed.import(asset.string(), "tex");
+        REQUIRE(imported);
+    }
+    {
+        fe::Scene scene;
+        scene.set_name("StartupLevel");
+        REQUIRE(scene.create_node("Marker") != nullptr);
+        REQUIRE_FALSE(fe::serialization::scene::save(scene, (root / "scenes" / "main.json").string()));
+    }
+    {
+        fe::editor::ProjectSettings settings;
+        settings.set_name("HostProject");
+        settings.set_startup_scene("scenes/main.json");
+        REQUIRE_FALSE(settings.save((root / fe::editor::ProjectSettings::kDefaultFileName).string()));
+    }
+
+    fe::editor::EditorHost::Config config;
+    config.engine.window.title = "fork engine editor host project file test";
+    config.engine.window.width = 128;
+    config.engine.window.height = 96;
+    config.engine.window.visible = false;
+    config.engine.window.vsync = false;
+    config.engine.log_level = fe::LogLevel::Error;
+    config.max_frames = 1;
+    config.project_file = (root / fe::editor::ProjectSettings::kDefaultFileName).string();
+
+    fe::editor::EditorHost host(std::move(config));
+    REQUIRE_FALSE(host.initialize());
+
+    // The project's asset root was indexed (relative "assets" resolved against
+    // the project directory), and its startup scene is the open document.
+    CHECK(host.context().project().name() == "HostProject");
+    CHECK(fe::fs::normalize(host.context().project_root()) == fe::fs::normalize((root / "assets").string()));
+    CHECK(host.engine().resources().assets().asset_count() == 1);
+    CHECK(host.context().scene().name() == "StartupLevel");
+    CHECK(host.context().scene().find_node_by_name("Marker") != nullptr);
 
     host.shutdown();
     std::filesystem::remove_all(root);

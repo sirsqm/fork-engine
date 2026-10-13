@@ -38,17 +38,26 @@ Error EditorHost::initialize() {
     // Point the inspector's resource fields at the embedded engine's manager.
     context_.set_resources(&engine_.resources());
 
-    // Set the project's asset root before any scene is loaded, so GUID
-    // references inside the scene resolve during deserialization (the asset
-    // database must be indexed first). An empty root is a no-op that leaves the
-    // browser empty.
-    if (!config_.project_root.empty()) {
+    // Establish the project before any scene is loaded, so GUID references
+    // inside the scene resolve during deserialization (the asset database must
+    // be indexed first). A project file supplies the asset root and a startup
+    // scene; without one, an explicit --project root is honoured. Both are
+    // no-ops that leave the browser empty when neither is given.
+    std::string scene_to_open = config_.scene_to_open;
+    if (!config_.project_file.empty()) {
+        if (Error error = context_.load_project(config_.project_file, &engine_.resources()); error) {
+            FE_LOG_ERROR("editor: could not open project '%s': %s", config_.project_file.c_str(),
+                         error.message().c_str());
+        } else if (scene_to_open.empty()) {
+            scene_to_open = context_.project().resolved_startup_scene();
+        }
+    } else if (!config_.project_root.empty()) {
         context_.set_project_root(config_.project_root, &engine_.resources());
     }
 
-    if (!config_.scene_to_open.empty()) {
-        if (Error error = context_.load_scene(config_.scene_to_open, &engine_.resources()); error) {
-            FE_LOG_ERROR("editor: could not open '%s': %s", config_.scene_to_open.c_str(), error.message().c_str());
+    if (!scene_to_open.empty()) {
+        if (Error error = context_.load_scene(scene_to_open, &engine_.resources()); error) {
+            FE_LOG_ERROR("editor: could not open '%s': %s", scene_to_open.c_str(), error.message().c_str());
             if (Error fallback = context_.new_scene(&engine_.resources()); fallback) {
                 FE_LOG_ERROR("editor: could not build the example scene: %s", fallback.message().c_str());
             }
