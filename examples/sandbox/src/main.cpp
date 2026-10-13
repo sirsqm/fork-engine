@@ -19,6 +19,8 @@
 //   sandbox --headless N     render N frames with no window presentation
 //   sandbox --scene PATH     load a scene instead of building the demo one
 //   sandbox --save-scene P   save the built scene to P and exit
+//   sandbox --pack FILE      mount a pack and read the scene and assets from it
+//                            (build one with the fork_pack tool)
 //
 // Controls (interactive):
 //   W A S D / arrows   move the camera
@@ -31,6 +33,7 @@
 #include "fe/audio/WavLoader.h"
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
+#include "fe/pack/PackSource.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/RigidBody2D.h"
@@ -62,12 +65,19 @@ constexpr const char* kAudioPath = "wav:assets/audio/beep.wav";
 // on_update(), and lets the base class render it.
 class Sandbox final : public fe::Application {
 public:
-    Sandbox(fe::Engine::Config config, std::string scene_to_load, std::string scene_to_save, std::string assets_root)
+    Sandbox(fe::Engine::Config config, std::string scene_to_load, std::string scene_to_save, std::string assets_root,
+            std::string pack_to_mount)
         : fe::Application(config), scene_to_load_(std::move(scene_to_load)), scene_to_save_(std::move(scene_to_save)),
-          assets_root_(std::move(assets_root)) {}
+          assets_root_(std::move(assets_root)), pack_to_mount_(std::move(pack_to_mount)) {}
 
 protected:
     fe::Error on_start() override {
+        // A pack replaces the loose asset tree: mount it before anything loads,
+        // so the scene and every asset are read from the one file. With no
+        // --pack the filesystem path is used, exactly as before.
+        if (fe::Error error = mount_pack(); error) {
+            return error;
+        }
         if (fe::Error error = configure_assets(); error) {
             return error;
         }
@@ -315,6 +325,23 @@ private:
         return fe::Error::none();
     }
 
+    // Mounts a pack when --pack is given, so the whole run reads from the one
+    // file. This is the shipping path ADR-0030 describes: the same scene and the
+    // same asset paths, served by the pack instead of the filesystem. It is
+    // additive - with no --pack nothing here runs and the demo is unchanged.
+    [[nodiscard]] fe::Error mount_pack() {
+        if (pack_to_mount_.empty()) {
+            return fe::Error::none();
+        }
+        auto source = fe::pack::PackSource::open(pack_to_mount_);
+        if (!source) {
+            return source.error();
+        }
+        engine().resources().mount(source.value());
+        FE_LOG_INFO("mounted pack '%s' (%zu entries)", pack_to_mount_.c_str(), source.value()->pack().entry_count());
+        return fe::Error::none();
+    }
+
     // Points the resource manager at an asset tree and imports the demo texture,
     // so its references are written as stable GUIDs. With no --assets root the
     // scene saves with path references, exactly as before.
@@ -346,6 +373,7 @@ private:
     std::string scene_to_load_;
     std::string scene_to_save_;
     std::string assets_root_;
+    std::string pack_to_mount_;
 };
 
 struct Options {
@@ -355,6 +383,7 @@ struct Options {
     std::string scene_to_save;
     std::string assets_root;
     std::string cache_root;
+    std::string pack_to_mount;
     fe::LogLevel log_level = fe::LogLevel::Info;
 };
 
@@ -376,13 +405,15 @@ struct Options {
             options.assets_root = argv[++i];
         } else if (arg == "--cache" && i + 1 < argc) {
             options.cache_root = argv[++i];
+        } else if (arg == "--pack" && i + 1 < argc) {
+            options.pack_to_mount = argv[++i];
         } else if (arg == "--verbose") {
             options.log_level = fe::LogLevel::Debug;
         } else if (arg == "--quiet") {
             options.log_level = fe::LogLevel::Warn;
         } else if (arg == "--help" || arg == "-h") {
             std::puts("usage: sandbox [--headless [frames]] [--scene PATH] [--save-scene PATH] [--assets DIR] "
-                      "[--cache DIR] [--verbose] [--quiet]");
+                      "[--cache DIR] [--pack FILE] [--verbose] [--quiet]");
             std::exit(0);
         }
     }
@@ -407,7 +438,7 @@ int main(int argc, char** argv) {
         config.window.vsync = false;
     }
 
-    Sandbox app(config, options.scene_to_load, options.scene_to_save, options.assets_root);
+    Sandbox app(config, options.scene_to_load, options.scene_to_save, options.assets_root, options.pack_to_mount);
     if (options.headless) {
         app.set_headless(options.headless_frames);
     }

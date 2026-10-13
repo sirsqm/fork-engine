@@ -66,6 +66,13 @@ if(FE_BUILD_EXAMPLES)
   add_subdirectory(examples/sandbox)
 endif()
 
+# The packaging tools are part of the shipping path, not the editor, so they are
+# built with the engine (the sandbox is the only example program, so this rides
+# on the same switch).
+if(FE_BUILD_EXAMPLES)
+  add_subdirectory(tools/pack)
+endif()
+
 if(FE_BUILD_EDITOR)
   add_subdirectory(editor)
 endif()

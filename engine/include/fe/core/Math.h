@@ -90,6 +90,12 @@ struct Vec3 {
         z += o.z;
         return *this;
     }
+    constexpr Vec3& operator-=(const Vec3& o) noexcept {
+        x -= o.x;
+        y -= o.y;
+        z -= o.z;
+        return *this;
+    }
 
     [[nodiscard]] constexpr bool operator==(const Vec3&) const noexcept = default;
 

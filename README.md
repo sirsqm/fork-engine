@@ -2,6 +2,8 @@
 
 A modular, open-source 2D and 3D game engine written in C++20.
 
+[![CI](https://github.com/sqmyou/fork-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/sqmyou/fork-engine/actions/workflows/ci.yml)
+
 Fork Engine is an attempt to build a serious, long-lived engine from first
 principles: a clean architecture, a high-performance runtime, and an
 editor-centric workflow. It is not a clone of any existing engine. Where an
@@ -17,17 +19,22 @@ eventually features:
   model that stays cache-friendly, with a benchmark that guards both.
 - **Games ship anywhere.** The goal is that a game built in Fork Engine reaches
   every platform its players use — desktop today, web and mobile next, consoles
-  when the SDKs allow — not merely that the editor runs on several OSes.
+  when the SDKs allow — not merely that the editor runs on several OSes. The
+  supported target *today* is desktop (Linux and Windows); see
+  [ADR-0032](docs/adr/0032-near-term-platform-scope.md) for why the wider claim
+  is sequenced rather than asserted.
 - **Editing is collaborative.** Several people open the same project, edit it
   live, see each other's changes and presence, and never run a manual merge.
 
-The plan for these is in [`docs/STRATEGY.md`](docs/STRATEGY.md).
+The plan for these is in [`docs/STRATEGY.md`](docs/STRATEGY.md). The order the
+next work is taken in — a vertical slice, scripting, then the pillars — is in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 The project is young and honest about it. The repository currently contains the
 engine core through its first several milestones: a buildable library, working
-2D and 3D renderers, a scene/resource/serialization/reflection core, 2D physics,
-audio, an editor foundation, and a runnable example, all covered by tests.
-Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+2D and 3D renderers, a scene/resource/serialization/reflection core, 2D and 3D
+physics, audio, an editor foundation, and a runnable example, all covered by
+tests. Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Status
 
@@ -46,11 +53,13 @@ Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Reflection and component serialization | Working |
 | Systems and the frame schedule | Working |
 | 2D physics (colliders, rigid bodies, solver, queries, contact events) | Working |
+| 3D physics (box/sphere colliders, linear solver, broad phase, distance joints, queries, contact events) | Working (first cut, see [ADR-0031](docs/adr/0031-physics3d-and-backend-seam.md)) |
 | Audio (device seam, WAV loader, pure mixer, mixing system) | Working (first pass) |
 | Editor (docking shell, hierarchy, inspector, asset browser, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
 | Project file (settings, asset root, startup scene) | Working |
 | Runtime frame loop + sandbox example | Working |
-| Scripting, build/export | Not started (see roadmap) |
+| Scripting (C++ native modules first, language-agnostic seam) | Not started (see roadmap) |
+| Build/export | Not started (see roadmap) |
 | Performance tooling, extra platforms, collaborative editing | Planned (see roadmap) |
 
 Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
@@ -87,6 +96,7 @@ core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
 core, scene, resources  <-  systems
 core, scene, systems, reflect  <-  physics2d
+core, scene, systems, reflect  <-  physics3d
 core, scene, resources  <-  mesh  <-  renderer3d
 core, scene, resources  <-  scene3d
 core, scene, systems, resources  <-  audio
@@ -106,6 +116,10 @@ everything  <-  runtime
 - **systems** — `System`, `SceneSchedule`, `FrameContext`, and the concrete
   gameplay systems.
 - **physics2d** — 2D colliders, a rigid-body solver, queries, and contact events.
+- **physics3d** — 3D box/sphere colliders, a linear rigid-body solver with a
+  broad phase and distance joints, queries, and contact events. A hand-written
+  first cut behind a component-and-query boundary, so a third-party solver can
+  replace it later ([ADR-0031](docs/adr/0031-physics3d-and-backend-seam.md)).
 - **mesh** — CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, and an
   OBJ loader.
 - **scene3d** — 3D scene components (`Camera3D`, `MeshRenderer3D`,
