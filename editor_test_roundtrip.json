@@ -1,0 +1,252 @@
+{
+  "format": "fork_scene",
+  "format_version": 1,
+  "name": "Untitled",
+  "roots": [
+    {
+      "children": [],
+      "components": [
+        {
+          "clear_color": [
+            0.10000000149011612,
+            0.10000000149011612,
+            0.11999999731779099,
+            1.0
+          ],
+          "primary": true,
+          "type": "Camera2D",
+          "zoom": 1.0
+        }
+      ],
+      "id": "a43e54f2-f099-463a-af4f-b1b2b18ebabd",
+      "name": "Camera",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "color": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "layer": 0,
+          "size": [
+            96.0,
+            96.0
+          ],
+          "texture": "",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "f88edc21-ba2d-4a92-b554-2ca8b4390dd6",
+      "name": "Sprite0",
+      "transform": {
+        "position": [
+          -120.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "color": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "layer": 0,
+          "size": [
+            96.0,
+            96.0
+          ],
+          "texture": "",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "a655b60d-81e7-4243-a53e-4558aa044bbc",
+      "name": "Sprite1",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "color": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "layer": 0,
+          "size": [
+            96.0,
+            96.0
+          ],
+          "texture": "",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "62673f8d-2af7-4105-b83f-2b05b2f30ea9",
+      "name": "Sprite2",
+      "transform": {
+        "position": [
+          120.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                48.0,
+                48.0
+              ],
+              "texture": "",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "3fe6339c-690b-4c94-9450-c127be04c11f",
+          "name": "GroupChild",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [],
+      "id": "251fbac2-497e-428c-9920-d961d2e4ad45",
+      "name": "Group",
+      "transform": {
+        "position": [
+          0.0,
+          120.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    }
+  ]
+}

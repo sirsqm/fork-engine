@@ -64,6 +64,18 @@ public:
     [[nodiscard]] virtual const std::string& name() const noexcept = 0;
     [[nodiscard]] virtual u32 width() const noexcept = 0;
     [[nodiscard]] virtual u32 height() const noexcept = 0;
+
+    // The backend's own identifier for this texture, or 0 if it has none.
+    //
+    // This is an interop escape hatch, not general API: it exists for exactly
+    // one consumer today, the editor viewport, which hands the identifier to
+    // Dear ImGui's OpenGL backend so a render-target colour attachment can be
+    // shown in a panel. It is intentionally *not* a GL type in this header; the
+    // value is opaque and only meaningful to a backend that shares the same
+    // graphics API. A non-OpenGL backend (or a future handle-based arena) would
+    // return its own value, and code that needs more than an integer handoff
+    // should grow a proper interop type rather than widen this.
+    [[nodiscard]] virtual u64 native_handle() const noexcept = 0;
 };
 
 // An off-screen target that can be rendered into and then sampled like a

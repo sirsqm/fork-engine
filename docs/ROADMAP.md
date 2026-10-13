@@ -27,13 +27,13 @@ The smallest useful engine: something that builds, runs, renders, and is tested.
 The editor becomes real before the engine grows much further, so the runtime is
 built editor-friendly from the start rather than adapted later.
 
-- [ ] A windowing/UI layer for tools (docking, panels)
-- [ ] Scene hierarchy panel
-- [ ] Property inspector, driven by the reflection system
-- [ ] 2D viewport rendering into an editor panel
+- [x] A windowing/UI layer for tools (docking, panels) — ADR-0007, `fork_editor`
+- [x] Scene hierarchy panel — `HierarchyViewModel` + `HierarchyPanel`
+- [x] Property inspector, driven by the reflection system — `PropertyEditor` + `InspectorPanel`
+- [x] 2D viewport rendering into an editor panel — `Viewport` + `ViewportPanel` (off-screen render target)
 - [ ] Asset browser
-- [ ] Undo/redo
-- [ ] Play-in-editor (embed an `Engine` and drive frames)
+- [x] Undo/redo — `Command` + `CommandStack` + concrete commands in `fork_editor_core`; coalescing drags into one step ([ADR-0015](adr/0015-editor-undo-redo.md))
+- [x] Play-in-editor (embed an `Engine`, drive frames, run the scene's `SceneSchedule`) — `PlaySession`
 - [ ] Project settings and a build/export path
 
 ### M2 prerequisite — reflection (done)
