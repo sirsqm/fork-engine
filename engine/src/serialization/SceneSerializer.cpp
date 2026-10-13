@@ -354,6 +354,13 @@ Error from_json(std::string_view text, Scene& out_scene, ResourceManager* resour
             return error;
         }
     }
+
+    // Deserialization assigned the saved ids after each node was attached, so
+    // the scene's id index still holds the placeholder ids from creation.
+    // Rebuild it now that every id is final, so `find_node` resolves saved ids
+    // and any component holding a node reference (a joint's body_a/body_b)
+    // points at the right node.
+    out_scene.rebuild_index();
     return Error::none();
 }
 

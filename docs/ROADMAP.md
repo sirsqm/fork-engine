@@ -99,7 +99,10 @@ needed a concrete mechanism before gameplay could grow. See
 - [x] 2D angular dynamics: angular velocity, torque, and shape-derived inertia,
       integrated by the solver — see
       [ADR-0013](adr/0013-physics2d-queries-events-angular.md)
-- [ ] 2D physics refinements: collider offsets, oriented-box colliders, joints,
+- [x] 2D joints: distance and revolute constraints solved by the same
+      sequential-impulse loop as contacts, with node-id body references that
+      serialize — see [ADR-0021](adr/0021-physics2d-joints.md)
+- [ ] 2D physics refinements: collider offsets, oriented-box colliders,
       continuous collision detection, sleeping, a spatial partition
 - [ ] 3D physics
 - [ ] Integration with the scene and the editor
