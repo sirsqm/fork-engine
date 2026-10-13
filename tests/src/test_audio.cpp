@@ -214,6 +214,8 @@ TEST_CASE("a malformed or truncated wav returns an error, never garbage") {
 TEST_CASE("WavLoader::reference_key builds a stable manager key without double-prefixing") {
     CHECK(audio::WavLoader::reference_key("assets/beep.wav") == "wav:assets/beep.wav");
     CHECK(audio::WavLoader::reference_key("wav:assets/beep.wav") == "wav:assets/beep.wav");
+    // A Windows drive letter is a path, not a scheme, so it still gets prefixed.
+    CHECK(audio::WavLoader::reference_key("C:/assets/beep.wav") == "wav:C:/assets/beep.wav");
 }
 
 // ---------------------------------------------------------------------------
