@@ -342,7 +342,7 @@ TEST_CASE("a render target can expose its depth as a sampleable texture") {
     plain.depth = true;
     auto plain_target = context.device->create_render_target(plain);
     REQUIRE(plain_target);
-    CHECK(plain_target.value()->depth_texture() == nullptr);
+    CHECK((plain_target.value()->depth_texture() == nullptr));
 
     // A sample-depth target exposes a real texture of the same size, which is
     // what the shadow pass samples in the main pass.
@@ -354,7 +354,7 @@ TEST_CASE("a render target can expose its depth as a sampleable texture") {
     sampled.sample_depth = true;
     auto sampled_target = context.device->create_render_target(sampled);
     REQUIRE(sampled_target);
-    REQUIRE(sampled_target.value()->depth_texture() != nullptr);
+    REQUIRE((sampled_target.value()->depth_texture() != nullptr));
     CHECK(sampled_target.value()->depth_texture()->width() == 32);
     CHECK(sampled_target.value()->depth_texture()->height() == 32);
 }
