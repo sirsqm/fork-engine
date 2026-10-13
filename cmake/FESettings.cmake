@@ -36,10 +36,5 @@ elseif(WIN32)
   add_compile_definitions(FE_PLATFORM_WINDOWS=1)
 endif()
 
-if(FE_WARNINGS_AS_ERRORS)
-  if(MSVC)
-    add_compile_options(/WX)
-  else()
-    add_compile_options(-Werror)
-  endif()
-endif()
+# Warnings-as-errors is applied through the fe_warnings interface target (see
+# FEWarnings.cmake), not here, so it cannot leak into third-party targets.

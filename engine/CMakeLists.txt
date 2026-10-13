@@ -40,6 +40,7 @@ add_library(FE::engine ALIAS fork_engine)
 target_include_directories(
   fork_engine
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>
          $<INSTALL_INTERFACE:include>
 )
 
@@ -59,3 +60,6 @@ set_target_properties(fork_engine PROPERTIES OUTPUT_NAME "fork_engine")
 
 # Convenience: propagate the warnings interface to our own translation units.
 target_link_libraries(fork_engine PRIVATE fe_warnings)
+
+# Generated version header; engine sources include it, so they must wait for it.
+target_sources(fork_engine PRIVATE "${CMAKE_BINARY_DIR}/generated/fe/version/Version.h")

@@ -279,8 +279,8 @@ public:
         if (capacity_indices == 0) {
             return Error("create_index_buffer: capacity must be non-zero");
         }
-        auto buffer =
-            std::make_shared<OpenGLBuffer>(Buffer::Kind::Index, GL_ELEMENT_ARRAY_BUFFER, capacity_indices, sizeof(u32));
+        auto buffer = std::make_shared<OpenGLBuffer>(Buffer::Kind::Index, GL_ELEMENT_ARRAY_BUFFER, capacity_indices,
+                                                     static_cast<u32>(sizeof(u32)));
         return std::static_pointer_cast<Buffer>(buffer);
     }
 

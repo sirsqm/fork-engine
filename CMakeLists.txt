@@ -51,6 +51,7 @@ option(FE_ENABLE_ASAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer (D
 
 include(FESettings)
 include(FEWarnings)
+include(FEVersion)
 include(FEDependencies)
 
 if(FE_ENABLE_ASAN AND NOT MSVC)

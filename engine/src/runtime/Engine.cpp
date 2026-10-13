@@ -6,6 +6,7 @@
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/resources/ImageLoader.h"
 #include "fe/resources/Texture2DLoader.h"
+#include "fe/version/Version.h"
 
 #include <chrono>
 
@@ -32,7 +33,7 @@ Error Engine::initialize(const Config& config) {
     }
 
     log::set_min_level(config.log_level);
-    FE_LOG_INFO("fork engine starting");
+    FE_LOG_INFO("fork engine v%s starting", version::kEngineVersionString);
 
     auto window = Window::create(config.window);
     if (!window) {
