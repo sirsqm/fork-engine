@@ -35,6 +35,13 @@ using reflect::ValueKind;
 
 using TextFields = InspectorPanel::TextFields;
 
+// The payload type for an asset dragged out of the browser: the asset's stable
+// reference ("guid:<uuid>"). This must match the constant the asset browser
+// publishes under; it is the one contract between the two panels, and it is a
+// reference rather than a pointer so it survives the frames between drag start
+// and drop. See docs/adr/0028-editor-hint-metadata.md.
+constexpr const char* kAssetDragPayload = "FE_ASSET_REF";
+
 // Per-component edit target: which node and which component index every widget
 // in this section writes to. A widget records its own property *path* relative
 // to the component (a leaf name, or a member path for a group), so one
@@ -90,35 +97,50 @@ void draw_bool_row(const Property& property, void* component, EditContext& edit,
 }
 
 void draw_int_row(const Property& property, void* component, EditContext& edit, const std::vector<std::string>& path) {
+    const ResolvedRange range = resolve_range_hint(property.range);
     int widget = static_cast<int>(std::get<i64>(property.getter(component)));
-    if (ImGui::DragInt(property.name.c_str(), &widget)) {
-        commit(edit, path, Value{static_cast<i64>(widget)});
+
+    bool changed = false;
+    if (range.valid) {
+        // A range hint bounds the value. The clamp is applied to the stored
+        // value so a drag that overshoots the end stops at the bound.
+        changed = ImGui::SliderInt(property.name.c_str(), &widget, static_cast<int>(range.minimum),
+                                   static_cast<int>(range.maximum));
+    } else {
+        changed = ImGui::DragInt(property.name.c_str(), &widget);
+    }
+    if (changed) {
+        const i64 bounded = static_cast<i64>(clamp_to_range(static_cast<double>(widget), range));
+        commit(edit, path, Value{bounded});
     }
     end_gesture_if_finished(edit);
 }
 
 void draw_float_row(const Property& property, void* component, EditContext& edit,
                     const std::vector<std::string>& path) {
+    const ResolvedRange range = resolve_range_hint(property.range);
     float widget = static_cast<float>(std::get<f64>(property.getter(component)));
 
     bool changed = false;
-    if (property.hint == Hint::Range) {
-        const RangeHint range = parse_range_hint(property.hint_text);
-        if (range.valid) {
+    if (range.valid) {
+        // A hint with a step is a drag (a scrubby field); without one it is a
+        // slider. Both are bounded, which is the point of the hint.
+        if (range.step > 0.0) {
+            changed = ImGui::DragFloat(property.name.c_str(), &widget, static_cast<float>(range.step),
+                                       static_cast<float>(range.minimum), static_cast<float>(range.maximum));
+        } else {
             changed = ImGui::SliderFloat(property.name.c_str(), &widget, static_cast<float>(range.minimum),
                                          static_cast<float>(range.maximum));
-        } else {
-            // A malformed range hint degrades to a plain drag, so a typo in a
-            // registration yields a usable widget rather than a broken slider.
-            changed = ImGui::DragFloat(property.name.c_str(), &widget, 0.01f);
         }
     } else {
         changed = ImGui::DragFloat(property.name.c_str(), &widget, 0.01f);
     }
 
-    // Reject a non-finite result so a stray computation cannot write inf/nan.
+    // Reject a non-finite result so a stray computation cannot write inf/nan,
+    // then clamp into the hint's bounds.
     if (changed && std::isfinite(widget)) {
-        commit(edit, path, Value{static_cast<f64>(widget)});
+        const double bounded = clamp_to_range(static_cast<double>(widget), range);
+        commit(edit, path, Value{bounded});
     }
     end_gesture_if_finished(edit);
 }
@@ -141,41 +163,72 @@ void draw_string_row(const Property& property, void* component, EditContext& edi
 
 // A resource reference is read through `resource_ref` and written through
 // `resolve_resource`: the inspector never assigns a raw key, because that would
-// discard the resolved resource (see Property.h). A text field for the manager
-// key is enough for this milestone; an asset drop target is a later refinement.
-//
-// This path is deliberately not a `SetPropertyCommand`: resolving a key needs a
-// `ResourceManager`, which the command does not carry. Resource references are
-// therefore not yet undoable; that is recorded as remaining work.
+// discard the resolved resource (see Property.h). It is edited three ways - a
+// text field for the manager key, a drop target for an asset dragged from the
+// browser, and a clear button - and every edit goes through
+// `SetResourceCommand`, so a resource reference is now undoable like any other
+// property (see docs/adr/0028-editor-hint-metadata.md).
 void draw_resource_row(const Property& property, void* component, EditContext& edit, TextFields& fields) {
     const std::string current = property.resource_ref ? property.resource_ref(component) : std::string{};
     sync(fields.scalar_label, fields.scalar_text, property.name, current);
 
     ImGui::Text("%s", property.name.c_str());
-    if (!property.resource_type.empty()) {
+    if (property.resource && !property.resource->type_name.empty()) {
         ImGui::SameLine();
-        ImGui::TextDisabled("(%s)", property.resource_type.c_str());
-    }
-
-    if (!ImGui::InputTextWithHint(property.name.c_str(), "tex:assets/...", &fields.scalar_text)) {
-        return;
+        ImGui::TextDisabled("(%s)", property.resource->type_name.c_str());
     }
 
     ResourceManager* resources = edit.context != nullptr ? edit.context->resources() : nullptr;
-    if (resources == nullptr || !property.resolve_resource) {
-        // Without a manager there is nothing to resolve against; the typed text
-        // stays visible but the reference is not claimed as applied.
-        return;
+
+    // The text field seeds from the current key and, on commit, routes the typed
+    // reference through the command (an empty string clears the slot).
+    if (ImGui::InputTextWithHint(property.name.c_str(), "guid:... or tex:assets/...", &fields.scalar_text)) {
+        if (resources != nullptr && edit.context != nullptr) {
+            edit.context->execute(std::make_unique<SetResourceCommand>(edit.node_id, edit.component_index,
+                                                                       property.name, fields.scalar_text, resources));
+        }
     }
-    // On a failed resolve the field keeps the user's text so they can correct
-    // it, and no stale resource is stored.
-    property.resolve_resource(component, fields.scalar_text, *resources);
+    end_gesture_if_finished(edit);
+
+    // A drop target for an asset dragged out of the browser: the payload is the
+    // asset's "guid:<uuid>" reference, which is exactly what resolve_resource
+    // understands.
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAssetDragPayload)) {
+            const std::string reference(static_cast<const char*>(payload->Data),
+                                        static_cast<std::size_t>(payload->DataSize));
+            if (resources != nullptr && edit.context != nullptr) {
+                edit.context->execute(std::make_unique<SetResourceCommand>(edit.node_id, edit.component_index,
+                                                                           property.name, reference, resources));
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+
+    // A clear affordance, shown only when there is something to clear.
+    if (!current.empty() && edit.context != nullptr && edit.context->is_editable()) {
+        ImGui::SameLine();
+        const std::string clear_label = std::string("Clear##clear_") + property.name;
+        if (ImGui::SmallButton(clear_label.c_str()) && resources != nullptr) {
+            edit.context->execute(std::make_unique<SetResourceCommand>(edit.node_id, edit.component_index,
+                                                                       property.name, std::string{}, resources));
+        }
+    }
+
+    if (resources == nullptr) {
+        // Without a manager there is nothing to resolve against; the field shows
+        // the current key but is not editable. This is the headless case.
+        ImGui::SameLine();
+        ImGui::TextDisabled("(no resource manager)");
+    }
 }
 
-// A fixed-size float group (Vec2, Vec4, or an RGBA clear colour). With
-// Hint::Color it is shown as a swatch plus a row of drags; otherwise just the
-// drags. Group members read and write the owning component, so `component` is
-// what is passed to each member accessor.
+// A fixed-size float group (Vec2, Vec3, Vec4, or a clear colour). With a colour
+// hint it is shown as a swatch plus a row of drags; otherwise just the drags.
+// The hint's channel count (three for RGB, four for RGBA) comes from the group's
+// member count, so one code path serves a Vec3 colour and a Vec4 one. Group
+// members read and write the owning component, so `component` is what is passed
+// to each member accessor.
 void draw_vector_group(const Property& property, void* component, EditContext& edit,
                        const std::vector<std::string>& path) {
     ImGui::Text("%s", property.name.c_str());
@@ -185,13 +238,19 @@ void draw_vector_group(const Property& property, void* component, EditContext& e
         return;
     }
 
-    const bool as_color = property.hint == Hint::Color && property.members.size() >= 3;
+    const usize color_channels = property.color.has_value() ? color_channel_count(property.members.size()) : 0;
+    const bool as_color = color_channels > 0;
     std::array<float, 4> rgba{0.0f, 0.0f, 0.0f, 1.0f};
     if (as_color) {
         for (std::size_t i = 0; i < property.members.size() && i < rgba.size(); ++i) {
             rgba[i] = static_cast<float>(std::get<f64>(property.members[i].getter(component)));
         }
-        if (ImGui::ColorEdit4("##swatch", rgba.data(), ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) {
+        const ImGuiColorEditFlags flags =
+            ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel |
+            (color_channels == 3 ? ImGuiColorEditFlags_NoAlpha : ImGuiColorEditFlags_None);
+        const bool edited = color_channels == 3 ? ImGui::ColorEdit3("##swatch", rgba.data(), flags)
+                                                : ImGui::ColorEdit4("##swatch", rgba.data(), flags);
+        if (edited) {
             for (std::size_t i = 0; i < property.members.size() && i < rgba.size(); ++i) {
                 if (std::isfinite(rgba[i])) {
                     std::vector<std::string> member_path = path;

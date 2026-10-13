@@ -14,49 +14,60 @@
 #include <doctest/doctest.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 
+using fe::editor::clamp_to_range;
+using fe::editor::color_channel_count;
 using fe::editor::format_value;
-using fe::editor::parse_range_hint;
+using fe::editor::resolve_range_hint;
 using fe::editor::unreflected_label;
 using fe::reflect::Value;
 
-TEST_CASE("parse_range_hint accepts a well-formed min,max") {
-    const auto hint = parse_range_hint("0,1");
+TEST_CASE("resolve_range_hint accepts a well-formed range") {
+    const auto hint = resolve_range_hint(fe::reflect::RangeHint{0.0, 1.0, 0.0});
     CHECK(hint.valid);
     CHECK(hint.minimum == doctest::Approx(0.0));
     CHECK(hint.maximum == doctest::Approx(1.0));
 }
 
-TEST_CASE("parse_range_hint tolerates whitespace and signs") {
-    const auto hint = parse_range_hint(" -2.5 , 10.0 ");
+TEST_CASE("resolve_range_hint preserves the drag step") {
+    const auto hint = resolve_range_hint(fe::reflect::RangeHint{0.0, 60.0, 0.5});
     CHECK(hint.valid);
-    CHECK(hint.minimum == doctest::Approx(-2.5));
-    CHECK(hint.maximum == doctest::Approx(10.0));
+    CHECK(hint.step == doctest::Approx(0.5));
 }
 
-TEST_CASE("parse_range_hint rejects malformed hints") {
-    CHECK_FALSE(parse_range_hint("").valid);
-    CHECK_FALSE(parse_range_hint("1").valid);
-    CHECK_FALSE(parse_range_hint("1;2").valid);
-    CHECK_FALSE(parse_range_hint("a,b").valid);
-    // Trailing content is rejected rather than silently truncated.
-    CHECK_FALSE(parse_range_hint("1,2,3").valid);
-    CHECK_FALSE(parse_range_hint("1,2x").valid);
+TEST_CASE("resolve_range_hint treats an absent hint as unbounded") {
+    const auto hint = resolve_range_hint(std::nullopt);
+    CHECK_FALSE(hint.valid);
 }
 
-TEST_CASE("parse_range_hint reads '0,5' as the interval zero to five") {
-    // The comma is the separator, so this is a range and not the decimal 0.5.
-    const auto hint = parse_range_hint("0,5");
-    CHECK(hint.valid);
-    CHECK(hint.minimum == doctest::Approx(0.0));
-    CHECK(hint.maximum == doctest::Approx(5.0));
+TEST_CASE("resolve_range_hint rejects an empty or inverted interval") {
+    // A degenerate range is a mis-registration, so it degrades to unbounded
+    // rather than an inverted widget.
+    CHECK_FALSE(resolve_range_hint(fe::reflect::RangeHint{1.0, 1.0, 0.0}).valid);
+    CHECK_FALSE(resolve_range_hint(fe::reflect::RangeHint{2.0, 1.0, 0.0}).valid);
 }
 
-TEST_CASE("parse_range_hint rejects an empty or inverted interval") {
-    CHECK_FALSE(parse_range_hint("1,1").valid);
-    CHECK_FALSE(parse_range_hint("2,1").valid);
+TEST_CASE("clamp_to_range bounds a value to a valid range") {
+    const auto range = resolve_range_hint(fe::reflect::RangeHint{0.0, 1.0, 0.0});
+    CHECK(clamp_to_range(-0.5, range) == doctest::Approx(0.0));
+    CHECK(clamp_to_range(0.25, range) == doctest::Approx(0.25));
+    CHECK(clamp_to_range(2.0, range) == doctest::Approx(1.0));
+}
+
+TEST_CASE("clamp_to_range leaves a value alone when the range is invalid") {
+    const auto range = resolve_range_hint(std::nullopt);
+    CHECK(clamp_to_range(-5.0, range) == doctest::Approx(-5.0));
+}
+
+TEST_CASE("color_channel_count reads three and four as colours") {
+    CHECK(color_channel_count(3) == 3);
+    CHECK(color_channel_count(4) == 4);
+    // A Vec2 (a position) is not a colour.
+    CHECK(color_channel_count(2) == 0);
+    CHECK(color_channel_count(0) == 0);
 }
 
 TEST_CASE("format_value renders each value kind") {

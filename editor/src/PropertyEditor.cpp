@@ -4,32 +4,14 @@
 
 #include "fe/core/Uuid.h"
 
-#include <charconv>
+#include <algorithm>
 #include <cstdio>
 #include <limits>
 #include <string>
-#include <system_error>
 #include <variant>
 
 namespace fe::editor {
 namespace {
-
-// Parses one float from `text`, advancing `cursor` past it. Uses from_chars so
-// the result is locale-independent: a comma is a separator here, never a
-// decimal point, which "0,5" as a range would otherwise be read as.
-[[nodiscard]] bool parse_float(std::string_view text, std::size_t& cursor, double& out) {
-    while (cursor < text.size() && (text[cursor] == ' ' || text[cursor] == '\t')) {
-        ++cursor;
-    }
-    const char* begin = text.data() + cursor;
-    const char* end = text.data() + text.size();
-    const auto result = std::from_chars(begin, end, out);
-    if (result.ec != std::errc{} || result.ptr == begin) {
-        return false;
-    }
-    cursor = static_cast<std::size_t>(result.ptr - text.data());
-    return true;
-}
 
 [[nodiscard]] std::string format_double(double value) {
     // "%.17g" is the shortest precision that round-trips a double; trim trailing
@@ -55,44 +37,35 @@ namespace {
 
 } // namespace
 
-RangeHint parse_range_hint(std::string_view text) {
-    RangeHint hint;
-    std::size_t cursor = 0;
+ResolvedRange resolve_range_hint(const std::optional<reflect::RangeHint>& hint) {
+    ResolvedRange range;
+    // An absent hint means "unbounded": the panel shows a plain drag.
+    if (!hint.has_value()) {
+        return range;
+    }
+    // A degenerate interval (minimum >= maximum) is a mis-registration, not a
+    // usable bound, so it degrades to unbounded rather than an inverted slider.
+    if (hint->minimum >= hint->maximum) {
+        return range;
+    }
+    range.minimum = hint->minimum;
+    range.maximum = hint->maximum;
+    range.step = hint->step;
+    range.valid = true;
+    return range;
+}
 
-    double minimum = 0.0;
-    if (!parse_float(text, cursor, minimum)) {
-        return hint;
+double clamp_to_range(double value, const ResolvedRange& range) {
+    if (!range.valid) {
+        return value;
     }
-    while (cursor < text.size() && (text[cursor] == ' ' || text[cursor] == '\t')) {
-        ++cursor;
-    }
-    if (cursor >= text.size() || text[cursor] != ',') {
-        return hint;
-    }
-    ++cursor; // Skip the comma.
+    return std::clamp(value, range.minimum, range.maximum);
+}
 
-    double maximum = 0.0;
-    if (!parse_float(text, cursor, maximum)) {
-        return hint;
-    }
-
-    // Reject trailing content, so "1,2,3" is a malformed hint rather than a
-    // silently truncated "1,2".
-    while (cursor < text.size() && (text[cursor] == ' ' || text[cursor] == '\t')) {
-        ++cursor;
-    }
-    if (cursor != text.size()) {
-        return hint;
-    }
-
-    if (minimum >= maximum) {
-        return hint;
-    }
-
-    hint.minimum = minimum;
-    hint.maximum = maximum;
-    hint.valid = true;
-    return hint;
+usize color_channel_count(usize member_count) noexcept {
+    // A colour is three or four floats (RGB/RGBA). A two-member group is a Vec2
+    // (a position), not a colour, so the hint is ignored for it.
+    return member_count == 3 || member_count == 4 ? member_count : 0;
 }
 
 std::string format_value(const reflect::Value& value) {

@@ -36,7 +36,7 @@ void register_sprite2d(Registry& registry) {
 
     desc.properties.push_back(make_vector_group<Sprite2D, Vec2>("size", &Sprite2D::size, "Vec2", {"x", "y"}));
     desc.properties.push_back(
-        make_vector_group<Sprite2D, Vec4>("color", &Sprite2D::color, "Vec4", {"r", "g", "b", "a"}));
+        with_color(make_vector_group<Sprite2D, Vec4>("color", &Sprite2D::color, "Vec4", {"r", "g", "b", "a"})));
     desc.properties.push_back(make_vector_group<Sprite2D, Vec4>("uv", &Sprite2D::uv, "Vec4", {"u0", "v0", "u1", "v1"}));
     desc.properties.push_back(make_scalar<Sprite2D, i32>("layer", &Sprite2D::layer, ValueKind::Int, &defaults));
     desc.properties.push_back(make_resource_ref<Sprite2D, std::shared_ptr<Resource>>(
@@ -59,13 +59,14 @@ void register_camera2d(Registry& registry) {
     desc.name = Camera2D::kTypeName;
     desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<Camera2D>()); };
 
-    desc.properties.push_back(make_scalar<Camera2D, f32>("zoom", &Camera2D::zoom, ValueKind::Float, &defaults));
     desc.properties.push_back(
+        with_range(make_scalar<Camera2D, f32>("zoom", &Camera2D::zoom, ValueKind::Float, &defaults), 0.01, 16.0, 0.01));
+    desc.properties.push_back(with_color(
         make_float_group("clear_color", "Vec4", {"r", "g", "b", "a"},
                          {float_getter<Camera2D>(&Camera2D::clear_r), float_getter<Camera2D>(&Camera2D::clear_g),
                           float_getter<Camera2D>(&Camera2D::clear_b), float_getter<Camera2D>(&Camera2D::clear_a)},
                          {float_setter<Camera2D>(&Camera2D::clear_r), float_setter<Camera2D>(&Camera2D::clear_g),
-                          float_setter<Camera2D>(&Camera2D::clear_b), float_setter<Camera2D>(&Camera2D::clear_a)}));
+                          float_setter<Camera2D>(&Camera2D::clear_b), float_setter<Camera2D>(&Camera2D::clear_a)})));
     desc.properties.push_back(make_scalar<Camera2D, bool>("primary", &Camera2D::primary, ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
@@ -84,8 +85,8 @@ void register_sprite_animator(Registry& registry) {
         make_scalar<SpriteAnimator, u32>("frames_x", &SpriteAnimator::frames_x, ValueKind::Int, &defaults));
     desc.properties.push_back(
         make_scalar<SpriteAnimator, u32>("frames_y", &SpriteAnimator::frames_y, ValueKind::Int, &defaults));
-    desc.properties.push_back(
-        make_scalar<SpriteAnimator, f32>("fps", &SpriteAnimator::fps, ValueKind::Float, &defaults));
+    desc.properties.push_back(with_range(
+        make_scalar<SpriteAnimator, f32>("fps", &SpriteAnimator::fps, ValueKind::Float, &defaults), 0.0, 60.0, 0.5));
     desc.properties.push_back(
         make_scalar<SpriteAnimator, bool>("playing", &SpriteAnimator::playing, ValueKind::Bool, &defaults));
     desc.properties.push_back(
