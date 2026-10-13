@@ -51,6 +51,10 @@ void register_audio_source(Registry& registry) {
                                                                    ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<audio::AudioSource, f32>("max_distance", &audio::AudioSource::max_distance,
                                                                    ValueKind::Float, &defaults));
+    // The bus name is a plain string, so a scene persists which mixing group the
+    // source routes to. An empty string is the master bus and is the default.
+    desc.properties.push_back(make_scalar<audio::AudioSource, std::string>("bus_name", &audio::AudioSource::bus_name,
+                                                                           ValueKind::String, &defaults));
 
     registry.register_type(std::move(desc));
 }

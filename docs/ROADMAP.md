@@ -181,8 +181,9 @@ is missing than ten roadmap items, and it is the precondition for a community.
 - [x] Audio playback and mixing: `AudioDevice` with a real (miniaudio) and a null
       backend, `AudioClip` + `WavLoader`, `AudioSource`, and `AudioSystem` with a
       pure mixer — see [ADR-0016](adr/0016-audio-module.md)
-- [ ] Audio refinements: 3D positional attenuation, streaming / large-file
-      playback, compressed codecs, and audio buses / mixing groups
+- [~] Audio refinements: 3D positional attenuation and audio buses / mixing
+      groups — see [ADR-0034](adr/0034-audio-attenuation-buses.md). Streaming /
+      large-file playback and compressed codecs are still to do
 - [ ] Tilemaps
 - [ ] Skeletal animation and skinning
 - [ ] Animation state machines

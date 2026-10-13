@@ -7,6 +7,7 @@
 #include "fe/scene/Component.h"
 
 #include <memory>
+#include <string>
 
 namespace fe::audio {
 
@@ -50,17 +51,26 @@ public:
     // the voice is created stopped and starts only on an explicit play().
     bool play_on_start = true;
 
-    // When true, distance attenuation is applied (not yet implemented; see
-    // ADR-0016). The position is always taken from the node's world transform,
-    // never from a transform of its own; spatialisation reuses the existing
-    // hierarchy rather than adding a second source of truth for position.
+    // When true, distance attenuation is applied: the mixer scales the voice by
+    // the falloff between `min_distance` and `max_distance` (see
+    // distance_attenuation in AudioMixer.h). When false the source is
+    // non-positional and keeps full gain, so a scene authored before this
+    // refinement sounds exactly as it did. The position is always taken from the
+    // node's world transform, never from a transform of its own; spatialisation
+    // reuses the existing hierarchy rather than adding a second source of truth
+    // for position.
     bool spatial = false;
 
     // Distance at which a spatial source is at full gain, and the distance at
-    // which it has fallen to silence. Ignored while `spatial` is false or while
-    // attenuation is unimplemented.
+    // which it has fallen to silence. Ignored while `spatial` is false.
     f32 min_distance = 1.0f;
     f32 max_distance = 20.0f;
+
+    // The mixing group this source routes to, matched by name against the
+    // AudioSystem's bus table (see AudioBus.h). Empty means the master bus: the
+    // source is scaled by the master gain alone. The bus's gain scales every
+    // source that names it, so a volume change on a bus affects them all at once.
+    std::string bus_name{};
 
     [[nodiscard]] bool has_clip() const noexcept { return clip != nullptr; }
 };
