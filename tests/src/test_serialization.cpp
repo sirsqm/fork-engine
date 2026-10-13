@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 #include <doctest/doctest.h>
 
+#include "fe/core/FileSystem.h"
 #include "fe/resources/Resource.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/resources/Texture2DLoader.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
@@ -10,6 +12,7 @@
 #include "fe/scene/Sprite2D.h"
 #include "fe/serialization/SceneSerializer.h"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -102,7 +105,7 @@ TEST_CASE("the document records a format and version") {
     auto text = serialization::scene::to_json(scene);
     REQUIRE(text);
     CHECK(text.value().find("\"format\": \"fork_scene\"") != std::string::npos);
-    CHECK(text.value().find("\"format_version\": 1") != std::string::npos);
+    CHECK(text.value().find("\"format_version\": 2") != std::string::npos);
 }
 
 TEST_CASE("loading rejects a document that is not a fork scene") {
@@ -154,4 +157,132 @@ TEST_CASE("loading an empty scene document yields an empty scene") {
     Scene scene;
     REQUIRE_FALSE(serialization::scene::from_json(R"({"format":"fork_scene","format_version":1})", scene));
     CHECK(scene.root_count() == 0);
+}
+
+namespace {
+
+// A unique temporary asset root per test case, removed on destruction.
+class TempDir {
+public:
+    explicit TempDir(std::string name) {
+        path_ = std::filesystem::temp_directory_path() / ("fe_ser_test_" + name + "_" + std::to_string(counter_++));
+        std::filesystem::remove_all(path_);
+        std::filesystem::create_directories(path_);
+    }
+    ~TempDir() {
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
+    }
+    [[nodiscard]] std::string str() const { return path_.string(); }
+    [[nodiscard]] std::string file(const std::string& name) const { return (path_ / name).string(); }
+
+private:
+    std::filesystem::path path_;
+    static inline int counter_ = 0;
+};
+
+// A stand-in GPU texture. The serializer stores a reference, not the pixels, so
+// a path and a type name are all it needs.
+class StubTexture final : public Resource {
+public:
+    explicit StubTexture(std::string path) : Resource(std::move(path)) {}
+    [[nodiscard]] const char* type_name() const noexcept override { return "Texture2D"; }
+};
+
+// A loader that serves StubTexture for ".png" under the "tex" scheme, so a
+// loaded scene can resolve its references without a GPU.
+class StubTextureLoader final : public ResourceLoader {
+public:
+    [[nodiscard]] std::string_view scheme() const noexcept override { return "tex"; }
+    [[nodiscard]] bool supports(std::string_view extension) const noexcept override { return extension == ".png"; }
+    [[nodiscard]] Result<std::shared_ptr<Resource>> load(std::string_view path) override {
+        return std::static_pointer_cast<Resource>(std::make_shared<StubTexture>(std::string(path)));
+    }
+};
+
+} // namespace
+
+TEST_CASE("with an asset database a texture reference is saved as a stable guid") {
+    TempDir dir("guid");
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/textures/checker.png"), "x"));
+
+    ResourceManager manager;
+    manager.assets().set_root(dir.str());
+    auto imported = manager.assets().import("assets/textures/checker.png", "tex");
+    REQUIRE(imported);
+
+    Scene scene;
+    Node* node = scene.create_node("Hero");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = std::make_shared<StubTexture>("assets/textures/checker.png");
+
+    auto text = serialization::scene::to_json(scene, &manager);
+    REQUIRE(text);
+    CHECK(text.value().find(to_reference(imported.value().id)) != std::string::npos);
+    CHECK(text.value().find("tex:assets/textures/checker.png") == std::string::npos);
+}
+
+TEST_CASE("without an asset database a texture reference is saved as a path key") {
+    Scene scene;
+    Node* node = scene.create_node("Hero");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = std::make_shared<StubTexture>("assets/textures/checker.png");
+
+    auto text = serialization::scene::to_json(scene);
+    REQUIRE(text);
+    CHECK(text.value().find("\"tex:assets/textures/checker.png\"") != std::string::npos);
+}
+
+TEST_CASE("a version-1 document migrates path keys to guids and resolves") {
+    TempDir dir("migrate");
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/textures/checker.png"), "x"));
+
+    ResourceManager manager;
+    manager.register_loader(std::make_unique<StubTextureLoader>());
+    manager.assets().set_root(dir.str());
+    auto imported = manager.assets().import("assets/textures/checker.png", "tex");
+    REQUIRE(imported);
+
+    // A hand-written version-1 document, as an older editor would have produced.
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 1,
+        "name": "Old",
+        "roots": [
+            {
+                "name": "Hero",
+                "type": "Node",
+                "components": [
+                    { "type": "Sprite2D", "texture": "tex:assets/textures/checker.png" }
+                ]
+            }
+        ]
+    })";
+
+    Scene scene;
+    REQUIRE_FALSE(serialization::scene::from_json(document, scene, &manager));
+    Node* hero = scene.find_node_by_name("Hero");
+    REQUIRE(hero != nullptr);
+    const auto* sprite = hero->get_component<Sprite2D>();
+    REQUIRE(sprite != nullptr);
+    REQUIRE(sprite->texture != nullptr);
+    CHECK(sprite->texture->path() == "assets/textures/checker.png");
+    CHECK(sprite->texture->asset_id() == imported.value().id);
+}
+
+TEST_CASE("a version-1 reference with no asset entry fails clearly instead of loading broken") {
+    ResourceManager manager;
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 1,
+        "roots": [
+            { "name": "Hero", "type": "Node",
+              "components": [ { "type": "Sprite2D", "texture": "tex:assets/missing.png" } ] }
+        ]
+    })";
+
+    Scene scene;
+    const Error error = serialization::scene::from_json(document, scene, &manager);
+    CHECK(error);
+    CHECK(error.message().find("cannot be migrated") != std::string::npos);
 }
