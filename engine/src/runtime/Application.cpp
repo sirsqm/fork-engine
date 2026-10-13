@@ -27,6 +27,14 @@ int Application::run() {
 
     FE_LOG_INFO("entering main loop (%s)", headless_ ? "headless" : "interactive");
 
+    // Install the application's profiler on this thread for the whole run, so
+    // the frame loop and every system that records through FE_PROFILE_SCOPE land
+    // in the same ring. Cleared on exit so a later test cannot reach a destroyed
+    // Application. (Recording is per-thread: a worker thread would set its own.)
+    if (profiling_enabled_) {
+        Profiler::set_current(&profiler_);
+    }
+
     u32 frame_index = 0;
     while (!exit_requested_) {
         if (headless_ && headless_frames_ > 0 && frame_index >= headless_frames_) {
@@ -36,6 +44,12 @@ int Application::run() {
             break;
         }
 
+        // Bracket the whole frame so the report has a total to compare the parts
+        // against. When profiling is off this is a no-op, and begin_frame() is
+        // skipped, so no frame is committed.
+        const bool recording = profiling_enabled_ && profiler_.begin_frame();
+        const ProfileScope frame_scope("frame");
+
         engine_.tick();
 
         // Ordering: advance the input edges, then let the OS deliver this
@@ -43,24 +57,40 @@ int Application::run() {
         engine_.window().input().begin_frame();
         engine_.window().poll_events();
 
-        on_update(engine_.delta_time());
+        {
+            const ProfileScope update_scope("frame/update");
+            on_update(engine_.delta_time());
 
-        // Run the user's systems for this frame. This is the whole execution
-        // model: after the per-frame hook, before rendering, in the order the
-        // systems were added.
-        FrameContext frame;
-        frame.delta_time = engine_.delta_time();
-        frame.elapsed_time = engine_.elapsed_time();
-        frame.resources = &engine_.resources();
-        schedule_.update(frame, scene_);
+            // Run the user's systems for this frame. This is the whole execution
+            // model: after the per-frame hook, before rendering, in the order the
+            // systems were added. Each system is timed by the schedule.
+            FrameContext frame;
+            frame.delta_time = engine_.delta_time();
+            frame.elapsed_time = engine_.elapsed_time();
+            frame.resources = &engine_.resources();
+            schedule_.update(frame, scene_);
+        }
 
-        render_frame();
+        {
+            const ProfileScope render_scope("frame/render");
+            render_frame();
+        }
 
         // Presents the back buffer (or, headless, simply ends the frame). The
         // frame was fully rendered either way, so the pipeline is exercised.
         engine_.device().end_frame();
 
+        if (recording) {
+            if (Result<void> ended = profiler_.end_frame(); !ended) {
+                FE_LOG_WARN("profiler: end_frame failed: %s", ended.error().message().c_str());
+            }
+        }
+
         ++frame_index;
+    }
+
+    if (profiling_enabled_) {
+        Profiler::set_current(nullptr);
     }
 
     on_stop();
@@ -73,6 +103,13 @@ int Application::run() {
     scene_.clear();
     engine_.shutdown();
     return 0;
+}
+
+Result<FrameReport> Application::last_frame_report(usize frame_offset) const {
+    if (!profiling_enabled_) {
+        return Error("Application: profiling is disabled");
+    }
+    return profiler_.frame_report(frame_offset);
 }
 
 void Application::render_frame() {
