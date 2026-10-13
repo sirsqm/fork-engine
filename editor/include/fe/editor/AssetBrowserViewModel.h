@@ -39,6 +39,10 @@ public:
         std::string name;
         std::string directory;
         std::string scheme;
+        // The asset's import settings kind ("texture", "generic"), so the browser
+        // can show what an asset will be imported as. See
+        // docs/adr/0027-asset-import-settings.md.
+        std::string settings_kind;
     };
 
     AssetBrowserViewModel() = default;

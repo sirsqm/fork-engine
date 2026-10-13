@@ -59,6 +59,18 @@ Result<AssetMeta> read_asset_meta(std::string_view sidecar_path) {
     }
     meta.source = document.value("source", std::string{});
     meta.scheme = document.value("scheme", std::string{});
+
+    // Import settings are optional: a sidecar written before they existed has
+    // none, and a default value is the same as absent. A malformed one is an
+    // error rather than a silent fall back to defaults, so a bad edit is not
+    // mistaken for an intentional default.
+    if (document.contains("settings")) {
+        auto settings = import_settings_from_json(document.at("settings").dump());
+        if (!settings) {
+            return Error("asset metadata in '" + std::string(sidecar_path) + "': " + settings.error().message());
+        }
+        meta.settings = settings.value();
+    }
     return meta;
 }
 
@@ -69,6 +81,14 @@ Error write_asset_meta(std::string_view sidecar_path, const AssetMeta& meta) {
     document["guid"] = meta.id.to_string();
     document["source"] = meta.source;
     document["scheme"] = meta.scheme;
+    // A generic asset has no type-specific settings, so the block is omitted
+    // entirely and its sidecar stays byte-identical to one written before import
+    // settings existed. An asset that has a kind always records it, so the kind
+    // (which the editor needs to draw the right settings) survives a reload even
+    // when every value is a default.
+    if (meta.settings.kind != ImportSettings::Kind::Generic) {
+        document["settings"] = json::parse(import_settings_to_json(meta.settings));
+    }
     return fs::write_text_file(sidecar_path, document.dump(2));
 }
 
@@ -114,6 +134,7 @@ void AssetDatabase::rescan() {
         asset.id = meta.value().id;
         asset.path = asset_path;
         asset.scheme = meta.value().scheme;
+        asset.settings = meta.value().settings;
         by_path_[asset.path] = asset.id;
         by_id_[asset.id] = std::move(asset);
     }
@@ -121,6 +142,17 @@ void AssetDatabase::rescan() {
 }
 
 Result<AssetDatabase::Asset> AssetDatabase::import(std::string_view path, std::string_view scheme) {
+    // Default settings for the scheme: a texture gets the texture importer's
+    // defaults, anything else the generic (empty) settings.
+    ImportSettings defaults;
+    if (scheme == "tex") {
+        defaults = ImportSettings::texture_defaults();
+    }
+    return import(path, scheme, defaults);
+}
+
+Result<AssetDatabase::Asset> AssetDatabase::import(std::string_view path, std::string_view scheme,
+                                                   ImportSettings settings) {
     if (root_.empty()) {
         return Error("asset database has no root; call set_root() before import()");
     }
@@ -152,6 +184,7 @@ Result<AssetDatabase::Asset> AssetDatabase::import(std::string_view path, std::s
     meta.id = id;
     meta.source = fs::filename(relative);
     meta.scheme = std::string(scheme);
+    meta.settings = settings;
     if (Error error = write_asset_meta(sidecar, meta); error) {
         return error;
     }
@@ -160,6 +193,7 @@ Result<AssetDatabase::Asset> AssetDatabase::import(std::string_view path, std::s
     asset.id = id;
     asset.path = relative;
     asset.scheme = meta.scheme;
+    asset.settings = meta.settings;
     by_path_[asset.path] = asset.id;
     by_id_[asset.id] = asset;
     return asset;

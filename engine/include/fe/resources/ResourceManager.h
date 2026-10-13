@@ -5,6 +5,7 @@
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
 #include "fe/resources/AssetDatabase.h"
+#include "fe/resources/ImportSettings.h"
 #include "fe/resources/Resource.h"
 
 #include <memory>
@@ -64,6 +65,17 @@ public:
     [[nodiscard]] AssetDatabase& assets() noexcept { return assets_; }
     [[nodiscard]] const AssetDatabase& assets() const noexcept { return assets_; }
 
+    // The import settings in effect for the load currently running on this
+    // thread, or nullptr when the load was not initiated by load() (a direct
+    // loader call) or the asset has none.
+    //
+    // A loader reads this to honour its asset's per-type settings without a
+    // settings parameter on `ResourceLoader::load`: the manager scopes the
+    // settings for the duration of the load and a loader that cares asks for
+    // them. This keeps the loader contract unchanged, so a loader that has no
+    // settings keeps compiling and behaving exactly as before.
+    [[nodiscard]] const ImportSettings* current_import_settings() const noexcept { return current_settings_; }
+
     // Typed convenience: returns nullptr (with an Error) when the resource is
     // missing or is not a `T`.
     template <typename T>
@@ -92,12 +104,19 @@ private:
     };
 
     // Loads a concrete file path (already scheme-stripped) through the loaders.
-    // Shared by the path and GUID load paths.
-    [[nodiscard]] Result<std::shared_ptr<Resource>> load_file(std::string_view scheme, std::string_view file_path);
+    // Shared by the path and GUID load paths. `settings`, when non-null, is the
+    // import settings of the asset being loaded; it is scoped for the duration
+    // of the loader call so a loader can read it through
+    // current_import_settings().
+    [[nodiscard]] Result<std::shared_ptr<Resource>> load_file(std::string_view scheme, std::string_view file_path,
+                                                              const ImportSettings* settings = nullptr);
 
     std::vector<std::unique_ptr<ResourceLoader>> loaders_;
     std::unordered_map<std::string, CacheEntry> cache_;
     AssetDatabase assets_;
+    // The settings for the load currently running, or nullptr. Set and cleared
+    // around each loader call in load_file(); see current_import_settings().
+    const ImportSettings* current_settings_ = nullptr;
 };
 
 } // namespace fe

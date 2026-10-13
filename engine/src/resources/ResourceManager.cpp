@@ -36,7 +36,7 @@ Result<std::shared_ptr<Resource>> ResourceManager::load(std::string_view referen
         if (asset == nullptr) {
             return Error("asset " + guid.to_string() + " is not in the asset database (root '" + assets_.root() + "')");
         }
-        auto result = load_file(asset->scheme, asset->path);
+        auto result = load_file(asset->scheme, asset->path, &asset->settings);
         if (!result) {
             return result.error();
         }
@@ -63,7 +63,15 @@ Result<std::shared_ptr<Resource>> ResourceManager::load(std::string_view referen
         file_path = std::string_view(key).substr(colon + 1);
     }
 
-    auto result = load_file(scheme, file_path);
+    // A path load still honours the asset's import settings when the database
+    // knows the file, so a direct "tex:assets/hero.png" reference and a "guid:"
+    // reference to the same asset produce the same resource.
+    const ImportSettings* settings = nullptr;
+    if (const AssetDatabase::Asset* asset = assets_.find_by_path(file_path)) {
+        settings = &asset->settings;
+    }
+
+    auto result = load_file(scheme, file_path, settings);
     if (!result) {
         return result.error();
     }
@@ -71,13 +79,21 @@ Result<std::shared_ptr<Resource>> ResourceManager::load(std::string_view referen
     return result.value();
 }
 
-Result<std::shared_ptr<Resource>> ResourceManager::load_file(std::string_view scheme, std::string_view file_path) {
+Result<std::shared_ptr<Resource>> ResourceManager::load_file(std::string_view scheme, std::string_view file_path,
+                                                             const ImportSettings* settings) {
     const std::string extension = fs::extension(file_path);
     for (const auto& loader : loaders_) {
         if (loader->scheme() != scheme || !loader->supports(extension)) {
             continue;
         }
+        // Scope the settings for the loader call. load() is not re-entrant
+        // through this path in a way that would clobber it (the texture loader
+        // fetches the CPU image under the default scheme, which has no asset
+        // settings), and the engine is single-threaded per ADR-0004.
+        const ImportSettings* previous = current_settings_;
+        current_settings_ = settings;
         auto result = loader->load(file_path);
+        current_settings_ = previous;
         if (!result) {
             return result.error();
         }

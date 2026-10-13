@@ -181,3 +181,23 @@ TEST_CASE("a selection whose asset is gone reports no entry") {
     CHECK(model.selected_entry() == nullptr);
     CHECK(model.selected_reference().empty());
 }
+
+TEST_CASE("the browser reports each asset's import settings kind") {
+    TempDir dir("settings_kind");
+    ResourceManager resources;
+    resources.assets().set_root(dir.str());
+
+    write_file(dir.file("assets/hero.png"), "png");
+    write_file(dir.file("assets/level.obj"), "obj");
+    REQUIRE(resources.assets().import("assets/hero.png", "tex"));
+    REQUIRE(resources.assets().import("assets/level.obj", "obj"));
+
+    AssetBrowserViewModel model;
+    model.rebuild(&resources);
+    REQUIRE(model.visible_entries().size() == 2);
+
+    // The texture importer stamps the "texture" kind; a scheme with no typed
+    // importer stays generic.
+    CHECK(model.visible_entries()[0].settings_kind == "texture"); // assets/hero.png
+    CHECK(model.visible_entries()[1].settings_kind == "generic"); // assets/level.obj
+}
