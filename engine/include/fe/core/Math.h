@@ -119,6 +119,14 @@ struct Vec4 {
         : x(x_value), y(y_value), z(z_value), w(w_value) {}
     constexpr Vec4(const Vec3& xyz, f32 w_value) : x(xyz.x), y(xyz.y), z(xyz.z), w(w_value) {}
 
+    [[nodiscard]] constexpr Vec4 operator+(const Vec4& o) const noexcept {
+        return {x + o.x, y + o.y, z + o.z, w + o.w};
+    }
+    [[nodiscard]] constexpr Vec4 operator-(const Vec4& o) const noexcept {
+        return {x - o.x, y - o.y, z - o.z, w - o.w};
+    }
+    [[nodiscard]] constexpr Vec4 operator*(f32 s) const noexcept { return {x * s, y * s, z * s, w * s}; }
+
     [[nodiscard]] constexpr bool operator==(const Vec4&) const noexcept = default;
 
     // Convenience for colour values. Components are interpreted as linear

@@ -267,7 +267,14 @@ live in `scene3d`, which does **not** depend on `renderer3d`: a camera or a ligh
 is scene data the renderer reads. `Camera3D::view_projection` composes `look_at`
 and `perspective`; a component never stores its own transform.
 
-Batching, frustum culling, shadows, multiple light types, and a material graph
+**Culling.** `Renderer3D` rejects instances whose world-space AABB lies wholly
+outside the camera frustum before they reach the GPU (ADR-0011). `core::Frustum`
+extracts the six planes from a view-projection matrix; the test is conservative
+(a box straddling a plane is kept), so it can only save a draw, never hide a
+visible mesh. It is a flat pass, not a spatial hierarchy — the leaf operation a
+BVH would call.
+
+Batching, shadows, multiple light types, a spatial tree, and a material graph
 are later work behind these same interfaces.
 
 ### Camera selection
@@ -357,8 +364,9 @@ not a rewrite.
 ## 11. Testing strategy
 
 - **Pure-logic tests** (`fork_engine_tests`) cover math, filesystem, scene,
-  components, resources, serialization, input, mesh geometry, and 3D scene
-  components (camera projection, reflection registration). They run anywhere.
+  components, resources, serialization, input, mesh geometry, 3D scene
+  components (camera projection, reflection registration), and frustum culling
+  (plane extraction, point/AABB visibility). They run anywhere.
 - **Graphics tests** (`fork_graphics_tests`) create a hidden window and GL
   context, render a scene, and read the framebuffer back to assert what was
   actually drawn (pixel values, batching and draw counts, camera clear colour,
@@ -371,9 +379,10 @@ Every milestone must build and pass its tests before the next one begins.
 
 ## 12. What is deliberately not here yet
 
-- The parts of 3D rendering beyond the first lit pass: shadows, frustum
-  culling, batching, point and spot lights, skeletal animation, and a material
-  graph (see [ADR-0010](adr/0010-3d-rendering-foundation.md)).
+- The parts of 3D rendering beyond the first lit pass: shadows, batching,
+  point and spot lights, skeletal animation, a spatial hierarchy over static
+  geometry, and a material graph (see [ADR-0010](adr/0010-3d-rendering-foundation.md)
+  and [ADR-0011](adr/0011-frustum-culling.md)).
 - 3D physics, and the parts of 2D physics not in the first cut: angular
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).

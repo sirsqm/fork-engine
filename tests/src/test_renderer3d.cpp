@@ -183,6 +183,95 @@ TEST_CASE("renderer3d draws nothing without a camera") {
     context.device->end_frame();
 }
 
+TEST_CASE("renderer3d frustum-culls a mesh behind the camera") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene); // Camera at +Z looking down -Z.
+
+    // A cube placed behind the camera (positive Z, further from the origin than
+    // the eye) cannot be visible. It must be culled, not drawn.
+    Node* behind = scene.create_node("Behind");
+    auto* behind_renderer = behind->add_component<MeshRenderer3D>();
+    behind_renderer->mesh = Mesh::make_cube();
+    behind->transform().position = Vec3{0.0f, 0.0f, 6.0f};
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(result.value() == 0);
+    CHECK(renderer.last_draw_calls() == 0);
+    CHECK(renderer.last_culled() == 1);
+    context.device->end_frame();
+}
+
+TEST_CASE("renderer3d does not cull a mesh in front of the camera") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    Node* front = scene.create_node("Front");
+    auto* front_renderer = front->add_component<MeshRenderer3D>();
+    front_renderer->mesh = Mesh::make_cube();
+    front->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(result.value() == 1);
+    CHECK(renderer.last_culled() == 0);
+    context.device->end_frame();
+}
+
+TEST_CASE("renderer3d keeps a culled mesh's buffers cached") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    auto cube = Mesh::make_cube();
+    Node* node = scene.create_node("Mover");
+    auto* mesh_renderer = node->add_component<MeshRenderer3D>();
+    mesh_renderer->mesh = cube;
+
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+
+    // Frame 1: in front of the camera, drawn and uploaded.
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    REQUIRE(renderer.render(*context.device, scene, 64, 64));
+    CHECK(renderer.last_draw_calls() == 1);
+    CHECK(renderer.cached_mesh_count() == 1);
+    context.device->end_frame();
+
+    // Frame 2: moved behind the camera, culled. The buffers must survive so the
+    // mesh does not re-upload when it comes back into view.
+    node->transform().position = Vec3{0.0f, 0.0f, 6.0f};
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    REQUIRE(renderer.render(*context.device, scene, 64, 64));
+    CHECK(renderer.last_draw_calls() == 0);
+    CHECK(renderer.last_culled() == 1);
+    CHECK(renderer.cached_mesh_count() == 1);
+    context.device->end_frame();
+}
+
 TEST_CASE("renderer3d depth-tests so a nearer mesh occludes a farther one") {
     GraphicsContext3D context;
     if (!context.available) {

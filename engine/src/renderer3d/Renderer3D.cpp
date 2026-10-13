@@ -3,6 +3,7 @@
 #include "fe/renderer3d/Renderer3D.h"
 
 #include "fe/core/Assert.h"
+#include "fe/core/Frustum.h"
 #include "fe/core/Log.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/scene/Node.h"
@@ -90,6 +91,33 @@ void main() {
         }
     }
     return out;
+}
+
+// The world-space axis-aligned bounding box of a local AABB under `model`.
+//
+// Transforming the eight corners and taking the min/max is exact for an AABB
+// (the extremes of a linear map over a box occur at vertices) and cheap enough
+// for the handful of meshes a frame touches. The tighter alternative - fitting
+// an oriented box - buys very little here and complicates the frustum test.
+void expand_to_world_aabb(const Vec3& local_min, const Vec3& local_max, const Mat4& model, Vec3& out_min,
+                          Vec3& out_max) noexcept {
+    const std::array<Vec3, 8> corners = {
+        Vec3{local_min.x, local_min.y, local_min.z}, Vec3{local_max.x, local_min.y, local_min.z},
+        Vec3{local_min.x, local_max.y, local_min.z}, Vec3{local_max.x, local_max.y, local_min.z},
+        Vec3{local_min.x, local_min.y, local_max.z}, Vec3{local_max.x, local_min.y, local_max.z},
+        Vec3{local_min.x, local_max.y, local_max.z}, Vec3{local_max.x, local_max.y, local_max.z},
+    };
+    out_min = transform_point(model, corners[0]);
+    out_max = out_min;
+    for (usize i = 1; i < corners.size(); ++i) {
+        const Vec3 p = transform_point(model, corners[i]);
+        out_min.x = std::min(out_min.x, p.x);
+        out_min.y = std::min(out_min.y, p.y);
+        out_min.z = std::min(out_min.z, p.z);
+        out_max.x = std::max(out_max.x, p.x);
+        out_max.y = std::max(out_max.y, p.y);
+        out_max.z = std::max(out_max.z, p.z);
+    }
 }
 
 } // namespace
@@ -189,6 +217,7 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     FE_CHECK(viewport_width > 0 && viewport_height > 0);
 
     last_draw_calls_ = 0;
+    last_culled_ = 0;
 
     const Camera3D* camera = find_active_camera(scene);
     if (camera == nullptr) {
@@ -203,6 +232,12 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     };
     std::vector<Instance> instances;
 
+    // Every mesh referenced this frame, including culled ones. The buffer sweep
+    // below keys off this, not off `instances`: a mesh that is merely off screen
+    // this frame must keep its GPU buffers, or it would re-upload every time it
+    // came back into view.
+    std::vector<const Mesh*> meshes_seen;
+
     scene.for_each_node([&](Node& node) {
         const auto* renderer = node.get_component<MeshRenderer3D>();
         if (renderer == nullptr || !renderer->has_mesh()) {
@@ -212,6 +247,7 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
         if (mesh == nullptr || mesh->index_count() == 0) {
             return;
         }
+        meshes_seen.push_back(mesh);
         instances.push_back(Instance{renderer, mesh, node.world_matrix()});
     });
 
@@ -223,29 +259,49 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     const Mat4 view_projection = camera->view_projection(viewport_width, viewport_height);
     const Vec3 camera_position = camera->eye();
 
+    // --- 3. Frustum culling -------------------------------------------------
+    // Build the frustum once and reject instances whose world AABB lies wholly
+    // outside it. This is conservative (a straddling box is kept), so culling
+    // can only ever save a draw, never hide a visible mesh.
+    const Frustum frustum = Frustum::from_view_projection(view_projection);
+    std::erase_if(instances, [&](const Instance& instance) {
+        Vec3 world_min{};
+        Vec3 world_max{};
+        expand_to_world_aabb(instance.mesh->bounds_min(), instance.mesh->bounds_max(), instance.model, world_min,
+                             world_max);
+        if (frustum.intersects_aabb(world_min, world_max)) {
+            return false;
+        }
+        ++last_culled_;
+        return true;
+    });
+
     const DirectionalLight3D* light = find_directional_light(scene);
     const Vec3 light_direction = light != nullptr ? light->direction.normalized() : Vec3{0.0f, -1.0f, 0.0f};
     const Vec3 light_color = light != nullptr ? light->color : Vec3{1.0f, 1.0f, 1.0f};
     const f32 light_intensity = light != nullptr ? light->intensity : 1.0f;
     const f32 ambient = light != nullptr ? light->ambient : 0.15f;
 
-    // --- 3. Pass state ------------------------------------------------------
+    u32 drawn = 0;
+
+    // --- 4. Pass state ------------------------------------------------------
     // The 3D pass is opaque and depth-tested. Blending is disabled so draws do
     // not depend on order.
     device.set_blend_mode(rhi::BlendMode::None);
     device.set_depth_test(true);
 
-    device.bind_shader(*shader_);
-    shader_->set_mat4("u_view_projection", view_projection);
-    shader_->set_int("u_texture", 0);
-    shader_->set_vec3("u_light_color", light_color);
-    shader_->set_float("u_light_intensity", light_intensity);
-    shader_->set_float("u_ambient", ambient);
-    shader_->set_vec3("u_light_direction", light_direction);
-    shader_->set_vec3("u_camera_position", camera_position);
+    if (!instances.empty()) {
+        device.bind_shader(*shader_);
+        shader_->set_mat4("u_view_projection", view_projection);
+        shader_->set_int("u_texture", 0);
+        shader_->set_vec3("u_light_color", light_color);
+        shader_->set_float("u_light_intensity", light_intensity);
+        shader_->set_float("u_ambient", ambient);
+        shader_->set_vec3("u_light_direction", light_direction);
+        shader_->set_vec3("u_camera_position", camera_position);
+    }
 
-    // --- 4. Draw ------------------------------------------------------------
-    u32 drawn = 0;
+    // --- 5. Draw ------------------------------------------------------------
     for (const Instance& instance : instances) {
         auto gpu = acquire_mesh(device, *instance.mesh);
         if (!gpu) {
@@ -277,14 +333,13 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
         ++drawn;
     }
 
-    // --- 5. Sweep dead mesh buffers ----------------------------------------
-    // A buffer is stale when the only reference to its mesh key is gone. We key
-    // by address, so a freed mesh's entry can only be removed by checking
-    // liveness against the set of meshes seen this frame. Meshes not present
-    // are dropped; this runs rarely because scenes are stable frame to frame.
+    // --- 6. Sweep dead mesh buffers ----------------------------------------
+    // A buffer is stale when its mesh is no longer referenced by any renderer in
+    // the scene. Liveness is checked against every mesh seen this frame, culled
+    // or not, so a mesh that is simply off screen keeps its buffers.
     std::erase_if(buffers_, [&](const auto& entry) {
-        return std::none_of(instances.begin(), instances.end(),
-                            [&](const Instance& instance) { return instance.mesh == entry.first; });
+        return std::none_of(meshes_seen.begin(), meshes_seen.end(),
+                            [&](const Mesh* mesh) { return mesh == entry.first; });
     });
 
     return static_cast<usize>(drawn);

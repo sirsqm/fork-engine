@@ -11,6 +11,7 @@ add_executable(fork_engine_tests
     src/test_uuid.cpp
     src/test_filesystem.cpp
     src/test_math.cpp
+    src/test_frustum.cpp
     src/test_input_state.cpp
     src/test_scene.cpp
     src/test_components.cpp

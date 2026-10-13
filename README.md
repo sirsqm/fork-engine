@@ -23,7 +23,7 @@ Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Logging, assertions, error handling | Working |
 | RHI abstraction + OpenGL 3.3 core backend | Working |
 | 2D renderer (batched sprites, camera, textures) | Working |
-| 3D renderer (lit meshes, directional light, 3D camera) | Working (first pass) |
+| 3D renderer (lit meshes, directional light, 3D camera, frustum culling) | Working (first pass) |
 | Mesh resources (primitives, OBJ loader) | Working |
 | Scene graph (nodes, transforms, components) | Working |
 | Resource manager (load, cache, release) | Working |
