@@ -42,6 +42,7 @@ rather than editing it.
 | [0031](0031-physics3d-and-backend-seam.md) | 3D physics, and a backend seam so the solver can be replaced | Accepted |
 | [0032](0032-near-term-platform-scope.md) | Near-term platform scope: desktop is the target, shipping is the plan | Accepted |
 | [0034](0034-audio-attenuation-buses.md) | Audio attenuation and mixing buses | Accepted |
+| [0035](0035-ci-quality-gates.md) | CI quality gates: sanitizers and an optimised warnings build | Accepted |
 
 ## Format
 

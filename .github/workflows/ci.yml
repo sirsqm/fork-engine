@@ -110,3 +110,140 @@ jobs:
             exit 0
           fi
           clang-format --dry-run --Werror $files
+
+  # ---------------------------------------------------------------------------
+  # Sanitizers.
+  #
+  # A Debug build with -DFE_ENABLE_ASAN=ON (AddressSanitizer + UndefinedBehavior
+  # Sanitizer, see CMakeLists.txt) and warnings-as-errors, running the full ctest
+  # suite under a virtual display (the graphics tests need a GL context).
+  #
+  # detect_leaks is set to 0 on purpose. LeakSanitizer's exit-time report is
+  # clean for the pure engine and editor tests, but the tests that create a GL
+  # context (and the untouched fork_sandbox) report leaks whose stacks are
+  # entirely third-party -- Mesa/llvmpipe, GLFW and X11, symbolized only as
+  # "<unknown module>" -- with no engine frame involved. Gating on that would
+  # leave this job permanently red over allocations the project does not own and
+  # cannot free. The remaining sanitizer checks (heap/stack buffer overflow,
+  # use-after-free, double-free, and every UBSan check) still run across the
+  # whole suite, graphics included. UBSAN_OPTIONS halts on the first finding so
+  # UBSan, which prints and continues by default, actually fails the job.
+  # ---------------------------------------------------------------------------
+  sanitizers:
+    name: Linux / GCC / Debug + ASan/UBSan
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            xvfb \
+            mesa-utils \
+            ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-asan-ccache-${{ hashFiles('**/CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            ${{ runner.os }}-asan-ccache-
+
+      - name: Configure (Debug + ASan/UBSan, warnings as errors)
+        env:
+          CC: gcc
+          CXX: g++
+        run: >-
+          cmake -S . -B build-asan
+          -DCMAKE_BUILD_TYPE=Debug
+          -DFE_ENABLE_ASAN=ON
+          -DFE_WARNINGS_AS_ERRORS=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build-asan --parallel
+
+      # Leak detection is left on for the engine and editor tests, where it is
+      # clean and meaningful, and off for the full run that includes the GL
+      # binaries. Both invocations reuse the same build.
+      - name: Test (engine + editor, leak detection on)
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-asan --output-on-failure -R 'engine_tests|editor_tests'
+
+      - name: Test (full suite, with a virtual display)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: xvfb-run -a -s "-screen 0 640x480x24" ctest --test-dir build-asan --output-on-failure
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+  # ---------------------------------------------------------------------------
+  # Warnings-as-errors.
+  #
+  # A Release-grade configure+build (RelWithDebInfo, so the optimiser is on and
+  # optimisation-sensitive warnings still fire) with -DFE_WARNINGS_AS_ERRORS=ON.
+  # The purpose is to catch warning regressions on the optimised path, which the
+  # Debug matrix jobs do not see; the test matrix above already runs the suite in
+  # both Debug and Release, so this job builds only.
+  # ---------------------------------------------------------------------------
+  warnings:
+    name: Linux / GCC / RelWithDebInfo (warnings as errors)
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-warnings-ccache-${{ hashFiles('**/CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            ${{ runner.os }}-warnings-ccache-
+
+      - name: Configure (RelWithDebInfo, warnings as errors)
+        env:
+          CC: gcc
+          CXX: g++
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DFE_WARNINGS_AS_ERRORS=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
