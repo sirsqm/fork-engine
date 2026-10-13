@@ -22,6 +22,10 @@ namespace renderer3d {
 class Renderer3D;
 }
 
+namespace audio {
+class AudioSystem;
+} // namespace audio
+
 // Owns the engine's long-lived subsystems and their lifetimes.
 //
 // The Engine is the single place that knows the order in which subsystems are
@@ -46,6 +50,10 @@ public:
         fe::LogLevel log_level = fe::LogLevel::Info;
     };
 
+    // Declared but not defined here: the unique_ptr members need their types
+    // complete wherever they are destroyed, and the audio type is only
+    // forward-declared in this header. Defining the special members out of line
+    // keeps the header free of the audio module.
     Engine();
     ~Engine();
 
@@ -74,6 +82,24 @@ public:
     [[nodiscard]] renderer3d::Renderer3D& renderer_3d() noexcept { return *renderer_3d_; }
     [[nodiscard]] const renderer3d::Renderer3D& renderer_3d() const noexcept { return *renderer_3d_; }
 
+    // The engine's audio system. It is created here so audio is ready as soon as
+    // the engine is, but it is not registered with a schedule: the schedule
+    // belongs to whoever owns the scene (Application, the sandbox, the editor),
+    // and it adopts this system with take_audio_system() so the system runs in
+    // the frame loop. The system starts with no device attached and runs
+    // silently; a caller that wants sound opens a device (see
+    // audio::create_audio_device) and attaches it with AudioSystem::set_device.
+    // Audio output is deliberately not part of engine startup, so a machine with
+    // no sound card still runs everything else.
+    [[nodiscard]] audio::AudioSystem* audio_system() noexcept { return audio_system_.get(); }
+    [[nodiscard]] const audio::AudioSystem* audio_system() const noexcept { return audio_system_.get(); }
+
+    // Transfers the audio system to the caller, who normally hands it to a
+    // SceneSchedule. After this the engine no longer owns it and audio_system()
+    // returns nullptr. Defined out of line because the unique_ptr's deleter
+    // needs AudioSystem complete and this header only forward-declares it.
+    [[nodiscard]] std::unique_ptr<audio::AudioSystem> take_audio_system() noexcept;
+
     // Seconds elapsed since the previous frame, clamped to a sane maximum so a
     // long stall (a debugger breakpoint, a window drag) does not produce a huge
     // simulation step.
@@ -92,6 +118,7 @@ private:
     std::unique_ptr<ResourceManager> resources_;
     std::unique_ptr<renderer2d::Renderer2D> renderer_2d_;
     std::unique_ptr<renderer3d::Renderer3D> renderer_3d_;
+    std::unique_ptr<audio::AudioSystem> audio_system_;
 
     f32 delta_time_ = 0.0f;
     f64 elapsed_time_ = 0.0;

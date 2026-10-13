@@ -102,6 +102,29 @@ target_include_directories(fe_stb SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/third_
 target_compile_definitions(fe_stb INTERFACE STBI_NO_STDIO=0)
 
 # ---------------------------------------------------------------------------
+# miniaudio - cross-platform audio output (single-header, public domain / MIT-0).
+# ---------------------------------------------------------------------------
+# The real backend for the audio module. Single-header and dependency-free. Its
+# CMakeLists defines a `miniaudio` target that compiles miniaudio.c (as C) once;
+# our code includes the header for declarations only, so the implementation is
+# never duplicated. The header is included as an external header (SYSTEM) so its
+# warnings never reach us, and the extra node-graph libraries, examples, and
+# tests are switched off so FetchContent builds only what we use.
+set(FE_MINIAUDIO_TAG "0.11.25" CACHE STRING "Pinned miniaudio release tag")
+set(MINIAUDIO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(MINIAUDIO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(MINIAUDIO_INSTALL OFF CACHE BOOL "" FORCE)
+set(MINIAUDIO_NO_EXTRA_NODES ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  miniaudio
+  GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+  GIT_TAG ${FE_MINIAUDIO_TAG}
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(miniaudio)
+fe_mark_system(miniaudio)
+
+# ---------------------------------------------------------------------------
 # doctest - unit test framework (only pulled in when tests are enabled).
 # ---------------------------------------------------------------------------
 if(FE_BUILD_TESTS)

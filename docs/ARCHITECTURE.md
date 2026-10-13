@@ -38,6 +38,7 @@ core, scene, systems, reflect  <-  physics2d
 core, scene, resources  <-  mesh
 core, scene, resources  <-  scene3d
 core, rhi, resources, scene, mesh  <-  renderer3d
+core, scene, systems, resources  <-  audio
 everything  <-  runtime
 ```
 
@@ -54,6 +55,7 @@ everything  <-  runtime
 | `physics2d` | 2D collision shapes and a rigid-body simulation system | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`) and their reflection | core, scene, resources |
+| `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
 | `renderer3d` | 3D mesh rendering with a lit pass | core, rhi, resources, scene, mesh |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
@@ -174,6 +176,41 @@ AABB or a circle and a shape is centred on its node. That limit is stated rather
 than hidden: an offset that broke under rotation would be worse than no offset.
 See [ADR-0009](adr/0009-physics2d-system.md) for the full scope and the
 alternatives considered (a third-party library, node subclasses, a full ECS).
+
+### Audio as a module
+
+`audio` sits beside `physics2d` in the graph, not inside a renderer: sound is a
+sibling capability, not part of drawing. It is split along three seams.
+
+**The device is an interface.** `AudioDevice` opens a stream at a sample rate and
+accepts mixed interleaved float frames (`submit`). Two implementations exist:
+`MiniAudioDevice`, the real backend built on
+[miniaudio](https://github.com/mackron/miniaudio), which drains a lock-free ring
+buffer on the audio thread; and `NullAudioDevice`, a deterministic sink with no
+hardware. The null backend is a **test double**, not a shipping path: it records
+the frames it is given, so the mix pipeline is provable with no sound card, and
+it is what the unit tests and CI run against. No header above `src/audio/`
+includes miniaudio.
+
+**The mixer is a pure function.** `mix_voices` takes voices, an output buffer,
+and a format, and does all of the maths - gain, pitch (a clip/output
+sample-rate ratio), looping, one-shot termination, and mono up-mixing. It
+touches no device and no scene, so the tests call it directly and assert exact
+samples.
+
+**The system is thin.** `AudioSystem` reconciles the scene's `AudioSource`s with
+its voices, turns `delta_time` into a frame count, calls `mix_voices`, and
+submits the result. It holds no maths of its own.
+
+`AudioClip` is the decoded CPU-side asset (the `Image` of audio); `WavLoader`
+decodes PCM WAV under the `wav` scheme, with the parser exposed separately from
+`load()` so it is testable without a file. `AudioSource` stores the clip's
+manager key, plus gain, pitch, loop, play-on-start, and a spatial toggle whose
+position would come from the node's world transform - no separate transform is
+introduced. Audio is opt-in: `Engine` registers the loader and creates the
+system with no device, and a caller opens a device and attaches it, so a machine
+with no sound card runs everything else unchanged. See
+[ADR-0012](adr/0012-audio-module.md).
 
 ### Identity
 
@@ -386,7 +423,10 @@ Every milestone must build and pass its tests before the next one begins.
 - 3D physics, and the parts of 2D physics not in the first cut: angular
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).
-- Audio, tilemaps, particles, animation clips and state machines.
+- The parts of audio not in the first cut: 3D positional attenuation, streaming
+  and large-file playback, compressed codecs, and audio buses / mixing groups
+  (see [ADR-0012](adr/0012-audio-module.md)).
+- Tilemaps, particles, animation clips and state machines.
 - The editor.
 - Scripting.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
