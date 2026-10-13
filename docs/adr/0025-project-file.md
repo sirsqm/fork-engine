@@ -1,4 +1,4 @@
-# ADR-0024: The project file - settings as a JSON document the editor opens
+# ADR-0025: The project file - settings as a JSON document the editor opens
 
 - **Status:** Accepted
 - **Date:** 2026-10

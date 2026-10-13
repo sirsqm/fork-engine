@@ -12,6 +12,7 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/core/FileSystem.h"
 #include "fe/editor/EditorHost.h"
 #include "fe/editor/ProjectSettings.h"
 #include "fe/reflect/ComponentTypes.h"
@@ -203,7 +204,9 @@ TEST_CASE("a configured project file sets the asset root and opens its startup s
     std::filesystem::create_directories(root / "scenes");
 
     // A project whose startup scene is a real file, plus one imported asset so
-    // the asset root has something to index.
+    // the asset root has something to index. The sidecar is written through the
+    // engine's own importer, and the seed root is the resolved asset directory
+    // (matching the host's own root), so the index is found on rescan.
     const std::filesystem::path asset = root / "assets" / "hero.png";
     {
         std::ofstream(asset, std::ios::binary) << "png";
@@ -241,7 +244,7 @@ TEST_CASE("a configured project file sets the asset root and opens its startup s
     // The project's asset root was indexed (relative "assets" resolved against
     // the project directory), and its startup scene is the open document.
     CHECK(host.context().project().name() == "HostProject");
-    CHECK(host.context().project_root() == (root / "assets").string());
+    CHECK(fe::fs::normalize(host.context().project_root()) == fe::fs::normalize((root / "assets").string()));
     CHECK(host.engine().resources().assets().asset_count() == 1);
     CHECK(host.context().scene().name() == "StartupLevel");
     CHECK(host.context().scene().find_node_by_name("Marker") != nullptr);
