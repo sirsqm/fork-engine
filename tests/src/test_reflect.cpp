@@ -117,11 +117,38 @@ TEST_CASE("the built-in Sprite2D registration describes every field") {
     const reflect::Property* texture = find_property(*type, "texture");
     REQUIRE(texture != nullptr);
     CHECK(texture->kind() == reflect::ValueKind::ResourceRef);
-    CHECK(texture->resource_type == "Texture2D");
+    REQUIRE(texture->resource.has_value());
+    CHECK(texture->resource->type_name == "Texture2D");
 
     const reflect::Property* layer = find_property(*type, "layer");
     REQUIRE(layer != nullptr);
     CHECK(layer->kind() == reflect::ValueKind::Int);
+}
+
+TEST_CASE("editor hints are attached to the built-in registrations") {
+    reflect::register_builtin_types();
+    const reflect::Registry& registry = reflect::Registry::instance();
+
+    // Camera2D::zoom is bounded, so the inspector shows a slider.
+    const reflect::TypeDesc* camera = registry.find(Camera2D::kTypeName);
+    REQUIRE(camera != nullptr);
+    const reflect::Property* zoom = find_property(*camera, "zoom");
+    REQUIRE(zoom != nullptr);
+    REQUIRE(zoom->range.has_value());
+    CHECK(zoom->range->minimum < zoom->range->maximum);
+
+    // Sprite2D::color is a colour group; Sprite2D::uv is a plain vector group,
+    // so the hint is what distinguishes them.
+    const reflect::TypeDesc* sprite = registry.find(Sprite2D::kTypeName);
+    REQUIRE(sprite != nullptr);
+    const reflect::Property* color = find_property(*sprite, "color");
+    REQUIRE(color != nullptr);
+    CHECK(color->color.has_value());
+    CHECK_FALSE(color->range.has_value());
+    const reflect::Property* uv = find_property(*sprite, "uv");
+    REQUIRE(uv != nullptr);
+    CHECK_FALSE(uv->color.has_value());
+    CHECK_FALSE(uv->range.has_value());
 }
 
 TEST_CASE("the built-in Camera2D registration aggregates the clear colour channels") {
