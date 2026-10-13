@@ -60,7 +60,8 @@ tests. Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Runtime frame loop + sandbox example | Working |
 | Scripting (C++ native modules first, language-agnostic seam) | Not started (see roadmap) |
 | Build/export | Not started (see roadmap) |
-| Performance tooling, extra platforms, collaborative editing | Planned (see roadmap) |
+| Performance tooling (profiler, benchmark, CI regression gate) | Working (see [ADR-0033](docs/adr/0033-performance-regression-gate.md)) |
+| Extra platforms, collaborative editing | Planned (see roadmap) |
 
 Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
 
@@ -146,6 +147,7 @@ editor/           the visual editor, built on the engine (core, UI, shell)
 examples/sandbox/ a small runnable program that exercises every layer
 examples/demo_project/ a minimal project to open in the editor shell
 tests/            doctest-based unit, editor, and graphics test targets
+benchmarks/       the performance benchmark and its CI regression gate
 cmake/            dependency policy, build settings, warning interface
 third_party/      vendored sources (glad, stb) with their own licenses
 assets/           sample assets used by the example
@@ -231,6 +233,21 @@ software renderer, for example:
 ```bash
 xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_graphics_tests
 ```
+
+### Benchmarks
+
+`fork_bench` runs a synthetic 2D scene through the real frame loop and reports
+frame-time percentiles, and `benchmarks/check_regression.py` compares a run
+against the committed baseline so CI fails on a regression. It needs a GL
+context, so run it under a virtual display on a headless machine:
+
+```bash
+xvfb-run -a -s "-screen 0 1280x720x24" ./build/bin/fork_bench --scene sprite_heavy
+```
+
+See [`benchmarks/README.md`](benchmarks/README.md) for the scenes, options, and
+the gate's tolerances, and
+[ADR-0033](docs/adr/0033-performance-regression-gate.md) for the design.
 
 ## Contributing
 

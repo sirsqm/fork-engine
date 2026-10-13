@@ -91,6 +91,54 @@ jobs:
           xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_editor_shell --project examples/demo_project --headless --frames 3
           xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_editor_shell --project examples/demo_project --headless --frames 3
 
+  # The performance regression gate
+  # (docs/adr/0033-performance-regression-gate.md): a Release build runs the
+  # benchmark over a fixed scene and compares its frame-time p50 against the
+  # recorded baseline. Linux only, because the benchmark needs a GL context and
+  # the runner supplies one via Xvfb + Mesa's software driver. Sanitizers are a
+  # separate job (ADR-0035).
+  benchmark:
+    name: Benchmark regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            xvfb \
+            mesa-utils
+
+      # Release, so the numbers reflect an optimised build; the gate compares
+      # Release to Release, never across build types.
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFE_WARNINGS_AS_ERRORS=ON -DFE_BUILD_EDITOR=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run the benchmark
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            ./build/bin/fork_bench --scene sprite_heavy --frames 300 --warmup 60 \
+              --json --out benchmark.json
+
+      - name: Check for a regression
+        run: python3 benchmarks/check_regression.py --baseline benchmarks/baseline.json --current benchmark.json
+
+      - name: Upload the benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: benchmark.json
+
   format-check:
     name: clang-format
     runs-on: ubuntu-latest

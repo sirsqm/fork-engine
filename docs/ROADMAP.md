@@ -254,8 +254,12 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       `SceneSchedule` times each system as `system/<name>`; a by-value
       `FrameReport` (per-name totals, counters, summary/to_string) is the stats
       surface
-- [ ] Benchmark: a headless target reporting frame-time percentiles; CI records
-      the numbers and fails on regression
+- [x] Benchmark: a headless target reporting frame-time percentiles; CI records
+      the numbers and fails on regression — `benchmarks/scene_bench.cpp` runs
+      synthetic scenes through the real frame loop and reports p50/p95/p99;
+      `benchmarks/check_regression.py` compares against the committed baseline
+      and fails past a coarse tolerance, and a dedicated CI job runs it
+      ([ADR-0033](adr/0033-performance-regression-gate.md))
 - [ ] Render extraction: split both renderers into "extract a flat instance
       list" and "issue draws" (the data-oriented seam)
 - [ ] Job system: a `jobs` module (thread pool, `parallel_for`, task graph);
@@ -293,8 +297,10 @@ and trade-offs: [`STRATEGY.md`](STRATEGY.md),
 - Keep the build reproducible and warning-clean.
 - Keep the tests green; every fix gets a test that would have caught it.
 - Run the suite under AddressSanitizer and UndefinedBehaviorSanitizer while the
-  codebase is small enough to keep them cheaply green (`-DFE_ENABLE_ASAN=ON`).
+  codebase is small enough to keep them cheaply green (`-DFE_ENABLE_ASAN=ON`);
+  a dedicated CI job does this ([ADR-0035](adr/0035-ci-quality-gates.md)).
 - Keep the benchmark a regression gate, not just a dev tool: CI records the
-  numbers and fails on a large regression.
+  numbers and fails on a large regression (see `benchmarks/` and
+  [ADR-0033](adr/0033-performance-regression-gate.md)).
 - Keep the architecture documentation and ADRs current.
 - Review dependency licenses for compatibility with MIT.

@@ -1,0 +1,13 @@
+{
+  "scene": "sprite_heavy",
+  "sprites": 2000,
+  "bricks": 500,
+  "bodies": 200,
+  "frames": 300,
+  "warmup": 60,
+  "metrics": {
+    "frame_total": {"p50_ms": 1.4274, "p95_ms": 1.4898, "p99_ms": 1.6132, "mean_ms": 1.4335, "min_ms": 1.3521, "max_ms": 1.7366, "samples": 64},
+    "frame_update": {"p50_ms": 0.6490, "p95_ms": 0.6785, "p99_ms": 0.7056, "mean_ms": 0.6505, "min_ms": 0.6203, "max_ms": 0.7206, "samples": 64},
+    "frame_render": {"p50_ms": 0.1596, "p95_ms": 0.2050, "p99_ms": 0.2158, "mean_ms": 0.1686, "min_ms": 0.1446, "max_ms": 0.2231, "samples": 64}
+  }
+}

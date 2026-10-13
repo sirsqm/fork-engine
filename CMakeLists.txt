@@ -46,6 +46,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 option(FE_BUILD_TESTS "Build the Fork Engine unit tests" ON)
 option(FE_BUILD_EXAMPLES "Build the Fork Engine example programs" ON)
 option(FE_BUILD_EDITOR "Build the Fork Engine editor" ON)
+option(FE_BUILD_BENCHMARKS "Build the Fork Engine benchmarks" ON)
 option(FE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(FE_USE_SYSTEM_DEPS "Prefer system-installed dependencies over FetchContent" OFF)
 option(FE_ENABLE_ASAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer (Debug)" OFF)
@@ -82,6 +83,12 @@ if(FE_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
+# The benchmark is a dev/CI tool, not a shipping artifact, so it is gated on its
+# own option and lives outside the examples.
+if(FE_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
@@ -92,6 +99,7 @@ message(STATUS "  Compiler         : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPIL
 message(STATUS "  Tests            : ${FE_BUILD_TESTS}")
 message(STATUS "  Examples         : ${FE_BUILD_EXAMPLES}")
 message(STATUS "  Editor           : ${FE_BUILD_EDITOR}")
+message(STATUS "  Benchmarks       : ${FE_BUILD_BENCHMARKS}")
 message(STATUS "  Warnings as errs : ${FE_WARNINGS_AS_ERRORS}")
 message(STATUS "  System deps      : ${FE_USE_SYSTEM_DEPS}")
 message(STATUS "")
