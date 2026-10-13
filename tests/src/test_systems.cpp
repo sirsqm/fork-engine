@@ -12,6 +12,7 @@
 #include "fe/systems/SpriteAnimationSystem.h"
 
 #include <cmath>
+#include <ostream>
 #include <string>
 
 using namespace fe;
@@ -62,7 +63,7 @@ SpriteAnimator* add_animated_sprite(Scene& scene, u32 x, u32 y, f32 fps, bool lo
 FrameContext frame(f32 delta) {
     FrameContext context;
     context.delta_time = delta;
-    context.elapsed_time = delta;
+    context.elapsed_time = static_cast<f64>(delta);
     return context;
 }
 
