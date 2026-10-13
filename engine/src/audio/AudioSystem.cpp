@@ -6,7 +6,9 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 
+#include <algorithm>
 #include <cmath>
+#include <string_view>
 
 namespace fe::audio {
 namespace {
@@ -40,6 +42,38 @@ usize AudioSystem::playing_voice_count() const noexcept {
         }
     }
     return count;
+}
+
+void AudioSystem::set_bus_gain(std::string_view name, f32 gain) {
+    // The master bus is not a group; its gain is owned by set_master_gain so the
+    // value has a single owner. Naming it here is a no-op rather than a second
+    // place to set it.
+    if (name.empty()) {
+        return;
+    }
+    for (AudioBus& bus : buses_) {
+        if (bus.name == name) {
+            bus.gain = gain;
+            return;
+        }
+    }
+    buses_.push_back(AudioBus{std::string(name), gain});
+}
+
+f32 AudioSystem::bus_gain(std::string_view name) const {
+    if (name.empty()) {
+        return master_gain_;
+    }
+    for (const AudioBus& bus : buses_) {
+        if (bus.name == name) {
+            return bus.gain;
+        }
+    }
+    return 1.0f;
+}
+
+void AudioSystem::clear_buses() {
+    buses_.clear();
 }
 
 void AudioSystem::update(const FrameContext& context, Scene& scene) {
@@ -82,6 +116,21 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         entry.voice.gain = source->gain;
         entry.voice.pitch = source->pitch;
         entry.voice.loop = source->loop;
+        entry.voice.spatial = source->spatial;
+        entry.voice.min_distance = source->min_distance;
+        entry.voice.max_distance = source->max_distance;
+        // Position comes from the node's world transform, never a transform of
+        // the source's own. Computed fresh each frame so a moving node attenuates
+        // correctly.
+        const Mat4 world = node.world_matrix();
+        entry.voice.world_position = Vec3{world.m[12], world.m[13], world.m[14]};
+        entry.voice.bus = kNoBus;
+        for (u32 i = 0; i < buses_.size(); ++i) {
+            if (buses_[i].name == source->bus_name) {
+                entry.voice.bus = i;
+                break;
+            }
+        }
         if (entry.voice.clip == nullptr) {
             entry.voice.playing = false;
         }
@@ -101,8 +150,15 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
     }
 
     if (frames > 0 && !voices.empty()) {
+        MixParams params;
+        params.listener_position = listener_position_;
+        params.buses = buses_.empty() ? nullptr : buses_.data();
+        params.bus_count = static_cast<u32>(buses_.size());
+        params.master_gain = master_gain_;
+
         mix_buffer_.resize(static_cast<usize>(frames) * channels_);
-        last_peak_ = mix_voices(voices.data(), voices.size(), mix_buffer_.data(), frames, channels_, sample_rate());
+        last_peak_ =
+            mix_voices(voices.data(), voices.size(), mix_buffer_.data(), frames, channels_, sample_rate(), params);
         mixed_frames_ += frames;
 
         if (device_ != nullptr && device_->is_playing()) {

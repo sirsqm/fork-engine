@@ -344,6 +344,202 @@ TEST_CASE("a mono clip is up-mixed to every output channel") {
 }
 
 // ---------------------------------------------------------------------------
+// Distance attenuation (pure)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the attenuation curve is 1 at min_distance and 0 at max_distance") {
+    // Endpoints: full gain at and inside min_distance, silence at and beyond
+    // max_distance. The numbers are the documented curve, not re-derived.
+    CHECK(audio::distance_attenuation(0.0f, 1.0f, 20.0f) == doctest::Approx(1.0f));
+    CHECK(audio::distance_attenuation(1.0f, 1.0f, 20.0f) == doctest::Approx(1.0f));
+    CHECK(audio::distance_attenuation(20.0f, 1.0f, 20.0f) == doctest::Approx(0.0f));
+    CHECK(audio::distance_attenuation(100.0f, 1.0f, 20.0f) == doctest::Approx(0.0f));
+
+    // The interior follows (1/d - 1/max) / (1/min - 1/max). At d = 2 with
+    // min = 1, max = 20: (0.5 - 0.05) / (1 - 0.05) = 0.45 / 0.95.
+    CHECK(audio::distance_attenuation(2.0f, 1.0f, 20.0f) == doctest::Approx(0.45f / 0.95f));
+    // At d = 4: (0.25 - 0.05) / 0.95 = 0.20 / 0.95.
+    CHECK(audio::distance_attenuation(4.0f, 1.0f, 20.0f) == doctest::Approx(0.20f / 0.95f));
+}
+
+TEST_CASE("the attenuation curve is monotonically non-increasing with distance") {
+    const f32 min_distance = 1.0f;
+    const f32 max_distance = 20.0f;
+    f32 previous = audio::distance_attenuation(0.0f, min_distance, max_distance);
+    for (f32 d = 1.0f; d <= 20.0f; d += 1.0f) {
+        const f32 gain = audio::distance_attenuation(d, min_distance, max_distance);
+        CHECK(gain <= previous + 1e-6f);
+        previous = gain;
+    }
+    // It really does fall in the interior rather than being flat.
+    CHECK(audio::distance_attenuation(10.0f, min_distance, max_distance) <
+          audio::distance_attenuation(2.0f, min_distance, max_distance));
+}
+
+TEST_CASE("a degenerate attenuation span is total, never NaN") {
+    // min_distance 0 has no 1/d term; the curve must still be defined.
+    CHECK(audio::distance_attenuation(0.0f, 0.0f, 20.0f) == doctest::Approx(1.0f));
+    CHECK(audio::distance_attenuation(5.0f, 0.0f, 20.0f) == doctest::Approx(0.0f));
+
+    // max_distance <= min_distance: no interior region, so the curve is a step
+    // at min_distance - full gain inside it, silence at or beyond it.
+    CHECK(audio::distance_attenuation(10.0f, 20.0f, 20.0f) == doctest::Approx(1.0f));
+    CHECK(audio::distance_attenuation(25.0f, 20.0f, 20.0f) == doctest::Approx(0.0f));
+    CHECK(audio::distance_attenuation(5.0f, 20.0f, 10.0f) == doctest::Approx(1.0f));
+    CHECK(audio::distance_attenuation(15.0f, 20.0f, 10.0f) == doctest::Approx(1.0f)); // inside min
+    CHECK(audio::distance_attenuation(21.0f, 20.0f, 10.0f) == doctest::Approx(0.0f)); // past min
+}
+
+TEST_CASE("a positional voice is scaled by the distance to the listener") {
+    auto clip = mono_clip(8000, {1.0f, 1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{2.0f, 0.0f, 0.0f};
+    voice.min_distance = 1.0f;
+    voice.max_distance = 20.0f;
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+
+    f32 output[2] = {};
+    const f32 peak = audio::mix_voices(&voice, 1, output, 2, 1, 8000, params);
+
+    // d = 2 -> 0.45 / 0.95. Both frames are the clip's 1.0 scaled by that.
+    CHECK(output[0] == doctest::Approx(0.45f / 0.95f));
+    CHECK(output[1] == doctest::Approx(0.45f / 0.95f));
+    CHECK(peak == doctest::Approx(0.45f / 0.95f));
+    CHECK(voice.attenuation == doctest::Approx(0.45f / 0.95f));
+}
+
+TEST_CASE("a positional voice at the listener is at full gain") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{5.0f, 5.0f, 5.0f};
+
+    audio::MixParams params;
+    params.listener_position = Vec3{5.0f, 5.0f, 5.0f}; // distance 0
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a non-positional voice ignores the listener and keeps full gain") {
+    // Regression: the pre-refinement behaviour. A source with spatial = false
+    // sounds exactly as it did before attenuation existed, even with a listener
+    // set and a distant node position.
+    auto clip = mono_clip(8000, {1.0f, 0.5f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.gain = 0.5f;
+    voice.spatial = false;
+    voice.world_position = Vec3{1000.0f, 0.0f, 0.0f};
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+
+    f32 output[2] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 2, 1, 8000, params));
+
+    CHECK(output[0] == doctest::Approx(0.5f)); // 1.0 * 0.5, no attenuation
+    CHECK(output[1] == doctest::Approx(0.25f));
+    CHECK(voice.attenuation == doctest::Approx(1.0f));
+}
+
+// ---------------------------------------------------------------------------
+// Buses and the master (pure)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a bus gain scales every voice routed to it") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voices[2];
+    voices[0].clip = clip.get();
+    voices[0].bus = 0; // "sfx", gain 0.25
+    voices[1].clip = clip.get();
+    voices[1].bus = 1; // "music", gain 0.5
+
+    const audio::AudioBus buses[2] = {
+        audio::AudioBus{"sfx", 0.25f},
+        audio::AudioBus{"music", 0.5f},
+    };
+    audio::MixParams params;
+    params.buses = buses;
+    params.bus_count = 2;
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(voices, 2, output, 1, 1, 8000, params));
+
+    // Each voice is 1.0 scaled by its own bus: 0.25 + 0.5 = 0.75.
+    CHECK(output[0] == doctest::Approx(0.75f));
+}
+
+TEST_CASE("the master bus scales the sum of the group buses") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voices[2];
+    voices[0].clip = clip.get();
+    voices[0].bus = 0; // gain 0.25
+    voices[1].clip = clip.get();
+    voices[1].bus = 1; // gain 0.5
+
+    const audio::AudioBus buses[2] = {
+        audio::AudioBus{"sfx", 0.25f},
+        audio::AudioBus{"music", 0.5f},
+    };
+    audio::MixParams params;
+    params.buses = buses;
+    params.bus_count = 2;
+    params.master_gain = 0.5f;
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(voices, 2, output, 1, 1, 8000, params));
+
+    // (0.25 + 0.5) * 0.5 = 0.375.
+    CHECK(output[0] == doctest::Approx(0.375f));
+}
+
+TEST_CASE("a voice on no bus is scaled by the master gain alone") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.bus = audio::kNoBus;
+
+    // A non-empty bus table that does not contain this voice must not touch it.
+    const audio::AudioBus buses[1] = {audio::AudioBus{"music", 0.5f}};
+    audio::MixParams params;
+    params.buses = buses;
+    params.bus_count = 1;
+    params.master_gain = 0.25f;
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.25f)); // 1.0 * master 0.25
+}
+
+TEST_CASE("a muted bus is silent but still advances the voice") {
+    auto clip = mono_clip(8000, {1.0f, 1.0f, 1.0f, 1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.bus = 0;
+
+    const audio::AudioBus buses[1] = {audio::AudioBus{"music", 0.0f}};
+    audio::MixParams params;
+    params.buses = buses;
+    params.bus_count = 1;
+
+    f32 output[2] = {};
+    const f32 peak = audio::mix_voices(&voice, 1, output, 2, 1, 8000, params);
+    CHECK(output[0] == doctest::Approx(0.0f));
+    CHECK(output[1] == doctest::Approx(0.0f));
+    CHECK(peak == doctest::Approx(0.0f));
+    // The read position moved, so unmuting resumes where it was, not from zero.
+    CHECK(voice.position == doctest::Approx(2.0));
+    CHECK(voice.frames_played == 2);
+}
+
+// ---------------------------------------------------------------------------
 // The null device (the contract under test; audio output is not in CI)
 // ---------------------------------------------------------------------------
 
@@ -464,6 +660,130 @@ TEST_CASE("a looping source keeps playing past the end of its clip") {
 }
 
 // ---------------------------------------------------------------------------
+// The system: listener, bus routing, and the master gain (integration)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the AudioSystem attenuates a positional source by its distance to the listener") {
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    Scene scene;
+    Node* node = scene.create_node("Emitter");
+    node->transform().position = Vec3{2.0f, 0.0f, 0.0f};
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(8, 1.0f));
+    source->loop = true;
+    source->spatial = true;
+    source->min_distance = 1.0f;
+    source->max_distance = 20.0f;
+
+    system.set_listener_position(Vec3{0.0f, 0.0f, 0.0f});
+    system.update(step(0.001f), scene);
+
+    // 1 ms at 8 kHz is 8 frames, each a full-scale 1.0 scaled by 0.45/0.95.
+    CHECK(system.last_peak() == doctest::Approx(0.45f / 0.95f));
+
+    // Moving the listener onto the node restores full gain on the next update.
+    system.set_listener_position(Vec3{2.0f, 0.0f, 0.0f});
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(1.0f));
+}
+
+TEST_CASE("the AudioSystem routes a source to a named bus and its gain scales the mix") {
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    Scene scene;
+    Node* node = scene.create_node("Music");
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(8, 1.0f));
+    source->loop = true;
+    source->bus_name = "music";
+
+    // A bus that does not exist yet leaves the source at unity.
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(1.0f));
+
+    // Creating the bus with a lower gain scales the same source down.
+    system.set_bus_gain("music", 0.25f);
+    CHECK(system.bus_gain("music") == doctest::Approx(0.25f));
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.25f));
+
+    // An unrelated bus does not touch it.
+    system.set_bus_gain("sfx", 0.5f);
+    CHECK(system.bus_count() == 2);
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.25f));
+
+    // Muting the bus silences the source; clearing the table restores it.
+    system.set_bus_gain("music", 0.0f);
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.0f));
+    system.clear_buses();
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(1.0f));
+}
+
+TEST_CASE("the AudioSystem master gain scales the whole mix") {
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    Scene scene;
+    Node* node = scene.create_node("Music");
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(8, 1.0f));
+    source->loop = true;
+    source->bus_name = "music";
+    system.set_bus_gain("music", 0.5f);
+
+    system.set_master_gain(0.5f);
+    CHECK(system.master_gain() == doctest::Approx(0.5f));
+    system.update(step(0.001f), scene);
+    // bus 0.5 * master 0.5 = 0.25.
+    CHECK(system.last_peak() == doctest::Approx(0.25f));
+
+    // Setting the master through the bus API by the reserved empty name is a
+    // no-op; the master keeps its value.
+    system.set_bus_gain("", 0.1f);
+    CHECK(system.bus_count() == 1);
+    CHECK(system.bus_gain("") == doctest::Approx(0.5f));
+}
+
+TEST_CASE("a non-positional source through the AudioSystem is unchanged") {
+    // Regression: the exact shape of the pre-refinement system tests, with a
+    // listener and buses configured, still produces full gain because the source
+    // is non-positional and on no bus.
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    system.set_listener_position(Vec3{100.0f, 100.0f, 0.0f});
+    system.set_bus_gain("music", 0.25f);
+
+    Scene scene;
+    Node* node = scene.create_node("Beep");
+    node->transform().position = Vec3{500.0f, 0.0f, 0.0f};
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(16, 1.0f));
+    source->loop = false;
+    source->play_on_start = true;
+
+    system.update(step(0.001f), scene);
+    CHECK(system.mixed_frames() == 8);
+    CHECK(system.playing_voice_count() == 1);
+    CHECK(system.last_peak() == doctest::Approx(1.0f));
+    CHECK(device.frames_submitted() == 8);
+}
+
+// ---------------------------------------------------------------------------
 // Reflection and serialization
 // ---------------------------------------------------------------------------
 
@@ -494,11 +814,16 @@ TEST_CASE("an AudioSource round-trips through the serializer") {
     source->gain = 0.25f;
     source->pitch = 1.5f;
     source->loop = true;
+    source->spatial = true;
+    source->min_distance = 2.0f;
+    source->max_distance = 40.0f;
+    source->bus_name = "music";
 
     auto json = serialization::scene::to_json(scene);
     REQUIRE(json);
     CHECK(json.value().find("\"AudioSource\"") != std::string::npos);
     CHECK(json.value().find("\"wav:assets/beep.wav\"") != std::string::npos);
+    CHECK(json.value().find("\"music\"") != std::string::npos);
 
     Scene loaded;
     REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
@@ -509,6 +834,10 @@ TEST_CASE("an AudioSource round-trips through the serializer") {
     CHECK(loaded_source->gain == doctest::Approx(0.25f));
     CHECK(loaded_source->pitch == doctest::Approx(1.5f));
     CHECK(loaded_source->loop);
+    CHECK(loaded_source->spatial);
+    CHECK(loaded_source->min_distance == doctest::Approx(2.0f));
+    CHECK(loaded_source->max_distance == doctest::Approx(40.0f));
+    CHECK(loaded_source->bus_name == "music");
 }
 
 TEST_CASE("an AudioSource's clip reference resolves through the resource manager on load") {
