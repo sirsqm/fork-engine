@@ -1,0 +1,189 @@
+// Copyright (c) 2026 sqm
+// SPDX-License-Identifier: MIT
+#include "fe/core/FileSystem.h"
+
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <system_error>
+
+namespace fe::fs {
+namespace {
+
+namespace stdfs = std::filesystem;
+
+[[nodiscard]] stdfs::path to_native(std::string_view path) {
+    return stdfs::path(std::u8string(reinterpret_cast<const char8_t*>(path.data()), path.size()));
+}
+
+[[nodiscard]] std::string to_utf8(const stdfs::path& path) {
+    const std::u8string utf8 = path.generic_u8string();
+    return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+}
+
+} // namespace
+
+Result<std::vector<u8>> read_binary_file(std::string_view path) {
+    const stdfs::path native = to_native(path);
+
+    std::error_code ec;
+    if (!stdfs::exists(native, ec)) {
+        return Error("file not found: " + std::string(path));
+    }
+    if (stdfs::is_directory(native, ec)) {
+        return Error("expected a file but found a directory: " + std::string(path));
+    }
+
+    std::ifstream stream(native, std::ios::binary | std::ios::ate);
+    if (!stream) {
+        return Error("could not open file for reading: " + std::string(path));
+    }
+
+    const std::streamoff size = stream.tellg();
+    if (size < 0) {
+        return Error("could not determine file size: " + std::string(path));
+    }
+
+    std::vector<u8> buffer(static_cast<usize>(size));
+    stream.seekg(0, std::ios::beg);
+    if (!buffer.empty()) {
+        stream.read(reinterpret_cast<char*>(buffer.data()), size);
+        if (!stream) {
+            return Error("read failed: " + std::string(path));
+        }
+    }
+    return buffer;
+}
+
+Result<std::string> read_text_file(std::string_view path) {
+    auto result = read_binary_file(path);
+    if (!result) {
+        return result.error();
+    }
+    const std::vector<u8>& bytes = result.value();
+    return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
+
+Error write_binary_file(std::string_view path, const void* data, usize size) {
+    const stdfs::path native = to_native(path);
+
+    if (native.has_parent_path()) {
+        std::error_code ec;
+        stdfs::create_directories(native.parent_path(), ec);
+        if (ec) {
+            return Error("could not create directory for " + std::string(path) + ": " + ec.message());
+        }
+    }
+
+    std::ofstream stream(native, std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        return Error("could not open file for writing: " + std::string(path));
+    }
+    if (size > 0) {
+        stream.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+    }
+    if (!stream) {
+        return Error("write failed: " + std::string(path));
+    }
+    return Error::none();
+}
+
+Error write_text_file(std::string_view path, std::string_view text) {
+    return write_binary_file(path, text.data(), text.size());
+}
+
+bool exists(std::string_view path) {
+    std::error_code ec;
+    return stdfs::exists(to_native(path), ec);
+}
+
+Error create_directories(std::string_view path) {
+    std::error_code ec;
+    stdfs::create_directories(to_native(path), ec);
+    if (ec) {
+        return Error("could not create directories for " + std::string(path) + ": " + ec.message());
+    }
+    return Error::none();
+}
+
+std::string parent_path(std::string_view path) {
+    return to_utf8(to_native(path).parent_path());
+}
+
+std::string filename(std::string_view path) {
+    return to_utf8(to_native(path).filename());
+}
+
+std::string extension(std::string_view path) {
+    std::string ext = to_utf8(to_native(path).extension());
+    for (char& c : ext) {
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+    }
+    return ext;
+}
+
+std::string join(std::string_view a, std::string_view b) {
+    if (a.empty()) {
+        return std::string(b);
+    }
+    if (b.empty()) {
+        return std::string(a);
+    }
+    std::string result(a);
+    if (result.back() != '/' && result.back() != '\\') {
+        result.push_back('/');
+    }
+    std::size_t start = 0;
+    while (start < b.size() && (b[start] == '/' || b[start] == '\\')) {
+        ++start;
+    }
+    result.append(b.substr(start));
+    return result;
+}
+
+std::string normalize(std::string_view path) {
+    std::string out;
+    out.reserve(path.size());
+    for (char c : path) {
+        out.push_back(c == '\\' ? '/' : c);
+    }
+
+    std::string result;
+    result.reserve(out.size());
+    // Preserve the absolute-path marker so that "/a/b" does not become "a/b".
+    if (!out.empty() && out[0] == '/') {
+        result.push_back('/');
+    }
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        const char c = out[i];
+        const bool at_segment_start = (result.empty() || result.back() == '/');
+
+        // Drop a "./" segment, or a bare trailing ".", e.g. "a/./b" -> "a/b".
+        if (c == '.' && at_segment_start) {
+            const bool followed_by_sep = (i + 1 < out.size() && out[i + 1] == '/');
+            const bool at_end = (i + 1 == out.size());
+            if (followed_by_sep) {
+                ++i;
+                continue;
+            }
+            if (at_end) {
+                continue;
+            }
+        }
+
+        // Collapse runs of separators.
+        if (c == '/' && !result.empty() && result.back() == '/') {
+            continue;
+        }
+        if (c == '/' && result.empty()) {
+            continue;
+        }
+
+        result.push_back(c);
+    }
+    return result;
+}
+
+} // namespace fe::fs

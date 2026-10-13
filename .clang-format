@@ -1,0 +1,33 @@
+# Fork Engine C++ style.
+#
+# The engine follows a single, boring, tool-enforced style so that reviews can
+# focus on design instead of formatting. The rules below are the ones the code
+# already uses; run `clang-format -i` before committing.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+Standard: c++20
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+AccessModifierOffset: -4
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+NamespaceIndentation: None
+FixNamespaceComments: true
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+# The engine spells fixed-width types (u32, f32, ...) and keeps the `const`
+# first; neither is enforced by clang-format, only by review.
