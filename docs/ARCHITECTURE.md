@@ -53,7 +53,7 @@ everything  <-  runtime
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
 | `physics2d` | 2D collision shapes and a rigid-body simulation system | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
-| `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`) and their reflection | core, scene, resources |
+| `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
 | `renderer3d` | 3D mesh rendering with a lit pass | core, rhi, resources, scene, mesh |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
@@ -255,17 +255,29 @@ scene something to render before an asset pipeline exists, and `ObjLoader`
 **`renderer3d::Renderer3D`** walks the scene, pairs each `MeshRenderer3D` with
 its node's world matrix, and issues one indexed draw per instance. It owns a
 buffer cache keyed by the mesh, uploading on first use and sweeping dead entries
-each frame, so a shared mesh is uploaded once. The pass is a single
-directional-light Blinn-Phong shader: albedo × (ambient + light colour ×
-intensity × (diffuse + specular)). It is depth-tested and opaque, so draw order
-does not change the image. The camera position is a uniform; the shader does not
-assume the camera is at the origin. A 1×1 white texture stands in for meshes
-without one, as in `Renderer2D`.
+each frame, so a shared mesh is uploaded once. The pass is a single forward
+Blinn-Phong shader: albedo × (ambient + the sum of the light contributions),
+each light contributing colour × intensity × (diffuse + specular) with its own
+falloff. It is depth-tested and opaque, so draw order does not change the image.
+The camera position is a uniform; the shader does not assume the camera is at
+the origin. A 1×1 white texture stands in for meshes without one, as in
+`Renderer2D`.
 
-The 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`)
-live in `scene3d`, which does **not** depend on `renderer3d`: a camera or a light
-is scene data the renderer reads. `Camera3D::view_projection` composes `look_at`
-and `perspective`; a component never stores its own transform.
+The 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`,
+`PointLight3D`, `SpotLight3D`) live in `scene3d`, which does **not** depend on
+`renderer3d`: a camera or a light is scene data the renderer reads.
+`Camera3D::view_projection` composes `look_at` and `perspective`; a component
+never stores its own transform. Point and spot lights read their node's world
+position, and a spot light its node's forward axis, the same way the camera
+reads its eye.
+
+**Lighting.** The renderer supports a directional light plus bounded arrays of
+point and spot lights (ADR-0012). Lights are gathered once per frame — where the
+owning node is still in hand — and the brightest are kept when a scene exceeds
+`kMaxPointLights`/`kMaxSpotLights`. The packed arrays are uploaded through
+`rhi::Shader::set_vec4_array`, and the shader's loops are bounded by count
+uniforms. Point and spot falloff reaches zero at the light's `range`, so a
+light's influence is finite.
 
 **Culling.** `Renderer3D` rejects instances whose world-space AABB lies wholly
 outside the camera frustum before they reach the GPU (ADR-0011). `core::Frustum`
@@ -274,8 +286,8 @@ extracts the six planes from a view-projection matrix; the test is conservative
 visible mesh. It is a flat pass, not a spatial hierarchy — the leaf operation a
 BVH would call.
 
-Batching, shadows, multiple light types, a spatial tree, and a material graph
-are later work behind these same interfaces.
+Batching, shadows, a spatial tree, and a material graph are later work behind
+these same interfaces.
 
 ### Camera selection
 
@@ -370,8 +382,9 @@ not a rewrite.
 - **Graphics tests** (`fork_graphics_tests`) create a hidden window and GL
   context, render a scene, and read the framebuffer back to assert what was
   actually drawn (pixel values, batching and draw counts, camera clear colour,
-  depth ordering). They cover both the 2D and 3D renderers. They skip cleanly
-  when no context is available, so CI stays green on machines without a GPU.
+  depth ordering, and the point/spot lighting paths). They cover both the 2D and
+  3D renderers. They skip cleanly when no context is available, so CI stays green
+  on machines without a GPU.
 - Tests exercise real code paths. Mocks are avoided; where one is used, it is
   justified in the pull request.
 
@@ -379,10 +392,12 @@ Every milestone must build and pass its tests before the next one begins.
 
 ## 12. What is deliberately not here yet
 
-- The parts of 3D rendering beyond the first lit pass: shadows, batching,
-  point and spot lights, skeletal animation, a spatial hierarchy over static
-  geometry, and a material graph (see [ADR-0010](adr/0010-3d-rendering-foundation.md)
-  and [ADR-0011](adr/0011-frustum-culling.md)).
+- The parts of 3D rendering beyond the forward lit pass: shadows, batching,
+  skeletal animation, a spatial hierarchy over static geometry, environment
+  rendering and post-processing, and a material graph (see
+  [ADR-0010](adr/0010-3d-rendering-foundation.md),
+  [ADR-0011](adr/0011-frustum-culling.md), and
+  [ADR-0012](adr/0012-forward-lighting-model.md)).
 - 3D physics, and the parts of 2D physics not in the first cut: angular
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).

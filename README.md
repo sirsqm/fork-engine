@@ -23,7 +23,7 @@ Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Logging, assertions, error handling | Working |
 | RHI abstraction + OpenGL 3.3 core backend | Working |
 | 2D renderer (batched sprites, camera, textures) | Working |
-| 3D renderer (lit meshes, directional light, 3D camera, frustum culling) | Working (first pass) |
+| 3D renderer (lit meshes, directional/point/spot lights, 3D camera, frustum culling) | Working (first pass) |
 | Mesh resources (primitives, OBJ loader) | Working |
 | Scene graph (nodes, transforms, components) | Working |
 | Resource manager (load, cache, release) | Working |
@@ -76,9 +76,10 @@ everything  <-  runtime
 - **mesh** — CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, and an
   OBJ loader.
 - **scene3d** — 3D scene components (`Camera3D`, `MeshRenderer3D`,
-  `DirectionalLight3D`) and their reflection.
+  `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection.
 - **renderer2d** — batched 2D rendering on top of the RHI.
-- **renderer3d** — 3D mesh rendering with a single directional-light pass.
+- **renderer3d** — 3D mesh rendering with a forward lit pass (directional, point,
+  and spot lights).
 - **runtime** — `Engine` (subsystem lifetime) and `Application` (frame loop).
 
 Public headers live under `engine/include/fe/`, so consumers write
