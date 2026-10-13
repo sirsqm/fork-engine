@@ -46,7 +46,7 @@ built editor-friendly from the start rather than adapted later.
 - [x] Play-in-editor (embed an `Engine`, drive frames, run the scene's `SceneSchedule`) — `PlaySession`
 - [x] Project asset root — `EditorContext::set_project_root` + `--project`, indexing the asset database so the browser and GUID references resolve
 - [x] Project settings — `ProjectSettings` (headless) + `fork.project.json`, opened with `--project`/`--project-file`; name, asset root, and startup scene, with portable relative paths ([ADR-0025](adr/0025-project-file.md))
-- [ ] Asset import settings per asset type (M3 groundwork; the sidecar's `scheme` is the seed — [ADR-0020](adr/0020-resource-identity-guid-sidecar.md))
+- [x] Asset import settings per asset type — typed settings stored in the asset's sidecar (`ImportSettings`, `AssetDatabase::import(path, scheme, settings)`) and applied at load via the `ResourceManager`; a texture's filter/wrap/mipmaps are honoured by the GPU ([ADR-0027](adr/0027-asset-import-settings.md))
 - [ ] Build/export path — moved to M8, where the packaging, pack format, and per-target export templates live ([ADR-0018](adr/0018-multi-platform-shipping.md))
 
 ### M2 prerequisite — reflection (done)
@@ -73,7 +73,8 @@ needed a concrete mechanism before gameplay could grow. See
 - [x] GUID-based resource references that survive file moves — a per-asset GUID
       sidecar and an asset database; see
       [ADR-0020](adr/0020-resource-identity-guid-sidecar.md)
-- [ ] Import settings per asset type, and an import cache
+- [x] Import settings per asset type — typed, stored in the sidecar, applied at load ([ADR-0027](adr/0027-asset-import-settings.md))
+- [ ] An import cache — a content-addressed store so a re-import and a rebuild are cheap
 - [ ] Hot reload of resources
 
 ## M4 — 3D rendering
