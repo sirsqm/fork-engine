@@ -68,7 +68,8 @@ needed a concrete mechanism before gameplay could grow. See
 - [x] A directional light
 - [x] Frustum culling (world-AABB, conservative) — see
       [ADR-0011](adr/0011-frustum-culling.md)
-- [ ] Directional, point, and spot lights
+- [x] Directional, point, and spot lights — see
+      [ADR-0012](adr/0012-forward-lighting-model.md)
 - [ ] Shadow mapping
 - [ ] A spatial hierarchy (BVH/octree) over static geometry
 - [ ] Environment rendering and a post-processing chain

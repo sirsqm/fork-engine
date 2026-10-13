@@ -99,6 +99,22 @@ public:
         }
     }
 
+    void set_vec4_array(std::string_view name, const Vec4* values, u32 count) override {
+        if (count == 0) {
+            return;
+        }
+        // An array uniform resolves as either "name" or "name[0]" depending on
+        // the driver and how the array is declared; try the plain name first,
+        // then the indexed form.
+        GLint location = location_of(name);
+        if (location < 0) {
+            location = location_of(std::string(name) + "[0]");
+        }
+        if (location >= 0) {
+            glUniform4fv(location, static_cast<GLsizei>(count), &values[0].x);
+        }
+    }
+
     void bind() const { glUseProgram(program_); }
 
     [[nodiscard]] GLuint program() const noexcept { return program_; }

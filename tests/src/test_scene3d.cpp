@@ -14,7 +14,9 @@
 #include "fe/scene3d/Camera3D.h"
 #include "fe/scene3d/DirectionalLight3D.h"
 #include "fe/scene3d/MeshRenderer3D.h"
+#include "fe/scene3d/PointLight3D.h"
 #include "fe/scene3d/Scene3DTypes.h"
+#include "fe/scene3d/SpotLight3D.h"
 
 #include <cmath>
 #include <memory>
@@ -91,6 +93,61 @@ TEST_CASE("register_scene3d_types makes the 3D components visible to reflection"
     CHECK(registry.find("Camera3D") != nullptr);
     CHECK(registry.find("MeshRenderer3D") != nullptr);
     CHECK(registry.find("DirectionalLight3D") != nullptr);
+    CHECK(registry.find("PointLight3D") != nullptr);
+    CHECK(registry.find("SpotLight3D") != nullptr);
+}
+
+TEST_CASE("a point light exposes its editable properties to reflection") {
+    reflect::register_scene3d_types();
+    reflect::Registry& registry = reflect::Registry::instance();
+
+    const reflect::TypeDesc* type = registry.find("PointLight3D");
+    REQUIRE(type != nullptr);
+    REQUIRE(type->factory != nullptr);
+
+    std::unique_ptr<Component> instance = type->factory();
+    REQUIRE(instance != nullptr);
+    CHECK(std::string(instance->type_name()) == "PointLight3D");
+
+    // The properties a designer needs must be present, by name.
+    const auto has = [&](std::string_view name) {
+        for (const reflect::Property& property : type->properties) {
+            if (property.name == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    CHECK(has("color"));
+    CHECK(has("intensity"));
+    CHECK(has("range"));
+}
+
+TEST_CASE("a spot light exposes its cone properties to reflection") {
+    reflect::register_scene3d_types();
+    reflect::Registry& registry = reflect::Registry::instance();
+
+    const reflect::TypeDesc* type = registry.find("SpotLight3D");
+    REQUIRE(type != nullptr);
+    REQUIRE(type->factory != nullptr);
+
+    std::unique_ptr<Component> instance = type->factory();
+    REQUIRE(instance != nullptr);
+    CHECK(std::string(instance->type_name()) == "SpotLight3D");
+
+    const auto has = [&](std::string_view name) {
+        for (const reflect::Property& property : type->properties) {
+            if (property.name == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    CHECK(has("color"));
+    CHECK(has("intensity"));
+    CHECK(has("range"));
+    CHECK(has("inner_cone_degrees"));
+    CHECK(has("outer_cone_degrees"));
 }
 
 TEST_CASE("the 3D types can be constructed from their factories") {

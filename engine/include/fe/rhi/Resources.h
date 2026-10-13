@@ -29,6 +29,13 @@ public:
     virtual void set_vec3(std::string_view name, const Vec3& value) = 0;
     virtual void set_int(std::string_view name, i32 value) = 0;
     virtual void set_float(std::string_view name, f32 value) = 0;
+
+    // Uploads the first `count` elements of a `vec4` array uniform, named
+    // `name` or `name[0]` (both resolve to the same location, so the caller does
+    // not have to know the GLSL indexing convention). Silently ignored when the
+    // uniform is absent, like the scalar setters. Used by the 3D renderer to
+    // upload bounded arrays of packed light data.
+    virtual void set_vec4_array(std::string_view name, const Vec4* values, u32 count) = 0;
 };
 
 // A GPU vertex or index buffer.
