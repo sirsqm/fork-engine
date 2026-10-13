@@ -10,6 +10,7 @@
 //
 // Usage:
 //   fork_editor_shell                 open the built-in example scene
+//   fork_editor_shell --project DIR   index DIR as the project's asset root
 //   fork_editor_shell --scene PATH    open a scene file
 //
 // Controls: the Hierarchy panel lists the scene; the Play panel starts and
@@ -26,6 +27,7 @@
 namespace {
 
 struct Options {
+    std::string project_root;
     std::string scene_to_open;
     fe::LogLevel log_level = fe::LogLevel::Info;
     fe::u32 max_frames = 0;
@@ -36,7 +38,9 @@ struct Options {
     Options options;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
-        if (arg == "--scene" && i + 1 < argc) {
+        if (arg == "--project" && i + 1 < argc) {
+            options.project_root = argv[++i];
+        } else if (arg == "--scene" && i + 1 < argc) {
             options.scene_to_open = argv[++i];
         } else if (arg == "--frames" && i + 1 < argc) {
             options.max_frames = static_cast<fe::u32>(std::strtoul(argv[++i], nullptr, 10));
@@ -52,7 +56,8 @@ struct Options {
         } else if (arg == "--quiet") {
             options.log_level = fe::LogLevel::Warn;
         } else if (arg == "--help" || arg == "-h") {
-            std::puts("usage: fork_editor_shell [--scene PATH] [--headless] [--frames N] [--verbose] [--quiet]");
+            std::puts("usage: fork_editor_shell [--project DIR] [--scene PATH] [--headless] [--frames N] [--verbose] "
+                      "[--quiet]");
             std::exit(0);
         }
     }
@@ -70,6 +75,7 @@ int main(int argc, char** argv) {
     config.engine.window.height = 720;
     config.engine.window.visible = !options.headless;
     config.engine.log_level = options.log_level;
+    config.project_root = options.project_root;
     config.scene_to_open = options.scene_to_open;
     config.max_frames = options.max_frames;
 

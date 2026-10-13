@@ -32,6 +32,10 @@ class EditorHost {
 public:
     struct Config {
         Engine::Config engine{};
+        // The project's asset root: the directory the asset browser lists and
+        // that GUID asset references resolve against. Empty means "no project",
+        // which leaves the browser empty and only path references working.
+        std::string project_root;
         // A scene file to open at startup; empty opens a built-in example
         // scene instead.
         std::string scene_to_open;
