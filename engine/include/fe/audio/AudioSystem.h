@@ -86,7 +86,6 @@ private:
     u32 channels_ = 2;
 
     std::vector<Entry> entries_;
-    std::vector<Voice> voices_;   // flattened view passed to mix_voices
     std::vector<f32> mix_buffer_; // scratch, reused to avoid per-frame allocation
 
     u64 mixed_frames_ = 0;
