@@ -32,7 +32,7 @@ built editor-friendly from the start rather than adapted later.
 - [x] Property inspector, driven by the reflection system — `PropertyEditor` + `InspectorPanel`
 - [x] 2D viewport rendering into an editor panel — `Viewport` + `ViewportPanel` (off-screen render target)
 - [ ] Asset browser
-- [ ] Undo/redo
+- [x] Undo/redo — `Command` + `CommandStack` + concrete commands in `fork_editor_core`; coalescing drags into one step ([ADR-0011](adr/0011-editor-undo-redo.md))
 - [x] Play-in-editor (embed an `Engine`, drive frames, run the scene's `SceneSchedule`) — `PlaySession`
 - [ ] Project settings and a build/export path
 

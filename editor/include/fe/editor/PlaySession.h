@@ -7,6 +7,7 @@
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/systems/FrameContext.h"
 #include "fe/systems/SceneSchedule.h"
 
 #include <functional>
@@ -66,14 +67,23 @@ public:
     // scene. Fails if already playing. The caller passes the engine whose frames
     // will drive the play scene to `tick()`.
     //
-    // On the first `start()` this registers the default systems (at least
-    // `SpriteAnimationSystem`) on the schedule, so play-in-editor runs real
-    // gameplay rather than only rendering. A caller that wants a custom set may
-    // clear `schedule()` and add its own; later `start()` calls leave whatever
-    // is registered in place, so editor-added systems survive a play/stop cycle.
+    // On the first `start()` this registers the default systems
+    // (`SpriteAnimationSystem` and `Physics2DSystem`) on the schedule, so
+    // play-in-editor runs real gameplay rather than only rendering. A caller
+    // that wants a custom set may clear `schedule()` and add its own; later
+    // `start()` calls leave whatever is registered in place, so editor-added
+    // systems survive a play/stop cycle.
     [[nodiscard]] Error start(const Scene& authored_scene);
 
-    // Advances `engine`'s clock, runs the schedules' systems over the play
+    // Advances the play simulation by one fixed step, without an engine or a
+    // GPU: runs the schedule's systems over the play scene with `context`. This
+    // is what makes play testable headlessly and deterministically - a test
+    // passes a known `delta_time` and asserts on the resulting scene state. The
+    // engine-driven frame (tick) calls it with the engine's own clock, then
+    // renders. Fails if not playing.
+    [[nodiscard]] Error advance(const FrameContext& context);
+
+    // Advances `engine`'s clock, runs the schedule's systems over the play
     // scene, then draws one frame of the play scene into the engine's current
     // framebuffer. Returns the number of sprites drawn (a value of 0 is valid).
     // Fails if not playing.
