@@ -20,6 +20,7 @@ set(FE_ENGINE_SOURCES
     src/core/Assert.cpp
     src/core/Uuid.cpp
     src/core/FileSystem.cpp
+    src/core/Profiler.cpp
     src/platform/InputState.cpp
     src/platform/Window.cpp
     src/rhi/Device.cpp
