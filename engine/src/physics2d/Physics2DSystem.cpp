@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
 #include <utility>
 
 namespace fe::physics2d {
@@ -217,135 +218,161 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         }
     }
 
-    // Resolve. Sequential impulses over every colliding pair, repeated for a few
-    // iterations. This is O(pairs * iterations); a spatial hash belongs here
-    // once profiling shows it matters, not before.
+    // Broad phase: find the candidate overlapping pairs once, before the
+    // iteration loop, so the solver does not re-enumerate the whole pair set on
+    // every iteration. A body with no collider (a joint-only mass) has no bounds
+    // and is not inserted, so it never appears in a candidate.
+    //
+    // `bodies_` holds colliderless bodies too, so the grid's indices are into
+    // `broad_phase_bounds_`, not into `bodies_`. `bounds_owner_` maps one to the
+    // other; without it a scene with a joint-only mass ahead of its colliders
+    // would resolve the wrong bodies.
+    broad_phase_bounds_.clear();
+    bounds_owner_.clear();
+    broad_phase_bounds_.reserve(bodies_.size());
+    bounds_owner_.reserve(bodies_.size());
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        const Body& entry = bodies_[i];
+        if (entry.collider != nullptr) {
+            broad_phase_bounds_.push_back(entry.collider->bounds(entry.position));
+            bounds_owner_.push_back(i);
+        }
+    }
+    broad_phase_.build(broad_phase_bounds_);
+    const std::span<const BroadPhasePair> candidates = broad_phase_.pairs();
+
+    // Resolve. Sequential impulses over the candidate pairs, repeated for a few
+    // iterations. The candidate set is computed once above; each iteration walks
+    // only it, so a step costs O(candidates * iterations) rather than
+    // O(bodies^2 * iterations).
     for (u32 iteration = 0; iteration < iterations; ++iteration) {
         const bool first_iteration = iteration == 0;
-        for (usize i = 0; i < bodies_.size(); ++i) {
-            for (usize j = i + 1; j < bodies_.size(); ++j) {
-                Body& a = bodies_[i];
-                Body& b = bodies_[j];
+        for (const BroadPhasePair& candidate : candidates) {
+            Body& a = bodies_[bounds_owner_[candidate.first]];
+            Body& b = bodies_[bounds_owner_[candidate.second]];
 
-                // A body with no collider (a joint-only mass) cannot collide.
-                if (a.collider == nullptr || b.collider == nullptr) {
-                    continue;
-                }
+            // A body with no collider (a joint-only mass) cannot collide. The
+            // grid never inserts one, but the guard keeps the solver honest if a
+            // caller ever passes a colliderless body through.
+            if (a.collider == nullptr || b.collider == nullptr) {
+                continue;
+            }
 
-                // Broad phase: skip pairs whose bounds cannot touch.
-                if (!bounds_overlap(a.collider->bounds(a.position), b.collider->bounds(b.position))) {
-                    continue;
-                }
+            // Sharing a grid cell is necessary but not sufficient: keep the
+            // existing bounds prefilter so a pair in the same cell but not
+            // actually close is rejected before the narrow phase.
+            if (!bounds_overlap(a.collider->bounds(a.position), b.collider->bounds(b.position))) {
+                continue;
+            }
 
-                const Contact2D contact =
-                    intersect_shapes(a.collider->shape, a.collider->box(a.position), a.collider->circle(a.position),
-                                     b.collider->shape, b.collider->box(b.position), b.collider->circle(b.position));
-                if (!contact.overlapping) {
-                    continue;
-                }
+            const Contact2D contact =
+                intersect_shapes(a.collider->shape, a.collider->box(a.position), a.collider->circle(a.position),
+                                 b.collider->shape, b.collider->box(b.position), b.collider->circle(b.position));
+            if (!contact.overlapping) {
+                continue;
+            }
 
-                // Record the touching pair once, on the first iteration, so the
-                // contact-event pass can diff it against the previous frame. The
-                // key is by node identity (ordered), so it is stable no matter
-                // how the scene is walked.
-                if (first_iteration) {
-                    ++contacts_;
-                    BodyPair pair;
-                    // Order the pair by raw id bytes so the key is stable and
-                    // independent of scene order.
-                    const bool a_first =
-                        std::lexicographical_compare(a.node->id().bytes().begin(), a.node->id().bytes().end(),
-                                                     b.node->id().bytes().begin(), b.node->id().bytes().end());
-                    pair.first = a_first ? a.node->id() : b.node->id();
-                    pair.second = a_first ? b.node->id() : a.node->id();
-                    active_pairs_.push_back(pair);
-                }
+            // Record the touching pair once, on the first iteration, so the
+            // contact-event pass can diff it against the previous frame. The
+            // key is by node identity (ordered), so it is stable no matter how
+            // the scene is walked.
+            if (first_iteration) {
+                ++contacts_;
+                BodyPair pair;
+                // Order the pair by raw id bytes so the key is stable and
+                // independent of scene order.
+                const bool a_first =
+                    std::lexicographical_compare(a.node->id().bytes().begin(), a.node->id().bytes().end(),
+                                                 b.node->id().bytes().begin(), b.node->id().bytes().end());
+                pair.first = a_first ? a.node->id() : b.node->id();
+                pair.second = a_first ? b.node->id() : a.node->id();
+                active_pairs_.push_back(pair);
+            }
 
-                const f32 inv_mass_sum = a.inv_mass + b.inv_mass;
-                if (inv_mass_sum <= 0.0f) {
-                    continue; // two immovable colliders: nothing to resolve
-                }
+            const f32 inv_mass_sum = a.inv_mass + b.inv_mass;
+            if (inv_mass_sum <= 0.0f) {
+                continue; // two immovable colliders: nothing to resolve
+            }
 
-                // Positional correction: push the pair apart along the normal.
-                // Split by inverse mass, so a heavy body moves less than a light
-                // one, and a static body not at all.
-                const f32 depth = contact.penetration - kPenetrationSlop;
-                if (depth > 0.0f) {
-                    const Vec2 correction = contact.normal * (kPositionCorrection * depth / inv_mass_sum);
-                    a.position -= correction * a.inv_mass;
-                    b.position += correction * b.inv_mass;
-                }
+            // Positional correction: push the pair apart along the normal.
+            // Split by inverse mass, so a heavy body moves less than a light
+            // one, and a static body not at all.
+            const f32 depth = contact.penetration - kPenetrationSlop;
+            if (depth > 0.0f) {
+                const Vec2 correction = contact.normal * (kPositionCorrection * depth / inv_mass_sum);
+                a.position -= correction * a.inv_mass;
+                b.position += correction * b.inv_mass;
+            }
 
-                // The contact point, taken on A's surface along the normal (a
-                // single-point approximation, standard for box and disc
-                // contacts). Angular impulses need the lever arm from each
-                // centre to this point; a contact through a centre produces no
-                // torque, which is what keeps a body resting flat stable.
-                const f32 support_a = a.collider->shape == ShapeType::Circle
-                                          ? a.collider->radius
-                                          : a.collider->half_extent.x * std::abs(contact.normal.x) +
-                                                a.collider->half_extent.y * std::abs(contact.normal.y);
-                const Vec2 contact_point = a.position + contact.normal * (support_a - contact.penetration * 0.5f);
+            // The contact point, taken on A's surface along the normal (a
+            // single-point approximation, standard for box and disc
+            // contacts). Angular impulses need the lever arm from each
+            // centre to this point; a contact through a centre produces no
+            // torque, which is what keeps a body resting flat stable.
+            const f32 support_a = a.collider->shape == ShapeType::Circle
+                                      ? a.collider->radius
+                                      : a.collider->half_extent.x * std::abs(contact.normal.x) +
+                                            a.collider->half_extent.y * std::abs(contact.normal.y);
+            const Vec2 contact_point = a.position + contact.normal * (support_a - contact.penetration * 0.5f);
 
-                // Lever arms from each body centre to the contact point.
-                const Vec2 ra = contact_point - a.position;
-                const Vec2 rb = contact_point - b.position;
+            // Lever arms from each body centre to the contact point.
+            const Vec2 ra = contact_point - a.position;
+            const Vec2 rb = contact_point - b.position;
 
-                // Relative velocity at the contact, including the contribution
-                // of each body's rotation. `normal` points from A to B, so a
-                // separating pair has a positive projection and needs no impulse.
-                const Vec2 relative = (b.velocity + cross_scalar_vec2(b.angular_velocity, rb)) -
-                                      (a.velocity + cross_scalar_vec2(a.angular_velocity, ra));
-                const f32 normal_speed = relative.dot(contact.normal);
-                if (normal_speed >= 0.0f) {
-                    continue;
-                }
+            // Relative velocity at the contact, including the contribution
+            // of each body's rotation. `normal` points from A to B, so a
+            // separating pair has a positive projection and needs no impulse.
+            const Vec2 relative = (b.velocity + cross_scalar_vec2(b.angular_velocity, rb)) -
+                                  (a.velocity + cross_scalar_vec2(a.angular_velocity, ra));
+            const f32 normal_speed = relative.dot(contact.normal);
+            if (normal_speed >= 0.0f) {
+                continue;
+            }
 
-                // Effective mass along the normal, including the angular term.
-                // This is what couples rotation into the linear response.
-                const f32 ra_cross_n = cross_vec2(ra, contact.normal);
-                const f32 rb_cross_n = cross_vec2(rb, contact.normal);
-                const f32 effective_mass =
-                    inv_mass_sum + a.inv_inertia * ra_cross_n * ra_cross_n + b.inv_inertia * rb_cross_n * rb_cross_n;
-                if (effective_mass <= 0.0f) {
-                    continue;
-                }
+            // Effective mass along the normal, including the angular term.
+            // This is what couples rotation into the linear response.
+            const f32 ra_cross_n = cross_vec2(ra, contact.normal);
+            const f32 rb_cross_n = cross_vec2(rb, contact.normal);
+            const f32 effective_mass =
+                inv_mass_sum + a.inv_inertia * ra_cross_n * ra_cross_n + b.inv_inertia * rb_cross_n * rb_cross_n;
+            if (effective_mass <= 0.0f) {
+                continue;
+            }
 
-                // Restitution of the pair is the larger of the two, which is the
-                // conventional choice and keeps a bouncy ball bouncy against a
-                // dead floor.
-                const f32 restitution = std::max(a.restitution, b.restitution);
-                const f32 impulse_magnitude = -(1.0f + restitution) * normal_speed / effective_mass;
-                const Vec2 impulse = contact.normal * impulse_magnitude;
+            // Restitution of the pair is the larger of the two, which is the
+            // conventional choice and keeps a bouncy ball bouncy against a
+            // dead floor.
+            const f32 restitution = std::max(a.restitution, b.restitution);
+            const f32 impulse_magnitude = -(1.0f + restitution) * normal_speed / effective_mass;
+            const Vec2 impulse = contact.normal * impulse_magnitude;
 
-                a.velocity -= impulse * a.inv_mass;
-                b.velocity += impulse * b.inv_mass;
-                // Angular response: the impulse at a lever arm produces torque.
-                a.angular_velocity -= a.inv_inertia * cross_vec2(ra, impulse);
-                b.angular_velocity += b.inv_inertia * cross_vec2(rb, impulse);
+            a.velocity -= impulse * a.inv_mass;
+            b.velocity += impulse * b.inv_mass;
+            // Angular response: the impulse at a lever arm produces torque.
+            a.angular_velocity -= a.inv_inertia * cross_vec2(ra, impulse);
+            b.angular_velocity += b.inv_inertia * cross_vec2(rb, impulse);
 
-                // Friction: an impulse opposing the tangential relative motion,
-                // capped by the Coulomb cone. With angular dynamics it also spins
-                // the bodies, which is what makes a box tumble rather than slide.
-                const Vec2 tangent_raw = relative - contact.normal * normal_speed;
-                const f32 tangent_length = tangent_raw.length();
-                if (tangent_length > 0.0f) {
-                    const Vec2 tangent = tangent_raw / tangent_length;
-                    const f32 ra_cross_t = cross_vec2(ra, tangent);
-                    const f32 rb_cross_t = cross_vec2(rb, tangent);
-                    const f32 tangent_mass = inv_mass_sum + a.inv_inertia * ra_cross_t * ra_cross_t +
-                                             b.inv_inertia * rb_cross_t * rb_cross_t;
-                    if (tangent_mass > 0.0f) {
-                        const f32 tangent_speed = relative.dot(tangent);
-                        f32 friction_impulse = -tangent_speed / tangent_mass;
-                        const f32 max_friction = std::max(a.friction, b.friction) * impulse_magnitude;
-                        friction_impulse = std::clamp(friction_impulse, -max_friction, max_friction);
-                        const Vec2 friction = tangent * friction_impulse;
-                        a.velocity -= friction * a.inv_mass;
-                        b.velocity += friction * b.inv_mass;
-                        a.angular_velocity -= a.inv_inertia * cross_vec2(ra, friction);
-                        b.angular_velocity += b.inv_inertia * cross_vec2(rb, friction);
-                    }
+            // Friction: an impulse opposing the tangential relative motion,
+            // capped by the Coulomb cone. With angular dynamics it also spins
+            // the bodies, which is what makes a box tumble rather than slide.
+            const Vec2 tangent_raw = relative - contact.normal * normal_speed;
+            const f32 tangent_length = tangent_raw.length();
+            if (tangent_length > 0.0f) {
+                const Vec2 tangent = tangent_raw / tangent_length;
+                const f32 ra_cross_t = cross_vec2(ra, tangent);
+                const f32 rb_cross_t = cross_vec2(rb, tangent);
+                const f32 tangent_mass =
+                    inv_mass_sum + a.inv_inertia * ra_cross_t * ra_cross_t + b.inv_inertia * rb_cross_t * rb_cross_t;
+                if (tangent_mass > 0.0f) {
+                    const f32 tangent_speed = relative.dot(tangent);
+                    f32 friction_impulse = -tangent_speed / tangent_mass;
+                    const f32 max_friction = std::max(a.friction, b.friction) * impulse_magnitude;
+                    friction_impulse = std::clamp(friction_impulse, -max_friction, max_friction);
+                    const Vec2 friction = tangent * friction_impulse;
+                    a.velocity -= friction * a.inv_mass;
+                    b.velocity += friction * b.inv_mass;
+                    a.angular_velocity -= a.inv_inertia * cross_vec2(ra, friction);
+                    b.angular_velocity += b.inv_inertia * cross_vec2(rb, friction);
                 }
             }
         }
