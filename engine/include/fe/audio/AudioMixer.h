@@ -2,12 +2,18 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/audio/AudioBus.h"
 #include "fe/audio/AudioClip.h"
+#include "fe/core/Math.h"
 #include "fe/core/Types.h"
 
 #include <vector>
 
 namespace fe::audio {
+
+// The "no bus" sentinel: a voice routed to no bus is scaled by the master gain
+// alone, not by any group gain.
+inline constexpr u32 kNoBus = 0xFFFFFFFFu;
 
 // One currently playing instance of a clip.
 //
@@ -36,7 +42,81 @@ struct Voice {
     // used by the system to decide when a paused source should be removed.
     u64 frames_played = 0;
 
+    // --- Positional attenuation --------------------------------------------
+    // When false the voice is non-positional and keeps full gain: `gain` is the
+    // only level control, exactly as before this refinement. The remaining
+    // fields in this block are ignored while `spatial` is false.
+    bool spatial = false;
+
+    // The source's world position, in the same space as MixParams::listener_position.
+    // The AudioSystem fills this from the node's world transform; the mixer never
+    // invents a transform of its own. Distinct from `position`, which is the
+    // clip read position in frames.
+    Vec3 world_position{};
+
+    // Distance at which a spatial voice is at full gain, and the distance at
+    // which it has fallen to silence. See distance_attenuation() for the curve.
+    f32 min_distance = 1.0f;
+    f32 max_distance = 20.0f;
+
+    // The distance attenuation the mixer applied on the last call, for
+    // diagnostics and metering. 1 when the voice is non-positional.
+    f32 attenuation = 1.0f;
+
+    // --- Bus routing -------------------------------------------------------
+    // The bus this voice routes to: an index into MixParams::buses, or kNoBus
+    // when the voice is on no group bus (its contribution is scaled by the
+    // master gain alone). The AudioSystem resolves a source's bus *name* to this
+    // index, so the mixer does no string work.
+    u32 bus = kNoBus;
+
     [[nodiscard]] bool active() const noexcept { return clip != nullptr && playing && !finished; }
+};
+
+// Distance attenuation for a positional voice.
+//
+// The model is **inverse distance with a cutoff at max_distance**: gain is 1
+// within min_distance, falls monotonically to exactly 0 at max_distance, and is
+// 0 beyond. Between the two it follows
+//
+//     gain(d) = (1/d - 1/max_distance) / (1/min_distance - 1/max_distance)
+//
+// which is the physical 1/d falloff rescaled so it reaches silence at the
+// cutoff, rather than the constant floor a plain clamped 1/d curve leaves. It is
+// the shape most engines call "inverse distance clamped", with the clamp turned
+// into a true cutoff.
+//
+// Degenerate inputs disable the falloff instead of dividing by zero: when
+// max_distance <= min_distance, or min_distance <= 0, there is no interior
+// region and the curve becomes a step at min_distance - full gain inside it,
+// silence at or beyond it. The function is total - it never returns NaN - and
+// pure, so it is called directly by the tests.
+[[nodiscard]] f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept;
+
+// Everything mix_voices needs that is not on the voices themselves: the
+// listener, the bus table, and the master gain. Grouped so the mixer signature
+// stays readable and a caller can default-construct "no buses, origin listener".
+struct MixParams {
+    // Where the listener is, in the same world space as each voice's position.
+    // Consulted only for positional voices.
+    Vec3 listener_position{};
+
+    // The group-bus table. `buses[voice.bus].gain` scales the voice when its bus
+    // index is in range. The master bus is *not* in this table: its gain travels
+    // in `master_gain`, so there is a single source of truth for the master. An
+    // empty table (the common case) means no groups, master only.
+    const AudioBus* buses = nullptr;
+    u32 bus_count = 0;
+
+    // The gain of the implicit master bus. Every voice's output is multiplied by
+    // it, on a group bus or not, so muting the master silences the whole mix in
+    // one number. Because scaling is linear this is identical to summing the
+    // buses and scaling the sum.
+    f32 master_gain = 1.0f;
+
+    [[nodiscard]] f32 bus_gain(u32 index) const noexcept {
+        return index < bus_count && buses != nullptr ? buses[index].gain : 1.0f;
+    }
 };
 
 // The output-channel sample for `frame` of `clip`, up-mixing mono to every
@@ -63,9 +143,18 @@ struct Voice {
 // one-shot voice is marked finished once past the end and contributes nothing
 // afterwards.
 //
+// Each voice's contribution is scaled by
+//
+//     voice.gain * attenuation * params.master_gain * bus_gain
+//
+// where `attenuation` is distance_attenuation() for a positional voice and 1
+// otherwise, and `bus_gain` is the gain of the voice's bus (1 when it is on no
+// bus). A non-positional voice on no bus therefore keeps exactly its authored
+// gain, which is the behaviour that existed before this refinement.
+//
 // Returns the peak absolute sample written, so a caller can report or meter the
 // output without rescanning it.
 [[nodiscard]] f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 out_channels,
-                             u32 output_sample_rate);
+                             u32 output_sample_rate, const MixParams& params = {});
 
 } // namespace fe::audio
