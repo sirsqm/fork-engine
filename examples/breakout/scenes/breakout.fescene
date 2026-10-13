@@ -1,0 +1,3565 @@
+{
+  "format": "fork_scene",
+  "format_version": 2,
+  "name": "Breakout",
+  "roots": [
+    {
+      "children": [],
+      "components": [
+        {
+          "clear_color": [
+            0.05999999865889549,
+            0.07000000029802322,
+            0.11999999731779099,
+            1.0
+          ],
+          "primary": true,
+          "type": "Camera2D",
+          "zoom": 1.0
+        }
+      ],
+      "id": "7c7747eb-1950-4d2c-b416-dba410d8bef1",
+      "name": "Camera",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "friction": 0.5,
+          "half_extent": [
+            15.0,
+            510.0
+          ],
+          "radius": 0.5,
+          "restitution": 1.0,
+          "shape": 0,
+          "type": "Collider2D"
+        },
+        {
+          "color": [
+            0.5,
+            0.550000011920929,
+            0.699999988079071,
+            1.0
+          ],
+          "layer": 0,
+          "size": [
+            30.0,
+            1020.0
+          ],
+          "texture": "tex:examples/breakout/assets/textures/wall.png",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "9d0e5795-3b0f-4fd3-a417-3a6019b15633",
+      "name": "WallLeft",
+      "transform": {
+        "position": [
+          -783.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "friction": 0.5,
+          "half_extent": [
+            15.0,
+            510.0
+          ],
+          "radius": 0.5,
+          "restitution": 1.0,
+          "shape": 0,
+          "type": "Collider2D"
+        },
+        {
+          "color": [
+            0.5,
+            0.550000011920929,
+            0.699999988079071,
+            1.0
+          ],
+          "layer": 0,
+          "size": [
+            30.0,
+            1020.0
+          ],
+          "texture": "tex:examples/breakout/assets/textures/wall.png",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "96fee9ac-c578-4007-9a83-fe5d93d971b6",
+      "name": "WallRight",
+      "transform": {
+        "position": [
+          783.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "friction": 0.5,
+          "half_extent": [
+            798.0,
+            15.0
+          ],
+          "radius": 0.5,
+          "restitution": 1.0,
+          "shape": 0,
+          "type": "Collider2D"
+        },
+        {
+          "color": [
+            0.5,
+            0.550000011920929,
+            0.699999988079071,
+            1.0
+          ],
+          "layer": 0,
+          "size": [
+            1596.0,
+            30.0
+          ],
+          "texture": "tex:examples/breakout/assets/textures/wall.png",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "0df187c5-4b1a-4b98-8911-8b5a4a29f03b",
+      "name": "WallTop",
+      "transform": {
+        "position": [
+          0.0,
+          495.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "friction": 0.5,
+          "half_extent": [
+            90.0,
+            14.0
+          ],
+          "radius": 0.5,
+          "restitution": 1.0,
+          "shape": 0,
+          "type": "Collider2D"
+        },
+        {
+          "affected_by_gravity": false,
+          "angular_damping": 0.0,
+          "angular_velocity": 0.0,
+          "can_sleep": true,
+          "fixed_rotation": false,
+          "inertia": 0.0,
+          "kinematic": true,
+          "linear_damping": 0.0,
+          "mass": 1.0,
+          "sleep_angular_threshold": 0.05000000074505806,
+          "sleep_linear_threshold": 0.05000000074505806,
+          "sleep_time": 0.5,
+          "torque": 0.0,
+          "type": "RigidBody2D",
+          "velocity": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "color": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "layer": 1,
+          "size": [
+            180.0,
+            28.0
+          ],
+          "texture": "tex:examples/breakout/assets/textures/paddle.png",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "b2c76272-50dc-4103-9b89-ce06342ee86e",
+      "name": "Paddle",
+      "transform": {
+        "position": [
+          0.0,
+          -380.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "friction": 0.0,
+          "half_extent": [
+            0.5,
+            0.5
+          ],
+          "radius": 13.0,
+          "restitution": 1.0,
+          "shape": 1,
+          "type": "Collider2D"
+        },
+        {
+          "affected_by_gravity": false,
+          "angular_damping": 0.0,
+          "angular_velocity": 0.0,
+          "can_sleep": false,
+          "fixed_rotation": true,
+          "inertia": 0.0,
+          "kinematic": false,
+          "linear_damping": 0.0,
+          "mass": 1.0,
+          "sleep_angular_threshold": 0.05000000074505806,
+          "sleep_linear_threshold": 0.05000000074505806,
+          "sleep_time": 0.5,
+          "torque": 0.0,
+          "type": "RigidBody2D",
+          "velocity": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "color": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "layer": 2,
+          "size": [
+            26.0,
+            26.0
+          ],
+          "texture": "tex:examples/breakout/assets/textures/ball.png",
+          "type": "Sprite2D",
+          "uv": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "id": "3d31dcb0-ced3-4f9a-bf13-170f3049268a",
+      "name": "Ball",
+      "transform": {
+        "position": [
+          0.0,
+          -280.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "56653573-12fc-46b8-8129-9aacc8eaf819",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -490.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "4698e4e5-7869-469b-b87e-23a683445ad3",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -392.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "63c048cc-813a-4271-abd4-b14150d54a6b",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -294.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "2eceb570-769f-450e-841f-679baa775f1b",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -196.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "d07916bc-ca83-4aae-abea-edd582ac4aad",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -98.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "da490ad1-c897-45c9-b873-02d4855a8cb2",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              0.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "738b0433-5492-408a-a8e6-d7328c602f8d",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              98.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "79086ab7-864f-4f2b-9706-34a1c9c62633",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              196.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "9d0c5327-ba42-447c-897b-8650f87c30a5",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              294.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "4887db7b-d87b-412c-bbf7-79ef839e8988",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              392.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "6bdd3dc1-5fa0-43f1-864f-c9c8519619a6",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              490.0,
+              300.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "8c600a9d-5a4e-4f79-a0d0-0c6b2265766b",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -490.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "51808776-5131-4339-810c-9ff23887d2f1",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -392.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "6a923179-ee5e-4649-bb08-674eeba1201d",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -294.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "6336477d-a09e-4a14-9636-878e304944d4",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -196.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "8330760e-6811-4725-b790-af2960d0090e",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -98.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "cb4f99a8-226e-47ce-baea-408d39e3515b",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              0.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "f708fe37-ce8f-4e92-847c-2a2c2f478502",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              98.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "aefb4940-c39a-47ce-b84f-1e5541cac533",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              196.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "b7107e01-8232-4579-be90-feac4e86d6f8",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              294.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "1f88f457-3b66-4753-a88d-9072cababcfc",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              392.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "720f1864-e9bd-4d44-b645-f3e7d29dfc9e",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              490.0,
+              258.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "58ccfddd-3e65-4182-84b5-b54fc095f503",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -490.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "ebb32516-e1de-4002-a53c-3a107e60e196",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -392.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "cac6fb37-0f5c-4dda-a5d2-967a22c0823c",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -294.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "f29d2a9d-9789-42dd-b2dd-214db1c74fa8",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -196.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "f9a15af6-58da-44d1-8af4-4ef98649ed20",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -98.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "bd042a3d-996c-4990-9c27-e84aba173225",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              0.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "7a33b8e5-d72d-4cc6-98eb-5660f0d323a5",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              98.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "3c4ad71e-ac62-464b-858f-d4f8ee60c11b",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              196.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "e8df435c-8641-46d9-80f1-96853f5b6ee3",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              294.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "3666fcca-5d38-461a-9fbf-fe728a7d01e5",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              392.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "9052c9e9-a00a-4bc9-a67e-6a3e78ea6ea1",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              490.0,
+              216.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "bb1d0a71-dff5-4b33-89e7-253a996fae37",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -490.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "4fa8b708-31a5-43e5-8d3b-3a973124fb1c",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -392.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "0b5522b3-bad8-4e2c-8c0c-22ef81d9cc63",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -294.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "607ab4fd-dfef-4070-a77c-6836a1df7287",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -196.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "2ed01047-8279-419f-938d-2a68ba29555a",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -98.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "9a3459f9-2813-4d6a-92bd-2b0adc517204",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              0.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "c5ec68cb-2c1e-48d2-b064-6ca752eaea12",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              98.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "0e94f92d-bfbf-4bac-9f9f-8e0bf2c0467b",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              196.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "ea57d085-9bd3-4106-a785-388e71e65bd4",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              294.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "704025ff-f90c-470e-b877-9f210590a761",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              392.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "ac4ebf76-e45e-4a5c-ac1c-b9301c292a41",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              490.0,
+              174.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "95ee00ab-c87f-411d-8347-fa723badceb1",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -490.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "fe968182-52a8-4478-823a-68ae3e3eeeb0",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -392.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "6d30cdf5-23e3-4d44-a599-fddc2f6f0e6c",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -294.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "92ddf98d-1488-40f7-926a-a2758120e54f",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -196.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "d5d3bef5-cec0-46c6-845f-7d3e973c8bf0",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              -98.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "ca2b910d-7120-4865-98e9-82e64d68cc56",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              0.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "7c877e59-eee6-434d-b5fc-ac900936463e",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              98.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "6783a61d-b915-46ef-8cba-6e33aab32694",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              196.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "89e69248-9662-4985-99c7-94343b266e80",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              294.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "af89fab4-849a-4ea0-858e-38e15630b39e",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              392.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "friction": 0.5,
+              "half_extent": [
+                44.0,
+                16.0
+              ],
+              "radius": 0.5,
+              "restitution": 1.0,
+              "shape": 0,
+              "type": "Collider2D"
+            },
+            {
+              "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "layer": 0,
+              "size": [
+                88.0,
+                32.0
+              ],
+              "texture": "tex:examples/breakout/assets/textures/brick.png",
+              "type": "Sprite2D",
+              "uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "id": "b6478b20-6786-4654-841b-bb6439ed11a4",
+          "name": "Brick",
+          "transform": {
+            "position": [
+              490.0,
+              132.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [],
+      "id": "c572d529-b57d-451e-9780-3088a9fdb74c",
+      "name": "Bricks",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "bus_name": "",
+          "clip": "",
+          "gain": 0.699999988079071,
+          "loop": false,
+          "max_distance": 20.0,
+          "min_distance": 1.0,
+          "pitch": 1.0,
+          "play_on_start": false,
+          "spatial": false,
+          "type": "AudioSource"
+        }
+      ],
+      "id": "b19e481b-620a-4cd4-a740-c3c699daaa13",
+      "name": "BrickAudio",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    }
+  ]
+}
