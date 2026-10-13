@@ -21,6 +21,7 @@ add_library(fork_editor_core STATIC
     src/HierarchyViewModel.cpp
     src/EditorContext.cpp
     src/PlaySession.cpp
+    src/PropertyEditor.cpp
 )
 add_library(FE::editor_core ALIAS fork_editor_core)
 
@@ -39,6 +40,7 @@ add_library(fork_editor STATIC
     src/EditorHost.cpp
     src/HierarchyPanel.cpp
     src/PlayPanel.cpp
+    src/InspectorPanel.cpp
 )
 add_library(FE::editor ALIAS fork_editor)
 

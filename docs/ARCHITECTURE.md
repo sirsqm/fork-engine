@@ -338,14 +338,14 @@ never back. It is built as three targets:
 
 | Target | Responsibility | Depends on |
 | --- | --- | --- |
-| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`). No toolkit, no window. | `fork_engine` |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`), and the headless property helpers (`PropertyEditor`). No toolkit, no window. | `fork_engine` |
 | `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
 | `fork_editor_shell` | The executable entry point. | `fork_editor` |
 
 The split exists so the editable, testable logic has no UI dependency: the
-document, the hierarchy view model, and the play-scene copy are exercised
-headlessly. The panels are a thin projection of that logic. The UI toolkit
-choice and its consequences are recorded in
+document, the hierarchy view model, the play-scene copy, and the property
+helpers are exercised headlessly. The panels are a thin projection of that
+logic. The UI toolkit choice and its consequences are recorded in
 [ADR-0007](adr/0007-editor-ui-toolkit.md).
 
 Play-in-editor copies the authored scene into a play scene, drives frames of the
@@ -354,9 +354,19 @@ playing can never mutate what the user is editing. Panel-to-host actions are a
 one-shot request (`PlayRequest`) rather than a direct call, which keeps the
 panels free of the engine.
 
-Still to come under M2: the reflection-driven property inspector, an in-panel
-2D viewport, the asset browser, undo/redo, and project settings. Reflection is
-built separately (ADR-0005); the inspector is the first consumer.
+The inspector is driven entirely by the reflection registry
+([ADR-0006](adr/0006-component-reflection.md)): for the selected node it looks
+up each component's `TypeDesc` and draws one widget per `Property`, reading
+through the property's getter and writing through its setter. It never names a
+component type or field, so a newly reflected component appears without an
+editor change. A type that is not registered is shown read-only rather than
+crashing, and resource references are resolved through the document's
+`ResourceManager` (null in a headless document, where the field is shown but not
+editable). Text widgets need a buffer that outlives the frame, so the panel
+holds that scratch state.
+
+Still to come under M2: an in-panel 2D viewport, the asset browser, undo/redo,
+and project settings.
 
 ## 9. Scripting (planned)
 
@@ -386,6 +396,12 @@ not a rewrite.
   actually drawn (pixel values, batching and draw counts, camera clear colour,
   depth ordering). They cover both the 2D and 3D renderers. They skip cleanly
   when no context is available, so CI stays green on machines without a GPU.
+  Play-in-editor and the full editor host (panels and all) live here too,
+  because both need a context.
+- **Editor tests** (`fork_editor_tests`) cover the headless editor logic: the
+  hierarchy view model, the document, the play-scene copy, the command stack,
+  and the property helpers. They link `fork_editor_core` only, never the UI
+  toolkit.
 - Tests exercise real code paths. Mocks are avoided; where one is used, it is
   justified in the pull request.
 
@@ -400,8 +416,8 @@ Every milestone must build and pass its tests before the next one begins.
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).
 - Audio, tilemaps, particles, animation clips and state machines.
-- The editor's inspector, viewport, asset browser, undo/redo, and project
-  settings (the editor shell, hierarchy, and play-in-editor exist; see section 8).
+- The editor's viewport, asset browser, undo/redo, and project settings (the
+  editor shell, hierarchy, inspector, and play-in-editor exist; see section 8).
 - Scripting.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread).
