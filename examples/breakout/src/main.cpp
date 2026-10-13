@@ -78,9 +78,8 @@ breakout::SceneAssets load_assets(fe::ResourceManager& resources) {
 
 class BreakoutApp final : public fe::Application {
 public:
-    BreakoutApp(fe::Engine::Config config, bool headless, fe::u32 headless_frames, std::string scene_to_save)
-        : fe::Application(config), headless_(headless), headless_frames_(headless_frames),
-          scene_to_save_(std::move(scene_to_save)) {}
+    BreakoutApp(fe::Engine::Config config, bool headless, std::string scene_to_save)
+        : fe::Application(config), headless_(headless), scene_to_save_(std::move(scene_to_save)) {}
 
 protected:
     fe::Error on_start() override {
@@ -215,7 +214,6 @@ private:
 
     breakout::BreakoutState state_{};
     bool headless_ = false;
-    fe::u32 headless_frames_ = 0;
     std::string scene_to_save_;
 
     // The device is owned here; the AudioSystem (owned by the schedule) borrows
@@ -271,7 +269,7 @@ int main(int argc, char** argv) {
         config.window.vsync = false;
     }
 
-    BreakoutApp app(config, options.headless, options.headless_frames, options.scene_to_save);
+    BreakoutApp app(config, options.headless, options.scene_to_save);
     if (options.headless) {
         app.set_headless(options.headless_frames);
     }
