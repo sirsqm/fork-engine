@@ -30,6 +30,7 @@ set(FE_ENGINE_SOURCES
     src/resources/Texture2DLoader.cpp
     src/resources/AssetDatabase.cpp
     src/resources/ImportSettings.cpp
+    src/resources/ImportCache.cpp
     src/scene/Node.cpp
     src/scene/Scene.cpp
     src/scene/Camera2D.cpp
