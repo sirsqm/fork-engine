@@ -123,12 +123,24 @@ struct ClearColor {
     f32 a = 1.0f;
 };
 
+// Parameters for an off-screen render target.
+struct RenderTargetDesc {
+    std::string name;
+    u32 width = 0;
+    u32 height = 0;
+    // Allocate a depth buffer. Off for the 2D viewport, on for future 3D
+    // passes; it costs memory that a 2D-only target does not need.
+    bool depth = false;
+};
+
 // Opaque GPU resource handles. Callers never see the backend's own types.
 class Shader;
 class Buffer;
 class Texture;
+class RenderTarget;
 using ShaderRef = std::shared_ptr<Shader>;
 using BufferRef = std::shared_ptr<Buffer>;
 using TextureRef = std::shared_ptr<Texture>;
+using RenderTargetRef = std::shared_ptr<RenderTarget>;
 
 } // namespace fe::rhi

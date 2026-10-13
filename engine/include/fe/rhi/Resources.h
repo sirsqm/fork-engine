@@ -55,4 +55,42 @@ public:
     [[nodiscard]] virtual u32 height() const noexcept = 0;
 };
 
+// An off-screen target that can be rendered into and then sampled like a
+// texture.
+//
+// This is what lets the editor render a scene into a panel instead of the
+// window: bind the target, draw, unbind, and blit color_texture() into the
+// panel. It is also the seam a future post-processing chain and a 3D shadow
+// pass will use, which is why it lives in the RHI rather than in the 2D
+// renderer.
+//
+// Lifecycle: a target and its textures are owned by whoever holds the
+// RenderTargetRef. Like every GPU resource they must be released before the
+// device.
+class RenderTarget {
+public:
+    virtual ~RenderTarget() = default;
+
+    [[nodiscard]] virtual const std::string& name() const noexcept = 0;
+    [[nodiscard]] virtual u32 width() const noexcept = 0;
+    [[nodiscard]] virtual u32 height() const noexcept = 0;
+
+    // The color attachment as a shared handle, so a caller (an editor panel)
+    // can keep it alive and sample it with bind_texture() like any Texture.
+    [[nodiscard]] virtual TextureRef color_texture() const noexcept = 0;
+
+    // Binds the target for drawing: subsequent draws go to its color
+    // attachment instead of the window. The viewport is set to the target's
+    // full size. Bind the null target (bind_render_target(*device, nullptr)) or
+    // call bind_default_target() to go back to the window. Binding a target
+    // does not clear it; use clear().
+    virtual void bind() = 0;
+
+    // Unbinds, returning drawing to the window's default framebuffer.
+    virtual void unbind() = 0;
+
+    // Clears the bound target's color (and depth, when present) attachment.
+    virtual void clear(const ClearColor& color) = 0;
+};
+
 } // namespace fe::rhi

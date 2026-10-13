@@ -222,3 +222,105 @@ TEST_CASE("sprites on different layers sort back-to-front") {
     CHECK(centre.g > 200);
     CHECK(centre.r < 60);
 }
+
+TEST_CASE("a render target accepts drawing and its texture can be read back") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    rhi::RenderTargetDesc desc;
+    desc.name = "viewport";
+    desc.width = 32;
+    desc.height = 32;
+    auto target = context.device->create_render_target(desc);
+    REQUIRE(target);
+    CHECK(target.value()->width() == 32);
+    CHECK(target.value()->color_texture()->width() == 32);
+
+    // Draw a red sprite into the target, not the window.
+    Scene scene;
+    scene.create_node("Camera")->add_component<Camera2D>();
+    Node* sprite_node = scene.create_node("Sprite");
+    auto* sprite = sprite_node->add_component<Sprite2D>();
+    sprite->texture = make_solid_texture(*context.device, 255, 255, 255, 255);
+    sprite->size = Vec2{32.0f, 32.0f};
+    sprite->color = Vec4{1.0f, 0.0f, 0.0f, 1.0f};
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    context.device->bind_render_target(target.value().get());
+    CHECK(context.device->bound_render_target() == target.value().get());
+
+    renderer2d::Renderer2D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    REQUIRE(renderer.render(*context.device, scene, 32, 32));
+
+    std::vector<u8> pixels(32U * 32U * 4U, 0);
+    context.device->read_pixels(16, 16, 1, 1, std::span<u8>(pixels.data(), pixels.size()));
+    CHECK(pixels[0] > 200); // red
+    CHECK(pixels[1] < 60);
+    CHECK(pixels[2] < 60);
+
+    // The window still holds its own (black) contents, proving the sprite did
+    // not leak onto the default framebuffer.
+    context.device->bind_render_target(nullptr);
+    CHECK(context.device->bound_render_target() == nullptr);
+    std::vector<u8> window_pixel(4, 0);
+    context.device->read_pixels(32, 32, 1, 1, std::span<u8>(window_pixel.data(), window_pixel.size()));
+    CHECK(window_pixel[0] < 60);
+    context.device->end_frame();
+}
+
+TEST_CASE("the render target colour attachment can be sampled as a texture") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    rhi::RenderTargetDesc desc;
+    desc.name = "sampled";
+    desc.width = 16;
+    desc.height = 16;
+    auto target = context.device->create_render_target(desc);
+    REQUIRE(target);
+
+    // Clear the target to a known colour and then sample its texture onto the
+    // window with an ordinary sprite, closing the loop the editor viewport
+    // relies on: render off-screen, then blit the result.
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    context.device->bind_render_target(target.value().get());
+    target.value()->clear(rhi::ClearColor{0.0f, 0.0f, 1.0f, 1.0f}); // Blue.
+    context.device->bind_render_target(nullptr);
+
+    Scene scene;
+    scene.create_node("Camera")->add_component<Camera2D>();
+    Node* sprite_node = scene.create_node("Sprite");
+    auto* sprite = sprite_node->add_component<Sprite2D>();
+    sprite->texture = std::make_shared<Texture2D>("sampled", target.value()->color_texture());
+    sprite->size = Vec2{64.0f, 64.0f};
+
+    renderer2d::Renderer2D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    REQUIRE(renderer.render(*context.device, scene, 64, 64));
+
+    std::vector<u8> pixels(64U * 64U * 4U, 0);
+    context.device->read_pixels(32, 32, 1, 1, std::span<u8>(pixels.data(), pixels.size()));
+    CHECK(pixels[2] > 200); // blue from the target
+    context.device->end_frame();
+}
+
+TEST_CASE("creating a render target with zero size fails cleanly") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    rhi::RenderTargetDesc desc;
+    desc.name = "invalid";
+    desc.width = 0;
+    desc.height = 16;
+    CHECK_FALSE(context.device->create_render_target(desc));
+}
