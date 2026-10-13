@@ -61,7 +61,7 @@ TEST_CASE("load dispatches to a loader by extension and caches the result") {
     // Second load of the same path must hit the cache.
     auto second = manager.load_as<FakeResource>("hero.fake");
     REQUIRE(second);
-    CHECK(second.value() == first.value());
+    CHECK((second.value() == first.value()));
     CHECK(load_count == 1);
 }
 
@@ -78,7 +78,7 @@ TEST_CASE("the cache key includes the scheme") {
     REQUIRE(image);
     REQUIRE(texture);
     // Different schemes are different resources even for the same file.
-    CHECK(image.value() != texture.value());
+    CHECK((image.value() != texture.value()));
     CHECK(default_loads == 1);
     CHECK(tex_loads == 1);
     CHECK(manager.cached_count() == 2);
