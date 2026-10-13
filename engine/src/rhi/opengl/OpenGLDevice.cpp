@@ -405,6 +405,8 @@ public:
         // editor viewport left bound in the previous frame.
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         bound_target_ = nullptr;
+        default_framebuffer_width_ = framebuffer_width;
+        default_framebuffer_height_ = framebuffer_height;
         set_viewport(0, 0, framebuffer_width, framebuffer_height);
         glDisable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
@@ -417,8 +419,13 @@ public:
 
     void bind_render_target(RenderTarget* target) override {
         if (target == nullptr) {
+            // Restore the window. Resetting the viewport to the window's size
+            // matters: a caller that renders into a small panel target and then
+            // back to the window must not inherit the panel's viewport, or the
+            // window draw lands in a corner.
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             bound_target_ = nullptr;
+            set_viewport(0, 0, default_framebuffer_width_, default_framebuffer_height_);
             return;
         }
         target->bind();
@@ -518,6 +525,8 @@ private:
     GLuint vao_ = 0;
     GLuint bound_shader_ = 0;
     RenderTarget* bound_target_ = nullptr;
+    u32 default_framebuffer_width_ = 0;
+    u32 default_framebuffer_height_ = 0;
     std::unordered_map<GLuint, VertexLayout> layouts_;
 };
 
