@@ -68,6 +68,7 @@ int Application::run() {
             frame.delta_time = engine_.delta_time();
             frame.elapsed_time = engine_.elapsed_time();
             frame.resources = &engine_.resources();
+            frame.input = &engine_.input();
             schedule_.update(frame, scene_);
         }
 
