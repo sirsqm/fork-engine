@@ -28,6 +28,10 @@ constexpr f32 kPositionCorrection = 0.8f;
 // visibly vibrate.
 constexpr f32 kPenetrationSlop = 0.005f;
 
+// The "no island vertex" marker in the body-to-vertex map. A static body (one
+// with infinite mass) is never a vertex in the island graph, so it maps to this.
+constexpr usize kNoVertex = static_cast<usize>(-1);
+
 [[nodiscard]] f32 clamp_unit(f32 value) noexcept {
     return std::clamp(value, 0.0f, 1.0f);
 }
@@ -99,6 +103,9 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     joint_diagnostics_.clear();
     joints_.clear();
     node_index_.clear();
+    body_index_.clear();
+    asleep_.clear();
+    sleeping_bodies_ = 0;
 
     // Gather. Walk the scene once and keep every node that can participate in a
     // collision, with its world position and material data flattened out. The
@@ -157,6 +164,22 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         } else {
             entry.inv_inertia = 0.0f;
         }
+
+        // A sleeping body resumes from rest: its authored velocity is ignored so
+        // a body that was asleep when the scene loaded does not spring into
+        // motion on the first step. Its island is re-derived below and the wake
+        // pass decides whether it stays asleep.
+        const bool sleeping = body != nullptr && body->is_sleeping && entry.inv_mass > 0.0f;
+        if (sleeping) {
+            entry.velocity = Vec2{};
+            entry.angular_velocity = 0.0f;
+        }
+
+        body_index_.emplace(node.id(), bodies_.size());
+        asleep_.push_back(sleeping);
+        if (sleeping) {
+            ++sleeping_bodies_;
+        }
         bodies_.push_back(entry);
     });
 
@@ -180,10 +203,19 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         return;
     }
 
+    // Islands, then wake checks, then integration -- all before the solver. The
+    // island graph is built from the contacts that exist at the start of the
+    // step and from the joints, so a moving body wakes a sleeper it has just
+    // reached before the solver runs and can never pass through it.
+    build_islands();
+    apply_wake_checks();
+
     // Integrate velocity: gravity, torque, then linear and angular damping. A
-    // body with no dynamic motion (infinite mass) skips all of it.
-    for (Body& entry : bodies_) {
-        if (entry.inv_mass <= 0.0f) {
+    // body with no dynamic motion (infinite mass) skips all of it, and so does a
+    // sleeping body: it is at rest and stays exactly where it is.
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        Body& entry = bodies_[i];
+        if (entry.inv_mass <= 0.0f || asleep_[i]) {
             continue;
         }
         if (entry.body->affected_by_gravity) {
@@ -205,8 +237,9 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     }
 
     // Integrate position and rotation from the updated velocities.
-    for (Body& entry : bodies_) {
-        if (entry.inv_mass <= 0.0f) {
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        Body& entry = bodies_[i];
+        if (entry.inv_mass <= 0.0f || asleep_[i]) {
             continue;
         }
         entry.position += entry.velocity * delta_time;
@@ -275,7 +308,10 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
             // Record the touching pair once, on the first iteration, so the
             // contact-event pass can diff it against the previous frame. The
             // key is by node identity (ordered), so it is stable no matter how
-            // the scene is walked.
+            // the scene is walked. A sleeping body's contacts are still
+            // recorded -- its position does not change, so they neither begin
+            // nor end, and the event stream stays quiet -- but no impulse is
+            // applied to it below.
             if (first_iteration) {
                 ++contacts_;
                 BodyPair pair;
@@ -287,6 +323,18 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
                 pair.first = a_first ? a.node->id() : b.node->id();
                 pair.second = a_first ? b.node->id() : a.node->id();
                 active_pairs_.push_back(pair);
+            }
+
+            // A sleeping body is skipped by the solver. Its contacts were
+            // recorded above, but it is not moved or impulsed: it is at rest
+            // until something wakes it, which the wake pass did before this
+            // loop if an awake body was touching it. The body indices come from
+            // `bounds_owner_`, because the grid indexes its own bounds array,
+            // not `bodies_`.
+            const usize index_a = bounds_owner_[candidate.first];
+            const usize index_b = bounds_owner_[candidate.second];
+            if (asleep_[index_a] || asleep_[index_b]) {
+                continue;
             }
 
             const f32 inv_mass_sum = a.inv_mass + b.inv_mass;
@@ -380,9 +428,12 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
 
     // Write back. The transform owns the node's position and rotation; the
     // rigid body owns its velocities. Writing both here is what keeps the two in
-    // sync, exactly as the animation system writes UVs back onto the sprite.
-    for (Body& entry : bodies_) {
-        if (entry.inv_mass <= 0.0f) {
+    // sync, exactly as the animation system writes UVs back onto the sprite. A
+    // sleeping body is skipped: its node transform is left exactly as authored,
+    // so nothing moves it while it sleeps.
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        Body& entry = bodies_[i];
+        if (entry.inv_mass <= 0.0f || asleep_[i]) {
             continue;
         }
         entry.body->velocity = entry.velocity;
@@ -398,7 +449,14 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     // Joints last, on the freshly written-back transforms and velocities. A
     // joint is solved once (not per contact iteration) because a pin needs the
     // error corrected at a fixed rate rather than crushed to zero in one step.
+    // A joint with a sleeping end is skipped, so a sleeping island is not pulled
+    // by its own constraint; the wake pass already woke the island if the other
+    // end was moving.
     solve_joints(scene, delta_time);
+
+    // Sleep checks last, on the velocity the solver actually left behind, so a
+    // body that was pushed this step does not count as at rest.
+    apply_sleep_checks(delta_time);
 
     reconcile_contacts(scene);
 }
@@ -444,6 +502,30 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
             continue;
         }
 
+        // A sleeping end behaves as an immovable one: the joint is still
+        // enforced -- so joint_count() reports it and the row is built -- but it
+        // cannot move the sleeper. The wake pass already woke the island if the
+        // other end was moving, so a joint is only skipped here when the whole
+        // island is asleep, in which case there is nothing to correct. This is
+        // what keeps a pendulum that has come to rest reporting its constraint
+        // rather than vanishing from the count.
+        const auto index_a = body_index_.find(id_a);
+        const auto index_b = body_index_.find(id_b);
+        if (index_a != body_index_.end() && asleep_[index_a->second]) {
+            body_a.inv_mass = 0.0f;
+            body_a.inv_inertia = 0.0f;
+        }
+        if (index_b != body_index_.end() && asleep_[index_b->second]) {
+            body_b.inv_mass = 0.0f;
+            body_b.inv_inertia = 0.0f;
+        }
+        if (body_a.inv_mass <= 0.0f && body_b.inv_mass <= 0.0f) {
+            // Both ends are immovable or asleep: nothing to correct, but the
+            // joint is still counted (it was gathered and is not broken).
+            ++joints_solved_;
+            continue;
+        }
+
         if (joint.distance != nullptr) {
             DistanceJointParams params;
             // A positive rest length pins that length. Zero or negative means
@@ -486,6 +568,192 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
 
 void Physics2DSystem::note_joint_skipped(std::string_view type, const Uuid& body_a, const Uuid& body_b, Error error) {
     joint_diagnostics_.push_back(JointDiagnostic{type, body_a, body_b, std::move(error)});
+}
+
+bool Physics2DSystem::same_island(const Uuid& a, const Uuid& b) const {
+    const auto index_a = body_index_.find(a);
+    const auto index_b = body_index_.find(b);
+    if (index_a == body_index_.end() || index_b == body_index_.end()) {
+        return false;
+    }
+    const usize vertex_a = body_vertex_[index_a->second];
+    const usize vertex_b = body_vertex_[index_b->second];
+    if (vertex_a == kNoVertex || vertex_b == kNoVertex) {
+        return false;
+    }
+    return islands_.same_island(vertex_a, vertex_b);
+}
+
+void Physics2DSystem::build_islands() {
+    // Only dynamic bodies are island vertices: static geometry is collided with
+    // but never conducts motion between the bodies resting on it, so a link to a
+    // static body is dropped. That is what makes a crate on the left of a floor
+    // and a crate on the right separate islands even though both touch it.
+    island_vertex_body_.clear();
+    body_vertex_.assign(bodies_.size(), kNoVertex);
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        if (bodies_[i].inv_mass > 0.0f) {
+            body_vertex_[i] = island_vertex_body_.size();
+            island_vertex_body_.push_back(i);
+        }
+    }
+
+    // Edges. A link is a pair of dynamic bodies whose bounds overlap (the broad
+    // phase's notion of "may be touching") or a joint between two dynamic
+    // bodies. The bounds test is deliberately conservative: it may join two
+    // bodies that are near but not quite touching, which only makes sleeping
+    // more conservative (the group wakes and sleeps together), never less safe.
+    // Using bounds rather than the exact contact is what lets the graph be built
+    // before the solver runs, so a moving body wakes a sleeper in the same step
+    // it reaches it.
+    //
+    // This enumeration is separate from the solver's uniform-grid broad phase
+    // (ADR-0023): the island graph is built before integration, over the
+    // pre-step bounds, while the broad phase is built after it, over the
+    // post-step bounds. It is O(n^2) and is the next thing to fold into the
+    // broad phase if the two passes are ever brought to the same point in the
+    // step. The order is bodies in array order, so the link order -- and
+    // therefore the islands -- is deterministic.
+    island_links_.clear();
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        if (body_vertex_[i] == kNoVertex || bodies_[i].collider == nullptr) {
+            continue;
+        }
+        const Aabb2D bounds_a = bodies_[i].collider->bounds(bodies_[i].position);
+        for (usize j = i + 1; j < bodies_.size(); ++j) {
+            if (body_vertex_[j] == kNoVertex || bodies_[j].collider == nullptr) {
+                continue;
+            }
+            const Aabb2D bounds_b = bodies_[j].collider->bounds(bodies_[j].position);
+            if (bounds_overlap(bounds_a, bounds_b)) {
+                island_links_.push_back(IslandLink{body_vertex_[i], body_vertex_[j]});
+            }
+        }
+    }
+
+    // Joints are resolved here from the node index rather than from the Joint
+    // struct's cached ends, which solve_joints fills later in the step. A joint
+    // end that is nil, missing, or not a simulated dynamic body contributes no
+    // link (a joint to an immovable pivot does not join two islands).
+    for (const Joint& joint : joints_) {
+        if (joint.distance == nullptr && joint.revolute == nullptr) {
+            continue;
+        }
+        const Uuid& id_a = joint.distance != nullptr ? joint.distance->body_a : joint.revolute->body_a;
+        const Uuid& id_b = joint.distance != nullptr ? joint.distance->body_b : joint.revolute->body_b;
+        const auto index_a = body_index_.find(id_a);
+        const auto index_b = body_index_.find(id_b);
+        if (index_a == body_index_.end() || index_b == body_index_.end()) {
+            continue;
+        }
+        const usize vertex_a = body_vertex_[index_a->second];
+        const usize vertex_b = body_vertex_[index_b->second];
+        if (vertex_a == kNoVertex || vertex_b == kNoVertex) {
+            continue;
+        }
+        island_links_.push_back(IslandLink{vertex_a, vertex_b});
+    }
+
+    islands_.build(island_vertex_body_.size(), island_links_);
+
+    // Seed the awake flags from the bodies' current state. A body that is awake
+    // (including one that can never sleep) makes its island awake.
+    island_awake_.assign(islands_.island_count(), false);
+    for (usize vertex = 0; vertex < island_vertex_body_.size(); ++vertex) {
+        if (!asleep_[island_vertex_body_[vertex]]) {
+            island_awake_[islands_.island_of_body()[vertex]] = true;
+        }
+    }
+}
+
+void Physics2DSystem::wake_island(usize index) {
+    if (index >= islands_.island_count()) {
+        return;
+    }
+    island_awake_[index] = true;
+    for (const usize vertex : islands_.islands()[index]) {
+        const usize body = island_vertex_body_[vertex];
+        if (asleep_[body]) {
+            asleep_[body] = false;
+            --sleeping_bodies_;
+            // Clear the body's own sleeping flag and restart its rest timer. An
+            // already-awake body in the island keeps its timer, so a body that
+            // has been settling is not sent back to the start by a neighbour
+            // being woken.
+            if (bodies_[body].body != nullptr) {
+                bodies_[body].body->wake();
+            }
+        }
+    }
+}
+
+void Physics2DSystem::apply_wake_checks() {
+    // A contact or a joint to an *awake* dynamic body wakes the island. The
+    // island awake flags were seeded from the bodies above, so a flag is true
+    // exactly when some body in it was already awake; here that wake is
+    // propagated across the whole island, which is what wakes a sleeping body
+    // joined to a moving one or resting against a moving one.
+    //
+    // Because the graph already links the pair that is touching this step, a
+    // moving body wakes a sleeper before the solver runs: the solver can never
+    // move an awake body into a still-sleeping one.
+    for (usize island = 0; island < islands_.island_count(); ++island) {
+        if (island_awake_[island]) {
+            wake_island(island);
+        }
+    }
+}
+
+void Physics2DSystem::apply_sleep_checks(f32 delta_time) {
+    for (usize island = 0; island < islands_.island_count(); ++island) {
+        if (island_awake_[island]) {
+            // An awake island advances each body's rest timer. A body that is
+            // still moving resets its own timer; a body below the thresholds
+            // accumulates. The island may only sleep when every body in it has
+            // accumulated long enough and can_sleep.
+            bool ready = true;
+            for (const usize vertex : islands_.islands()[island]) {
+                const usize body_index = island_vertex_body_[vertex];
+                RigidBody2D* component = bodies_[body_index].body;
+                if (component == nullptr) {
+                    continue;
+                }
+                if (!component->can_sleep) {
+                    ready = false;
+                    component->sleep_timer = 0.0f;
+                    continue;
+                }
+                // The write-back above has already synced the component's
+                // velocity, so the component's own rest test is current.
+                if (component->is_resting()) {
+                    component->sleep_timer += delta_time;
+                } else {
+                    component->sleep_timer = 0.0f;
+                }
+                if (component->sleep_timer < component->sleep_time) {
+                    ready = false;
+                }
+            }
+            if (ready) {
+                // Every body in the island has been still long enough: sleep the
+                // whole island at once, so the group stops as a unit rather than
+                // one body at a time.
+                for (const usize vertex : islands_.islands()[island]) {
+                    const usize body_index = island_vertex_body_[vertex];
+                    RigidBody2D* component = bodies_[body_index].body;
+                    if (component == nullptr) {
+                        continue;
+                    }
+                    if (!asleep_[body_index]) {
+                        asleep_[body_index] = true;
+                        ++sleeping_bodies_;
+                    }
+                    component->sleep();
+                }
+                island_awake_[island] = false;
+            }
+        }
+    }
 }
 
 void Physics2DSystem::reconcile_contacts(Scene& scene) {
