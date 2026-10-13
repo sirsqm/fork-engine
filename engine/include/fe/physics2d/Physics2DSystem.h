@@ -6,6 +6,7 @@
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
+#include "fe/physics2d/BroadPhase.h"
 #include "fe/physics2d/JointSolver.h"
 #include "fe/systems/System.h"
 
@@ -64,6 +65,13 @@ struct ContactEvent {
 // The solver is sequential-impulse with Baumgarte position correction, run for a
 // fixed number of iterations. It reads the bodies into a flat array first, so
 // the inner loop walks contiguous memory rather than the scene's pointer graph.
+//
+// Candidate pairs are found once per step by a uniform-grid broad phase
+// (`BroadPhase.h`) and the iteration loop walks only that set, so a step costs
+// O(candidates * iterations) rather than O(bodies^2 * iterations). Sharing a
+// grid cell is necessary but not sufficient: the solver still runs the
+// `bounds_overlap` prefilter and then the narrow phase on every candidate, so
+// the broad phase is free to be conservative.
 class Physics2DSystem final : public System {
 public:
     [[nodiscard]] std::string_view name() const noexcept override { return "Physics2DSystem"; }
@@ -82,6 +90,12 @@ public:
     // Contacts found in the most recent update. Exposed for tests and the
     // editor's debug overlay.
     [[nodiscard]] usize contact_count() const noexcept { return contacts_; }
+
+    // Candidate pairs the broad phase returned in the most recent update, before
+    // the narrow phase. This is the number the spatial hash is meant to shrink;
+    // exposed for tests and the editor's debug overlay. A brute-force double
+    // loop would produce bodies_ * (bodies_ - 1) / 2 candidates.
+    [[nodiscard]] usize candidate_count() const noexcept { return broad_phase_.candidate_count(); }
 
     // The contacts that began or ended during the most recent update.
     //
@@ -196,6 +210,15 @@ private:
 
     std::vector<Body> bodies_;
     usize contacts_ = 0;
+
+    // Broad phase, rebuilt once per step. `broad_phase_bounds_` holds the world
+    // bounds of the bodies that have a collider; the grid returns index pairs
+    // into it. `bounds_owner_` maps each bounds index back to its `bodies_`
+    // index, because `bodies_` also holds colliderless (joint-only) masses that
+    // the grid never sees.
+    BroadPhase broad_phase_;
+    std::vector<Aabb2D> broad_phase_bounds_;
+    std::vector<usize> bounds_owner_;
 
     // Scratch, reused across frames so a steady-state step allocates nothing.
     std::vector<BodyPair> active_pairs_;

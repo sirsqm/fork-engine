@@ -69,7 +69,7 @@ core  <-  net                     (planned: collaborative editing)
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
-| `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular), joints (distance and revolute), queries, and contact events | core, scene, systems, reflect |
+| `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, and contact events | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
@@ -185,11 +185,14 @@ bodies the same code:
 
 Each update integrates linear velocity (gravity, damping) and position, and
 angular velocity (torque, damping) and rotation, then runs a fixed number of
-sequential-impulse iterations over every pair: a bounding-box broad phase, a
-narrow phase (`intersect` for box/box, circle/circle, circle/box), a normal
-impulse with restitution, a Coulomb friction impulse, and Baumgarte positional
-correction. Positions and rotation are written back to `Node::transform()`;
-linear and angular velocities back to the `RigidBody2D`.
+sequential-impulse iterations over the *candidate* pairs: a uniform-grid
+(spatial hash) broad phase finds the candidates once per step, a narrow phase
+(`intersect` for box/box, circle/circle, circle/box) tests each candidate, and
+the solver applies a normal impulse with restitution, a Coulomb friction
+impulse, and Baumgarte positional correction. The candidate set is computed once,
+before the iteration loop, so a step costs O(candidates * iterations) rather than
+O(bodies² * iterations). Positions and rotation are written back to
+`Node::transform()`; linear and angular velocities back to the `RigidBody2D`.
 
 **Queries** are free functions over a scene (`Physics2DQueries.h`): `raycast`,
 `overlap_circle`, `overlap_box`, and `overlap_point`. They are not a system, so
@@ -668,10 +671,11 @@ Every milestone must build and pass its tests before the next one begins.
   [ADR-0012](adr/0012-forward-lighting-model.md), and
   [ADR-0014](adr/0014-directional-shadow-mapping.md)).
 - 3D physics, and the parts of 2D physics not in the first cuts: collider
-  offsets, oriented-box colliders, continuous collision detection, sleeping, and
-  a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md),
-  [ADR-0013](adr/0013-physics2d-queries-events-angular.md), and
-  [ADR-0021](adr/0021-physics2d-joints.md)).
+  offsets, oriented-box colliders, continuous collision detection, and sleeping
+  (see [ADR-0009](adr/0009-physics2d-system.md),
+  [ADR-0013](adr/0013-physics2d-queries-events-angular.md),
+  [ADR-0021](adr/0021-physics2d-joints.md), and
+  [ADR-0023](adr/0023-physics2d-broadphase.md)).
 - The parts of audio not in the first cut: 3D positional attenuation, streaming
   and large-file playback, compressed codecs, and audio buses / mixing groups
   (see [ADR-0016](adr/0016-audio-module.md)).
