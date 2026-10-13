@@ -64,6 +64,21 @@ noise.
   expression in an extra pair of parentheses: `CHECK((a == b))`.
 - longjmp-based test harnesses trip MSVC C4611; suppress it at file scope with
   a comment, not globally.
+- Path tests must not assume POSIX. A leading `/` is not absolute on Windows
+  (`fs::is_absolute("/x")` is false there), and `std::filesystem::path` uses
+  backslashes on Windows. Build absolute examples from
+  `std::filesystem::temp_directory_path()`, join with `std::filesystem::path`
+  `/` rather than string `+ "/"`, and compare resolved paths through
+  `fs::normalize` so a forward-slash expectation matches a backslash result.
+
+## Commit identity
+
+Every commit in this repository is authored and committed by
+`sqm <sirsamyoudev@gmail.com>`. Do not add a `Co-authored-by` trailer, and do
+not let an automated agent's identity (`openhands <openhands@all-hands.dev>`,
+`GitHub <noreply@github.com>`, or any other) appear in the author, committer, or
+message. If such a commit is found, rewrite it with `git filter-repo --mailmap`
+(identity) and a `--message-callback` (trailer/body), then force-push `main`.
 
 ## ADR numbering
 
