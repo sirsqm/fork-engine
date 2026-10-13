@@ -58,6 +58,7 @@ tests. Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Editor (docking shell, hierarchy, inspector, asset browser, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
 | Project file (settings, asset root, startup scene) | Working |
 | Runtime frame loop + sandbox example | Working |
+| A complete example game (breakout, the M2.5 vertical slice) | Working (see [ADR-0032](docs/adr/0032-breakout-vertical-slice.md)) |
 | Scripting (C++ native modules first, language-agnostic seam) | Not started (see roadmap) |
 | Build/export | Not started (see roadmap) |
 | Performance tooling, extra platforms, collaborative editing | Planned (see roadmap) |

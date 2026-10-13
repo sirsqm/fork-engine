@@ -107,6 +107,16 @@ public:
     [[nodiscard]] u64 mixed_frames() const noexcept { return mixed_frames_; }
     [[nodiscard]] f32 last_peak() const noexcept { return last_peak_; }
 
+    // The largest absolute sample the mixer has ever produced. Unlike last_peak()
+    // it is cumulative, so it is the robust "did this system ever make a sound"
+    // signal: the final frame of a run is often silent (a one-shot has ended),
+    // which would make a single-frame peak read as zero even though audio played.
+    // A headless game run logs this as its proof that the mixer ran.
+    [[nodiscard]] f32 peak_max() const noexcept { return peak_max_; }
+
+    // Clears the cumulative diagnostics (mixed_frames and peak_max).
+    void reset_statistics() noexcept;
+
 private:
     // A voice plus the source it was created from, so the system can match them
     // across frames and update settings that changed.
@@ -128,6 +138,7 @@ private:
 
     u64 mixed_frames_ = 0;
     f32 last_peak_ = 0.0f;
+    f32 peak_max_ = 0.0f;
 };
 
 } // namespace audio

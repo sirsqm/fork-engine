@@ -73,6 +73,18 @@ public:
     std::string bus_name{};
 
     [[nodiscard]] bool has_clip() const noexcept { return clip != nullptr; }
+
+    // Restarts the source from the top of its clip on the next update. This is
+    // the "play a cue now" entry point a gameplay system calls: a one-shot that
+    // already finished is restarted, and a source authored with play_on_start
+    // false begins playing. The request is transient - the AudioSystem consumes
+    // it and clears the flag - so it survives exactly the frame it was set on.
+    // Calling it does not touch `clip`, so a caller need only hold the source.
+    void play() noexcept { play_requested = true; }
+
+    // Set by play(), cleared by the AudioSystem when it is honoured. Exposed so
+    // the behavior is observable rather than hidden in a private flag.
+    bool play_requested = false;
 };
 
 } // namespace fe::audio

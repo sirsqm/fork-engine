@@ -41,6 +41,7 @@ rather than editing it.
 | [0030](0030-asset-pack-format.md) | Asset packs: one container the runtime mounts like a directory | Accepted |
 | [0031](0031-physics3d-and-backend-seam.md) | 3D physics, and a backend seam so the solver can be replaced | Accepted |
 | [0032](0032-near-term-platform-scope.md) | Near-term platform scope: desktop is the target, shipping is the plan | Accepted |
+| [0033](0033-breakout-vertical-slice.md) | The breakout vertical slice, and the integration test it is | Accepted |
 | [0034](0034-audio-attenuation-buses.md) | Audio attenuation and mixing buses | Accepted |
 
 ## Format

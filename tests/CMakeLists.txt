@@ -36,6 +36,19 @@ add_executable(fork_engine_tests
 )
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_engine_tests PRIVATE cxx_std_20)
+
+# The breakout vertical-slice tests compile the game's own rules and systems
+# straight from the example directory (by path, so they do not depend on
+# FE_BUILD_EXAMPLES). This is deliberate: the test proves the *shipped* game
+# code, not a copy of it. The example's src/ is on the include path for its
+# headers.
+target_sources(fork_engine_tests PRIVATE
+    src/test_breakout.cpp
+    ${CMAKE_SOURCE_DIR}/examples/breakout/src/breakout_state.cpp
+    ${CMAKE_SOURCE_DIR}/examples/breakout/src/breakout_scene.cpp
+    ${CMAKE_SOURCE_DIR}/examples/breakout/src/breakout_systems.cpp
+)
+target_include_directories(fork_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/examples/breakout/src)
 set_target_properties(fork_engine_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 # The disabled-instrumentation test must see the macros expand to nothing, so
