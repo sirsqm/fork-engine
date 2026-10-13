@@ -267,7 +267,10 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     for (usize i = 0; i < bodies_.size(); ++i) {
         const Body& entry = bodies_[i];
         if (entry.collider != nullptr) {
-            broad_phase_bounds_.push_back(entry.collider->bounds(entry.position));
+            // The world AABB of the oriented shape: for a rotated box this is the
+            // conservative bound of its four corners, so the grid stays a
+            // superset of the truly-touching pairs.
+            broad_phase_bounds_.push_back(entry.collider->bounds(entry.position, entry.rotation));
             bounds_owner_.push_back(i);
         }
     }
@@ -294,13 +297,17 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
             // Sharing a grid cell is necessary but not sufficient: keep the
             // existing bounds prefilter so a pair in the same cell but not
             // actually close is rejected before the narrow phase.
-            if (!bounds_overlap(a.collider->bounds(a.position), b.collider->bounds(b.position))) {
+            if (!bounds_overlap(a.collider->bounds(a.position, a.rotation),
+                                b.collider->bounds(b.position, b.rotation))) {
                 continue;
             }
 
-            const Contact2D contact =
-                intersect_shapes(a.collider->shape, a.collider->box(a.position), a.collider->circle(a.position),
-                                 b.collider->shape, b.collider->box(b.position), b.collider->circle(b.position));
+            // Place each shape by its node's world position, offset, and Z
+            // rotation, so a rotated box collides as its true oriented shape.
+            const Contact2D contact = intersect_shapes(
+                a.collider->shape, a.collider->oriented_box(a.position, a.rotation),
+                a.collider->oriented_circle(a.position, a.rotation), b.collider->shape,
+                b.collider->oriented_box(b.position, b.rotation), b.collider->oriented_circle(b.position, b.rotation));
             if (!contact.overlapping) {
                 continue;
             }
@@ -356,14 +363,20 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
             // single-point approximation, standard for box and disc
             // contacts). Angular impulses need the lever arm from each
             // centre to this point; a contact through a centre produces no
-            // torque, which is what keeps a body resting flat stable.
-            const f32 support_a = a.collider->shape == ShapeType::Circle
-                                      ? a.collider->radius
-                                      : a.collider->half_extent.x * std::abs(contact.normal.x) +
-                                            a.collider->half_extent.y * std::abs(contact.normal.y);
-            const Vec2 contact_point = a.position + contact.normal * (support_a - contact.penetration * 0.5f);
+            // torque, which is what keeps a body resting flat stable. Each
+            // shape is placed by its node's offset and Z rotation, so a
+            // rotated box or an offset shape reports the lever arm at its
+            // true surface rather than at a shape centred on the node.
+            const Vec2 center_a = a.collider->world_center(a.position, a.rotation);
+            const f32 support_a =
+                a.collider->shape == ShapeType::Circle
+                    ? a.collider->radius
+                    : support_radius(a.collider->oriented_box(a.position, a.rotation), contact.normal);
+            const Vec2 contact_point = center_a + contact.normal * (support_a - contact.penetration * 0.5f);
 
-            // Lever arms from each body centre to the contact point.
+            // Lever arms from each body centre to the contact point. The
+            // body's centre of mass is the node origin, so the offset shifts
+            // where the surface is and therefore the lever arm.
             const Vec2 ra = contact_point - a.position;
             const Vec2 rb = contact_point - b.position;
 
@@ -619,12 +632,12 @@ void Physics2DSystem::build_islands() {
         if (body_vertex_[i] == kNoVertex || bodies_[i].collider == nullptr) {
             continue;
         }
-        const Aabb2D bounds_a = bodies_[i].collider->bounds(bodies_[i].position);
+        const Aabb2D bounds_a = bodies_[i].collider->bounds(bodies_[i].position, bodies_[i].rotation);
         for (usize j = i + 1; j < bodies_.size(); ++j) {
             if (body_vertex_[j] == kNoVertex || bodies_[j].collider == nullptr) {
                 continue;
             }
-            const Aabb2D bounds_b = bodies_[j].collider->bounds(bodies_[j].position);
+            const Aabb2D bounds_b = bodies_[j].collider->bounds(bodies_[j].position, bodies_[j].rotation);
             if (bounds_overlap(bounds_a, bounds_b)) {
                 island_links_.push_back(IslandLink{body_vertex_[i], body_vertex_[j]});
             }
