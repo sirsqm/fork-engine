@@ -36,10 +36,17 @@ built editor-friendly from the start rather than adapted later.
 - [ ] Play-in-editor (embed an `Engine` and drive frames)
 - [ ] Project settings and a build/export path
 
+### M2 prerequisite — reflection (done)
+
+The inspector is driven by reflection, so the reflection registry landed before
+the editor panels. See [ADR-0006](adr/0006-component-reflection.md).
+
+- [x] A reflection registry: types, properties, metadata, editor hints
+- [x] Serialization driven by reflection instead of per-component code
+
 ## M3 — Reflection and a real asset pipeline
 
-- [ ] A reflection registry: types, properties, metadata, editor hints
-- [ ] Serialization driven by reflection instead of per-component code
+- [ ] Property inspector integration with editor hints (Range, Color, Resource)
 - [ ] GUID-based resource references that survive file moves
 - [ ] Import settings per asset type, and an import cache
 - [ ] Hot reload of resources

@@ -31,7 +31,8 @@ depend only "downwards"; the dependency graph is acyclic by construction.
 
 ```
 core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
-core  <-  serialization  <-  scene
+core  <-  reflect  <-  scene, resources
+core  <-  serialization  <-  scene, resources, reflect
 everything  <-  runtime
 ```
 
@@ -42,7 +43,8 @@ everything  <-  runtime
 | `rhi` | Graphics device abstraction and backend selection | core |
 | `resources` | Asset loading, caching, lifetime | core, rhi |
 | `scene` | Node/component hierarchy, transforms | core |
-| `serialization` | JSON persistence of scenes | core, scene, resources |
+| `reflect` | Component property descriptions and the type registry | core, scene, resources |
+| `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
 
