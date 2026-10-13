@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <string_view>
 
 namespace fe::serialization::scene {
 namespace {

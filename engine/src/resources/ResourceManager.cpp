@@ -5,6 +5,8 @@
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 
+#include <string_view>
+
 namespace fe {
 
 void ResourceManager::register_loader(std::unique_ptr<ResourceLoader> loader) {
