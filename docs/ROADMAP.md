@@ -74,7 +74,7 @@ needed a concrete mechanism before gameplay could grow. See
       sidecar and an asset database; see
       [ADR-0020](adr/0020-resource-identity-guid-sidecar.md)
 - [x] Import settings per asset type — typed, stored in the sidecar, applied at load ([ADR-0027](adr/0027-asset-import-settings.md))
-- [ ] An import cache — a content-addressed store so a re-import and a rebuild are cheap
+- [x] An import cache — a content-addressed store so a re-import and a rebuild are cheap ([ADR-0029](adr/0029-import-cache.md))
 - [ ] Hot reload of resources
 
 ## M4 — 3D rendering
