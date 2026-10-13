@@ -55,6 +55,7 @@ core, scene, resources  <-  mesh
 core, scene, resources  <-  scene3d
 core, rhi, resources, scene, mesh  <-  renderer3d
 core, scene, systems, resources  <-  audio
+core, resources  <-  pack
 everything  <-  runtime
 core  <-  net                     (planned: collaborative editing)
 ```
@@ -73,6 +74,7 @@ core  <-  net                     (planned: collaborative editing)
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
+| `pack` | Asset pack container, writer, and the runtime mount that reads a pack like a directory | core, resources |
 | `jobs` *(planned)* | Thread pool, `parallel_for`, and a task graph; consumed by systems and by render extraction | core |
 | `net` *(planned)* | Transport abstraction and the collaborative-editing session client | core |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
@@ -640,7 +642,7 @@ editable). Text widgets need a buffer that outlives the frame, so the panel
 holds that scratch state.
 
 The widget for a property is chosen from typed *editor hints* carried on the
-`Property` ([ADR-0028](adr/0028-editor-hint-metadata.md)): a `RangeHint` turns a
+`Property` ([ADR-0030](adr/0028-editor-hint-metadata.md)): a `RangeHint` turns a
 Float or Int into a bounded slider or drag, a `ColorHint` turns a float group
 into a colour picker (RGB or RGBA, from the group's member count), and a
 `ResourceHint` turns a resource reference into an asset drop target labelled
@@ -663,7 +665,7 @@ edits go through one generic `SetPropertyCommand` that resolves its setter
 through the reflection registry, so a newly reflected field is undoable with no
 new code. A resource reference is edited through `SetResourceCommand`, which
 carries the `ResourceManager` needed to resolve the reference and is otherwise
-the same undoable, coalescing edit ([ADR-0028](adr/0028-editor-hint-metadata.md)).
+the same undoable, coalescing edit ([ADR-0030](adr/0028-editor-hint-metadata.md)).
 A command may report a coalescing key: consecutive edits of the same property
 (the frames of a drag) merge into one undo step, and the editor ends the group
 when the widget's gesture finishes. Editing is refused while play-in-editor is
@@ -713,8 +715,13 @@ The "build/export path" is deliberately not here. Settings are a small,
 editor-local format; assembling a runnable build from a project is the packaging
 and export-template machinery already planned for
 [ADR-0018](adr/0018-multi-platform-shipping.md) (M8). The milestone line split
-into two: settings land here, the build/export path lands with M8's `fork
-export` work.
+into two: settings land here, the build/export path lands with M8. The packaging
+half of that path has since landed in the `pack` module
+([ADR-0030](adr/0030-asset-pack-format.md)): the `fork_pack` tool reads
+`fork.project.json`, and the `pack` module turns the project's asset tree and
+startup scene into one file the runtime mounts. The editor still owns the
+project concept; the pack writer only takes resolved paths. Export templates and
+the `fork export` step remain open.
 
 ### Collaborative editing (planned)
 
@@ -774,7 +781,12 @@ game built here reaches every platform its players use — see
   abstraction, and it builds and passes the suite on any machine.
 - **Assets ship in a pack.** Browsers and mobile do not give a game a normal
   filesystem, so the runtime reads assets from a pack through the same resource
-  paths it uses on disk. The resource system never assumes loose files.
+  paths it uses on disk. The resource system never assumes loose files. The
+  `pack` module holds the container (`PackFile`), the writer that turns a
+  project's asset tree and startup scene into one file (`PackWriter`), and the
+  mount (`PackSource`) that a `ResourceManager` reads through; the `fork_pack`
+  tool reads the project file and drives the writer, so the engine stays
+  project-agnostic. See [ADR-0030](adr/0030-asset-pack-format.md).
 - **Export templates.** A prebuilt runtime per target plus an export step turns
   a project into a runnable build. This is release infrastructure, separate from
   the library build.
@@ -837,8 +849,9 @@ Every milestone must build and pass its tests before the next one begins.
 - The performance work itself: the profiler, the extraction seam, the job
   system, the frame arena, and instancing are planned in M9 (section 5 describes
   the extraction seam the rest depends on).
-- Shipping to platforms beyond desktop: asset packs, export templates, and the
-  web/mobile backends are planned in M8 (section 10).
+- Shipping to platforms beyond desktop: export templates, per-target runtimes,
+  and the web/mobile backends are planned in M8 (section 10). The asset-pack
+  format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).
 - Collaborative editing: component identity, the operation model, the
   replicated log, the session server, and presence are planned in M10
   (section 8).

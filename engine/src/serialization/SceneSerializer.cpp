@@ -373,7 +373,15 @@ Error save(const Scene& scene, std::string_view path, const ResourceManager* res
 }
 
 Error load(std::string_view path, Scene& out_scene, ResourceManager* resources) {
-    auto text = fs::read_text_file(path);
+    // Read through the manager's source when there is one, so a mounted pack
+    // serves the scene as transparently as the filesystem does. Without a
+    // manager (a tool, a test) the file is read directly.
+    Result<std::string> text = Error{};
+    if (resources != nullptr) {
+        text = resources->read_text(path);
+    } else {
+        text = fs::read_text_file(path);
+    }
     if (!text) {
         return text.error();
     }

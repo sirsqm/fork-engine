@@ -78,6 +78,12 @@ bool Uuid::try_parse(std::string_view text, Uuid& out) noexcept {
     return byte_index == 32 && dash_index == 4;
 }
 
+Uuid Uuid::from_bytes(const std::array<u8, 16>& bytes) noexcept {
+    Uuid id;
+    id.bytes_ = bytes;
+    return id;
+}
+
 bool Uuid::is_nil() const noexcept {
     for (const u8 byte : bytes_) {
         if (byte != 0) {
