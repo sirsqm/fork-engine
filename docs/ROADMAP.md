@@ -160,8 +160,12 @@ is missing than ten roadmap items, and it is the precondition for a community.
 - [~] 2D island detection and body sleeping: bodies group into islands over the
       contact-and-joint graph and a settled island stops being solved — see
       [ADR-0026](adr/0026-physics2d-islands-sleeping.md)
-- [x] 2D physics refinements: collider offsets, oriented-box colliders,
-      continuous collision detection
+- [~] 2D physics refinements: collider offsets and oriented-box colliders are
+      done — a box collider carries the node's Z rotation and a local offset, and
+      the narrow phase is a separating-axis test over the oriented shapes, so a
+      rotated box is collided as its true shape rather than its bounding box —
+      see [ADR-0033](adr/0033-physics2d-oriented-boxes-offsets.md). Continuous
+      collision detection remains.
 - [x] 3D physics (first cut): box and sphere colliders, dynamic and static
       bodies, a linear sequential-impulse solver (gravity, restitution,
       friction, damping), a uniform-grid broad phase, distance joints, scene
