@@ -48,8 +48,9 @@ Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | 2D physics (colliders, rigid bodies, solver, queries, contact events) | Working |
 | Audio (device seam, WAV loader, pure mixer, mixing system) | Working (first pass) |
 | Editor (docking shell, hierarchy, inspector, asset browser, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
+| Project file (settings, asset root, startup scene) | Working |
 | Runtime frame loop + sandbox example | Working |
-| Scripting, project settings, build/export | Not started (see roadmap) |
+| Scripting, build/export | Not started (see roadmap) |
 | Performance tooling, extra platforms, collaborative editing | Planned (see roadmap) |
 
 Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
