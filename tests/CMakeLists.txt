@@ -16,6 +16,7 @@ add_executable(fork_engine_tests
     src/test_components.cpp
     src/test_serialization.cpp
     src/test_resource_manager.cpp
+    src/test_version.cpp
 )
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_engine_tests PRIVATE cxx_std_20)

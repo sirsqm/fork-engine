@@ -25,6 +25,17 @@ else()
   )
 endif()
 
+# Warnings-as-errors also belongs to the interface, not to a directory, so that
+# it never reaches third-party targets (that was the cause of GLFW failing to
+# build on the first CI run).
+if(FE_WARNINGS_AS_ERRORS)
+  if(MSVC)
+    target_compile_options(fe_warnings INTERFACE /WX)
+  else()
+    target_compile_options(fe_warnings INTERFACE -Werror)
+  endif()
+endif()
+
 # Mark a dependency's include directories as SYSTEM so its headers do not
 # produce warnings inside our translation units. Accepts an alias target (for
 # example nlohmann_json::nlohmann_json) by resolving it to the real target,
