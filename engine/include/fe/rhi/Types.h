@@ -72,6 +72,19 @@ struct VertexLayout {
         };
         return layout;
     }
+
+    [[nodiscard]] static VertexLayout position_normal_uv() {
+        // vec3 position, vec3 normal, vec2 uv - the 3D mesh vertex format,
+        // matching fe::Vertex3D.
+        VertexLayout layout;
+        layout.stride = 3 * 4 + 3 * 4 + 2 * 4;
+        layout.attributes = {
+            {0, VertexFormat::Float3, 0},
+            {1, VertexFormat::Float3, 12},
+            {2, VertexFormat::Float2, 24},
+        };
+        return layout;
+    }
 };
 
 enum class BlendMode : u8 {

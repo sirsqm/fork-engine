@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: MIT
 #include "fe/runtime/Engine.h"
 
+#include "fe/core/Assert.h"
 #include "fe/core/Log.h"
+#include "fe/mesh/ObjLoader.h"
 #include "fe/physics2d/PhysicsTypes.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/renderer3d/Renderer3D.h"
 #include "fe/resources/ImageLoader.h"
 #include "fe/resources/Texture2DLoader.h"
+#include "fe/scene3d/Scene3DTypes.h"
 #include "fe/version/Version.h"
 
 #include <chrono>
@@ -25,6 +29,8 @@ constexpr f32 kMaxDeltaTime = 0.25f;
 
 } // namespace
 
+Engine::Engine() = default;
+
 Engine::~Engine() {
     shutdown();
 }
@@ -41,6 +47,7 @@ Error Engine::initialize(const Config& config) {
     // inspector, and any scene loaded later. Idempotent.
     reflect::register_builtin_types();
     reflect::register_physics_types();
+    reflect::register_scene3d_types();
 
     auto window = Window::create(config.window);
     if (!window) {
@@ -61,9 +68,18 @@ Error Engine::initialize(const Config& config) {
     resources_ = std::make_unique<ResourceManager>();
     resources_->register_loader(std::make_unique<ImageLoader>());
     resources_->register_loader(std::make_unique<Texture2DLoader>(*device_, *resources_));
+    resources_->register_loader(std::make_unique<ObjLoader>());
 
     renderer_2d_ = std::make_unique<renderer2d::Renderer2D>();
     if (Error error = renderer_2d_->initialize(*device_); error) {
+        device_.reset();
+        window_.reset();
+        return error;
+    }
+
+    renderer_3d_ = std::make_unique<renderer3d::Renderer3D>();
+    if (Error error = renderer_3d_->initialize(*device_); error) {
+        renderer_2d_.reset();
         device_.reset();
         window_.reset();
         return error;
@@ -82,6 +98,7 @@ void Engine::shutdown() {
 
     // Reverse creation order. GPU resources must be released while the device
     // is still alive, and the device while the context is still current.
+    renderer_3d_.reset();
     renderer_2d_.reset();
     if (resources_ != nullptr) {
         resources_->collect_garbage();

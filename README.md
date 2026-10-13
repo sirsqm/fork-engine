@@ -23,11 +23,13 @@ Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Logging, assertions, error handling | Working |
 | RHI abstraction + OpenGL 3.3 core backend | Working |
 | 2D renderer (batched sprites, camera, textures) | Working |
+| 3D renderer (lit meshes, directional light, 3D camera) | Working (first pass) |
+| Mesh resources (primitives, OBJ loader) | Working |
 | Scene graph (nodes, transforms, components) | Working |
 | Resource manager (load, cache, release) | Working |
 | Scene serialization (JSON) | Working |
 | Runtime frame loop + sandbox example | Working |
-| 3D rendering, physics, editor, scripting | Not started (see roadmap) |
+| Physics, editor, scripting | Not started (see roadmap) |
 
 Unit and graphics tests pass locally; see [Building and testing](#building-and-testing).
 
@@ -58,6 +60,8 @@ The engine is built from modules that depend only "downwards":
 ```
 core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
 core  <-  serialization  <-  scene
+core, scene, resources  <-  mesh  <-  renderer3d
+core, scene, resources  <-  scene3d
 everything  <-  runtime
 ```
 
@@ -65,10 +69,16 @@ everything  <-  runtime
 - **platform** — window creation, input, and the graphics context (GLFW).
 - **rhi** — a small graphics device abstraction; the OpenGL 3.3 core backend is
   one implementation of it. Nothing above this layer includes a backend header.
-- **resources** — loading, caching, and lifetime of assets (images, textures).
+- **resources** — loading, caching, and lifetime of assets (images, textures,
+  meshes).
 - **scene** — the node/component hierarchy and transforms.
 - **serialization** — JSON persistence of scenes and components.
+- **mesh** — CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, and an
+  OBJ loader.
+- **scene3d** — 3D scene components (`Camera3D`, `MeshRenderer3D`,
+  `DirectionalLight3D`) and their reflection.
 - **renderer2d** — batched 2D rendering on top of the RHI.
+- **renderer3d** — 3D mesh rendering with a single directional-light pass.
 - **runtime** — `Engine` (subsystem lifetime) and `Application` (frame loop).
 
 Public headers live under `engine/include/fe/`, so consumers write

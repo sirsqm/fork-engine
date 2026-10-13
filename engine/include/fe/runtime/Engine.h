@@ -18,6 +18,10 @@ namespace renderer2d {
 class Renderer2D;
 }
 
+namespace renderer3d {
+class Renderer3D;
+}
+
 // Owns the engine's long-lived subsystems and their lifetimes.
 //
 // The Engine is the single place that knows the order in which subsystems are
@@ -42,7 +46,7 @@ public:
         fe::LogLevel log_level = fe::LogLevel::Info;
     };
 
-    Engine() = default;
+    Engine();
     ~Engine();
 
     Engine(const Engine&) = delete;
@@ -67,6 +71,9 @@ public:
     [[nodiscard]] renderer2d::Renderer2D& renderer_2d() noexcept { return *renderer_2d_; }
     [[nodiscard]] const renderer2d::Renderer2D& renderer_2d() const noexcept { return *renderer_2d_; }
 
+    [[nodiscard]] renderer3d::Renderer3D& renderer_3d() noexcept { return *renderer_3d_; }
+    [[nodiscard]] const renderer3d::Renderer3D& renderer_3d() const noexcept { return *renderer_3d_; }
+
     // Seconds elapsed since the previous frame, clamped to a sane maximum so a
     // long stall (a debugger breakpoint, a window drag) does not produce a huge
     // simulation step.
@@ -84,6 +91,7 @@ private:
     std::unique_ptr<rhi::Device> device_;
     std::unique_ptr<ResourceManager> resources_;
     std::unique_ptr<renderer2d::Renderer2D> renderer_2d_;
+    std::unique_ptr<renderer3d::Renderer3D> renderer_3d_;
 
     f32 delta_time_ = 0.0f;
     f64 elapsed_time_ = 0.0;

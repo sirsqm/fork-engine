@@ -35,6 +35,9 @@ core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
 core, scene, resources  <-  systems
 core, scene, systems, reflect  <-  physics2d
+core, scene, resources  <-  mesh
+core, scene, resources  <-  scene3d
+core, rhi, resources, scene, mesh  <-  renderer3d
 everything  <-  runtime
 ```
 
@@ -49,7 +52,10 @@ everything  <-  runtime
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
 | `physics2d` | 2D collision shapes and a rigid-body simulation system | core, scene, systems, reflect |
+| `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
+| `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`) and their reflection | core, scene, resources |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
+| `renderer3d` | 3D mesh rendering with a lit pass | core, rhi, resources, scene, mesh |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
 
 A new edge must point down this graph. Introducing an edge is an architectural
@@ -234,18 +240,45 @@ batches, and issues one indexed draw per texture batch. Sprites that share a
 texture and layer collapse into a single draw call. A 1×1 white texture stands in
 for sprites without one, so an untextured sprite renders as a solid quad.
 
-**3D** (not implemented) will be a separate renderer with its own pass structure
-(shadow, depth prepass, opaque, transparent, post-process) sharing the same
-`rhi::Device`. The 2D and 3D paths will not be forced into one abstraction; they
-have different data and different optima.
+**3D** is a separate renderer with its own pass structure, sharing the same
+`rhi::Device` (see [ADR-0010](adr/0010-3d-rendering-foundation.md)). The 2D and
+3D paths are not forced into one abstraction; they have different data and
+different optima.
+
+**`mesh::Mesh`** is a CPU-only `Resource`: interleaved `Vertex3D`
+(position/normal/uv), 32-bit indices, and a cached local AABB. It knows nothing
+about the GPU, exactly as `Image` knows nothing about textures, so geometry can
+be built and tested with no context. `make_box`/`make_cube`/`make_plane` give a
+scene something to render before an asset pipeline exists, and `ObjLoader`
+(scheme `obj`) decodes Wavefront OBJ into a `Mesh`.
+
+**`renderer3d::Renderer3D`** walks the scene, pairs each `MeshRenderer3D` with
+its node's world matrix, and issues one indexed draw per instance. It owns a
+buffer cache keyed by the mesh, uploading on first use and sweeping dead entries
+each frame, so a shared mesh is uploaded once. The pass is a single
+directional-light Blinn-Phong shader: albedo × (ambient + light colour ×
+intensity × (diffuse + specular)). It is depth-tested and opaque, so draw order
+does not change the image. The camera position is a uniform; the shader does not
+assume the camera is at the origin. A 1×1 white texture stands in for meshes
+without one, as in `Renderer2D`.
+
+The 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`)
+live in `scene3d`, which does **not** depend on `renderer3d`: a camera or a light
+is scene data the renderer reads. `Camera3D::view_projection` composes `look_at`
+and `perspective`; a component never stores its own transform.
+
+Batching, frustum culling, shadows, multiple light types, and a material graph
+are later work behind these same interfaces.
 
 ### Camera selection
 
-"Which camera is active for this scene?" has exactly one implementation,
-`Renderer2D::find_active_camera`, shared by the renderer and the runtime's
-clear-colour logic. Two independent answers to that question is precisely the
-kind of divergence that produces subtle bugs, so the runtime calls the renderer's
-helper rather than reimplementing the rule.
+"Which camera is active for this scene?" has exactly one implementation per
+renderer, shared by that renderer and the runtime's clear-colour logic.
+`Renderer2D::find_active_camera` and `Renderer3D::find_active_camera` each encode
+the rule for their scene (first enabled camera, else the first camera). Two
+independent answers to that question is precisely the kind of divergence that
+produces subtle bugs, so the runtime calls the renderer's helper rather than
+reimplementing the rule.
 
 ## 6. Subsystem lifetime
 
@@ -324,12 +357,13 @@ not a rewrite.
 ## 11. Testing strategy
 
 - **Pure-logic tests** (`fork_engine_tests`) cover math, filesystem, scene,
-  components, resources, serialization, and input. They run anywhere.
+  components, resources, serialization, input, mesh geometry, and 3D scene
+  components (camera projection, reflection registration). They run anywhere.
 - **Graphics tests** (`fork_graphics_tests`) create a hidden window and GL
   context, render a scene, and read the framebuffer back to assert what was
-  actually drawn (pixel values, batching counts, camera clear colour). They skip
-  cleanly when no context is available, so CI stays green on machines without a
-  GPU.
+  actually drawn (pixel values, batching and draw counts, camera clear colour,
+  depth ordering). They cover both the 2D and 3D renderers. They skip cleanly
+  when no context is available, so CI stays green on machines without a GPU.
 - Tests exercise real code paths. Mocks are avoided; where one is used, it is
   justified in the pull request.
 
@@ -337,7 +371,9 @@ Every milestone must build and pass its tests before the next one begins.
 
 ## 12. What is deliberately not here yet
 
-- 3D rendering, lighting, shadows, skeletal animation.
+- The parts of 3D rendering beyond the first lit pass: shadows, frustum
+  culling, batching, point and spot lights, skeletal animation, and a material
+  graph (see [ADR-0010](adr/0010-3d-rendering-foundation.md)).
 - 3D physics, and the parts of 2D physics not in the first cut: angular
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).

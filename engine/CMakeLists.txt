@@ -38,9 +38,14 @@ set(FE_ENGINE_SOURCES
     src/physics2d/Geometry.cpp
     src/physics2d/Physics2DSystem.cpp
     src/physics2d/PhysicsTypes.cpp
+    src/mesh/Mesh.cpp
+    src/mesh/ObjLoader.cpp
+    src/scene3d/Camera3D.cpp
+    src/scene3d/Scene3DTypes.cpp
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/renderer2d/Renderer2D.cpp
+    src/renderer3d/Renderer3D.cpp
     src/runtime/Engine.cpp
     src/runtime/Application.cpp
 )
