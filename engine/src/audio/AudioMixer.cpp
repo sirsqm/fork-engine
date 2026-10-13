@@ -23,7 +23,27 @@ f32 clip_sample(const AudioClip& clip, u64 frame, u32 out_channel) noexcept {
     return samples[static_cast<usize>(index)];
 }
 
-f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 out_channels, u32 output_sample_rate) {
+f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept {
+    // Full gain at or inside min_distance, silence at or past max_distance. The
+    // curve in between is the inverse-distance falloff rescaled so it reaches
+    // exactly zero at the cutoff.
+    if (distance <= min_distance) {
+        return 1.0f;
+    }
+    if (distance >= max_distance) {
+        return 0.0f;
+    }
+    // A degenerate span (min <= 0, or max <= min) has no interior: the two
+    // branches above already returned, so reach here only with a usable span.
+    const f32 span = (1.0f / min_distance) - (1.0f / max_distance);
+    if (span <= 0.0f) {
+        return 0.0f;
+    }
+    return ((1.0f / distance) - (1.0f / max_distance)) / span;
+}
+
+f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 out_channels, u32 output_sample_rate,
+               const MixParams& params) {
     if (output == nullptr || frames == 0 || out_channels == 0) {
         return 0.0f;
     }
@@ -42,6 +62,20 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
         if (!voice.active()) {
             continue;
         }
+
+        // Resolve the voice's level once per call: its own gain, the distance
+        // attenuation (1 for a non-positional voice), and the gain of the bus it
+        // routes to. The master gain is applied to the sum at the end, which is
+        // equivalent to folding it in here because scaling is linear. A level of
+        // zero (a muted bus, a silent source, a voice past its cutoff) still
+        // advances the read position through the normal path below, so unmuting
+        // resumes at the right place rather than replaying from where it stopped.
+        voice.attenuation = 1.0f;
+        if (voice.spatial) {
+            const Vec3 offset = voice.world_position - params.listener_position;
+            voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
+        }
+        const f32 level = voice.gain * voice.attenuation * params.bus_gain(voice.bus);
 
         const AudioClip& clip = *voice.clip;
         const u64 clip_frames = clip.frame_count();
@@ -75,15 +109,19 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
             const u64 read_frame = static_cast<u64>(voice.position);
             const usize base = static_cast<usize>(f) * out_channels;
             for (u32 c = 0; c < out_channels; ++c) {
-                output[base + c] += clip_sample(clip, read_frame, c) * voice.gain;
+                output[base + c] += clip_sample(clip, read_frame, c) * level;
             }
             voice.position += ratio;
             ++voice.frames_played;
         }
     }
 
+    // The master bus: one scale over the summed output. Applying it after the
+    // sum is what makes it "the buses sum into the master", and it is the same
+    // value as folding it into every voice's level.
     f32 peak = 0.0f;
     for (usize i = 0; i < total_samples; ++i) {
+        output[i] *= params.master_gain;
         peak = std::max(peak, std::abs(output[i]));
     }
     return peak;
