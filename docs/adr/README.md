@@ -13,7 +13,8 @@ rather than editing it.
 | [0002](0002-hybrid-scene-ecs-architecture.md) | Hybrid scene-graph / entity-component architecture | Accepted |
 | [0003](0003-error-handling.md) | Errors as values, not exceptions | Accepted |
 | [0004](0004-resource-ownership-weak-cache.md) | Resource ownership with a weak cache | Accepted |
-| [0005](0005-reflection-and-serialization.md) | Reflection and serialization strategy | Accepted (deferred implementation) |
+| [0005](0005-reflection-and-serialization.md) | Reflection and serialization strategy | Accepted |
+| [0006](0006-component-reflection.md) | Component reflection for serialization and the editor | Accepted |
 
 ## Format
 

@@ -100,11 +100,16 @@ public:
         static_assert(std::is_base_of_v<Component, T>, "T must derive from fe::Component");
         auto component = std::unique_ptr<T>(new T(std::forward<Args>(args)...));
         T* raw = component.get();
-        raw->set_node(this);
-        if (scene_ != nullptr) {
-            raw->on_attach(*this);
-        }
-        components_.push_back(std::move(component));
+        attach_component(std::move(component));
+        return raw;
+    }
+
+    // Adds an already-constructed component whose concrete type is known only
+    // at runtime. This is what a reflection-driven loader uses: it builds the
+    // component through a registered factory and hands it over here.
+    Component* add_component(std::unique_ptr<Component> component) {
+        Component* raw = component.get();
+        attach_component(std::move(component));
         return raw;
     }
 
@@ -164,6 +169,7 @@ protected:
 private:
     friend class Scene;
 
+    void attach_component(std::unique_ptr<Component> component);
     void set_parent(Node* parent) noexcept { parent_ = parent; }
     void set_scene_recursive(Scene* scene) noexcept;
     void attach_recursive(Scene& scene);

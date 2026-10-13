@@ -3,6 +3,7 @@
 #include "fe/runtime/Engine.h"
 
 #include "fe/core/Log.h"
+#include "fe/reflect/ComponentTypes.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/resources/ImageLoader.h"
 #include "fe/resources/Texture2DLoader.h"
@@ -34,6 +35,10 @@ Error Engine::initialize(const Config& config) {
 
     log::set_min_level(config.log_level);
     FE_LOG_INFO("fork engine v%s starting", version::kEngineVersionString);
+
+    // Make the engine's component types visible to the serializer, the
+    // inspector, and any scene loaded later. Idempotent.
+    reflect::register_builtin_types();
 
     auto window = Window::create(config.window);
     if (!window) {
