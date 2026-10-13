@@ -561,8 +561,9 @@ the artifact format already lives and which adds no module edge. The GPU
 manager, so a warm decode cache lets it skip the decode and pay only the upload —
 the dominant half of the win. Caching the uploaded texture would need a serialized
 `rhi::TextureDesc` and a device at read time, and is a follow-up. A cache with no
-root is inert, exactly like an `AssetDatabase` with no root. See
-[ADR-0029](adr/0029-import-cache.md).
+root is inert, exactly like an `AssetDatabase` with no root; the editor roots it
+at `<project>/.fork/cache` (opt out with `--no-cache`), and the sandbox opts in
+with `--cache DIR`. See [ADR-0029](adr/0029-import-cache.md).
 
 ### Asset identity
 

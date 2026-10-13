@@ -37,7 +37,27 @@ struct Options {
     fe::LogLevel log_level = fe::LogLevel::Info;
     fe::u32 max_frames = 0;
     bool headless = false;
+    // The editor caches imports so a re-import of an unchanged asset (a scene
+    // reload, a restart) is a read instead of a re-decode. It is on by default
+    // when a project is open, rooted at "<project>/.fork/cache". --no-cache
+    // turns it off; --cache-dir overrides the location. See
+    // docs/adr/0029-import-cache.md.
+    bool import_cache = true;
+    std::string import_cache_dir;
 };
+
+// The directory a project lives in, used to place its import cache beside it.
+// A project file's directory is its parent; a --project directory is itself.
+// Empty when neither is given, in which case there is no project to cache for.
+[[nodiscard]] std::string project_directory(const Options& options) {
+    if (!options.project_root.empty()) {
+        return options.project_root;
+    }
+    if (!options.project_file.empty()) {
+        return fe::fs::parent_path(options.project_file);
+    }
+    return {};
+}
 
 // A `--project` argument is either a project file or a directory. A file that
 // ends in ".json" is opened as-is; anything else is treated as a directory and
@@ -68,13 +88,17 @@ struct Options {
             if (options.max_frames == 0) {
                 options.max_frames = 3;
             }
+        } else if (arg == "--no-cache") {
+            options.import_cache = false;
+        } else if (arg == "--cache-dir" && i + 1 < argc) {
+            options.import_cache_dir = argv[++i];
         } else if (arg == "--verbose") {
             options.log_level = fe::LogLevel::Debug;
         } else if (arg == "--quiet") {
             options.log_level = fe::LogLevel::Warn;
         } else if (arg == "--help" || arg == "-h") {
             std::puts("usage: fork_editor_shell [--project DIR|FILE] [--project-file FILE] [--scene PATH] [--headless] "
-                      "[--frames N] [--verbose] [--quiet]");
+                      "[--frames N] [--cache-dir DIR] [--no-cache] [--verbose] [--quiet]");
             std::exit(0);
         }
     }
@@ -92,6 +116,19 @@ int main(int argc, char** argv) {
     config.engine.window.height = 720;
     config.engine.window.visible = !options.headless;
     config.engine.log_level = options.log_level;
+    // Cache imports by default. The root is the project's ".fork/cache" so it is
+    // disposable with the project; an explicit --cache-dir wins, and with no
+    // project and no --cache-dir the root stays empty and the cache is inert.
+    if (options.import_cache) {
+        std::string root = options.import_cache_dir;
+        if (root.empty()) {
+            const std::string dir = project_directory(options);
+            if (!dir.empty()) {
+                root = fe::fs::join(fe::fs::join(dir, ".fork"), "cache");
+            }
+        }
+        config.engine.cache_root = root;
+    }
     config.project_file = options.project_file;
     config.project_root = options.project_root;
     config.scene_to_open = options.scene_to_open;

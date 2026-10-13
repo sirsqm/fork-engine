@@ -83,6 +83,14 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_sandbox --headless 30
 
+      - name: Run the editor headless over the demo project (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          # The cold run writes the import cache; the warm run must read it back
+          # (ADR-0029). Both must exit cleanly.
+          xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_editor_shell --project examples/demo_project --headless --frames 3
+          xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_editor_shell --project examples/demo_project --headless --frames 3
+
   format-check:
     name: clang-format
     runs-on: ubuntu-latest

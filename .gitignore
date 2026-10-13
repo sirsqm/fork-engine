@@ -23,6 +23,10 @@ _deps/
 compile_commands.json
 .cache/
 
+# Engine import cache (derived data; see docs/adr/0029-import-cache.md). It is
+# disposable by construction, so it never belongs in version control.
+.fork/
+
 # Compiled objects and libraries
 *.o
 *.obj
