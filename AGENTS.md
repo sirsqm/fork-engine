@@ -1,8 +1,29 @@
 # AGENTS.md — repository notes for automated contributors
 
 Fork Engine is a modular C++20 2D/3D game engine. Read `docs/ARCHITECTURE.md`
-for the design and `docs/ROADMAP.md` for the milestone plan before changing
-anything.
+for the design, `docs/STRATEGY.md` for the three shaping capabilities, and
+`docs/ROADMAP.md` for the milestone plan before changing anything.
+
+## Strategy: the three pillars
+
+Three capabilities shape the design, not just the feature list, and every
+subsystem should be checked against them:
+
+- **Performance is a product feature** (M9, ADR-0017). Measure before
+  optimizing; the authoring model (scene graph) and the processing model (a flat
+  instance array) meet at one extraction seam; parallelise CPU work but keep the
+  RHI device single-threaded.
+- **Games ship anywhere** (M8, ADR-0018). The platform layer is the complete OS
+  contract with a null backend; assets ship in a pack; targets are new backends,
+  added on demand. This is about shipping *games*, not running the editor on
+  several OSes.
+- **Editing is collaborative** (M10, ADR-0019). Edits become serializable
+  operations over stably identified objects, replicated through an ordered log
+  with an authoritative server. It lands after the editor is mature; its first
+  steps (component identity, operations, log) are local and headless and also
+  strengthen undo/redo.
+
+These are plans, not shipped code. Do not present a planned item as done.
 
 ## Build and test
 
