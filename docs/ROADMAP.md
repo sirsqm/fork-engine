@@ -155,9 +155,10 @@ The engine holds a stable, low frame time on real scenes, and the team can
 prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
 [ADR-0017](adr/0017-performance-strategy.md).
 
-- [ ] Measurement: `Profiler` + `ProfileScope` in `core`; a headless benchmark
-      target reporting frame-time percentiles; CI records the numbers and fails
-      on regression
+- [x] Profiler: `Profiler` + `ProfileScope` in `core` (ADR-0022), recording named
+      scopes and counters into a fixed frame ring
+- [ ] Benchmark: a headless target reporting frame-time percentiles; CI records
+      the numbers and fails on regression
 - [ ] Render extraction: split both renderers into "extract a flat instance
       list" and "issue draws" (the data-oriented seam)
 - [ ] Job system: a `jobs` module (thread pool, `parallel_for`, task graph);
