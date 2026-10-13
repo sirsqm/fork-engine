@@ -41,7 +41,7 @@ built editor-friendly from the start rather than adapted later.
 - [x] Scene hierarchy panel — `HierarchyViewModel` + `HierarchyPanel`
 - [x] Property inspector, driven by the reflection system — `PropertyEditor` + `InspectorPanel`
 - [x] 2D viewport rendering into an editor panel — `Viewport` + `ViewportPanel` (off-screen render target)
-- [ ] Asset browser
+- [x] Asset browser — `AssetBrowserViewModel` (headless) + `AssetBrowserPanel`, listing the asset database's GUID-tagged assets with search and a copyable reference
 - [x] Undo/redo — `Command` + `CommandStack` + concrete commands in `fork_editor_core`; coalescing drags into one step ([ADR-0015](adr/0015-editor-undo-redo.md))
 - [x] Play-in-editor (embed an `Engine`, drive frames, run the scene's `SceneSchedule`) — `PlaySession`
 - [ ] Project settings and a build/export path

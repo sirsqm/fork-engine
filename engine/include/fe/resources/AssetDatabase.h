@@ -94,6 +94,12 @@ public:
 
     [[nodiscard]] usize asset_count() const noexcept { return by_id_.size(); }
 
+    // Every indexed asset. The order is unspecified; a caller that needs a
+    // stable order (the asset browser sorts by path) must sort it. Exposed as
+    // the map rather than a copied vector so listing assets for a UI costs no
+    // allocation beyond what the caller does itself.
+    [[nodiscard]] const std::unordered_map<AssetId, Asset>& entries() const noexcept { return by_id_; }
+
 private:
     [[nodiscard]] std::string sidecar_path(std::string_view relative_path) const;
 
