@@ -7,6 +7,7 @@
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/systems/SceneSchedule.h"
 
 #include <functional>
 #include <string>
@@ -64,11 +65,18 @@ public:
     // Enters the `Playing` state and copies `authored_scene` into the play
     // scene. Fails if already playing. The caller passes the engine whose frames
     // will drive the play scene to `tick()`.
+    //
+    // On the first `start()` this registers the default systems (at least
+    // `SpriteAnimationSystem`) on the schedule, so play-in-editor runs real
+    // gameplay rather than only rendering. A caller that wants a custom set may
+    // clear `schedule()` and add its own; later `start()` calls leave whatever
+    // is registered in place, so editor-added systems survive a play/stop cycle.
     [[nodiscard]] Error start(const Scene& authored_scene);
 
-    // Advances `engine`'s clock and draws one frame of the play scene into the
-    // engine's current framebuffer. Returns the number of sprites drawn (a value
-    // of 0 is valid). Fails if not playing.
+    // Advances `engine`'s clock, runs the schedules' systems over the play
+    // scene, then draws one frame of the play scene into the engine's current
+    // framebuffer. Returns the number of sprites drawn (a value of 0 is valid).
+    // Fails if not playing.
     //
     // The caller owns the frame: it must have called Device::begin_frame() and
     // must call Device::end_frame() afterwards. This lets the editor draw its
@@ -84,6 +92,13 @@ public:
     // The live play scene. Read-only: the editor must not author into it while
     // playing.
     [[nodiscard]] const Scene& play_scene() const noexcept { return play_scene_; }
+
+    // The schedule of systems that runs over the play scene each tick. The
+    // editor may add systems here to make play-in-editor exercise gameplay the
+    // runtime would otherwise only get from `Application`. Owned by the session;
+    // the reference is stable for the session's lifetime.
+    [[nodiscard]] SceneSchedule& schedule() noexcept { return schedule_; }
+    [[nodiscard]] const SceneSchedule& schedule() const noexcept { return schedule_; }
 
     [[nodiscard]] u32 frames_played() const noexcept { return frames_played_; }
     [[nodiscard]] usize last_sprite_count() const noexcept { return last_sprite_count_; }
@@ -101,6 +116,11 @@ private:
 
     void copy_components_of(const Node& source_node, Node& destination_node) const;
 
+    // Registers the default gameplay systems on `schedule_` if they are not
+    // already present. Idempotent, so it can run on every start() without
+    // duplicating systems or discarding editor-added ones.
+    void register_default_systems();
+
     struct FactoryEntry {
         std::string type_name;
         ComponentFactory factory;
@@ -108,6 +128,7 @@ private:
 
     State state_ = State::Stopped;
     Scene play_scene_{};
+    SceneSchedule schedule_{};
     std::vector<FactoryEntry> factories_;
     mutable std::string last_copy_warning_;
     u32 frames_played_ = 0;

@@ -46,6 +46,7 @@ if(FE_BUILD_EDITOR)
       src/test_editor_context.cpp
       src/test_play_session.cpp
       src/test_property_editor.cpp
+      src/test_viewport.cpp
   )
   target_link_libraries(fork_editor_tests PRIVATE FE::editor_core ${FE_DOCTEST_TARGET} fe_warnings)
   target_compile_features(fork_editor_tests PRIVATE cxx_std_20)
