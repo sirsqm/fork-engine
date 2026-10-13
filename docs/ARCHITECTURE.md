@@ -536,6 +536,34 @@ is the single write point, and re-importing with new settings keeps the asset's
 GUID (ADR-0020), so changing how an asset is imported never breaks references to
 it.
 
+### Import cache
+
+An import is a pure function of its inputs, so its result can be stored and
+reused. The `ImportCache` is a **content-addressed store of imported artifacts**:
+it keys an artifact on `(source bytes, effective import settings, importer
+identity)` and writes it under a cache root, so a re-import — in the same run or
+a later one — is a cache read instead of a re-decode. It holds no identity and
+no sidecar; the `AssetDatabase` stays the identity owner and the `ResourceManager`
+stays the weak-cache loader, so the cache adds no second index.
+
+The key is an FNV-1a 64-bit hash of a length-prefixed encoding of those three
+inputs, rendered as 16 hex characters. **Invalidation is a consequence of the
+key**: a change to the source bytes, the settings, or the importer yields a
+different key, so the stale entry is simply never asked for. Eviction is "delete
+the disposable root" — a cache root is derived data, and a bounded-growth GC is a
+later concern. A malformed or mismatched artifact reads as a miss, never a wrong
+result: the artifact stores its own key and is validated on read.
+
+The first artifact cached is the decoded `Image`. The cache is checked inside the
+loader (`ImageLoader` holds an `ImportCache*`, null by default), which is where
+the artifact format already lives and which adds no module edge. The GPU
+`Texture2D` is not cached directly: it decodes the CPU `Image` through the
+manager, so a warm decode cache lets it skip the decode and pay only the upload —
+the dominant half of the win. Caching the uploaded texture would need a serialized
+`rhi::TextureDesc` and a device at read time, and is a follow-up. A cache with no
+root is inert, exactly like an `AssetDatabase` with no root. See
+[ADR-0029](adr/0029-import-cache.md).
+
 ### Asset identity
 
 A reference that is a file path breaks when the file moves. To fix that, an

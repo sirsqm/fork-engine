@@ -74,7 +74,14 @@ Error Engine::initialize(const Config& config) {
     device_ = std::move(device.value());
 
     resources_ = std::make_unique<ResourceManager>();
-    resources_->register_loader(std::make_unique<ImageLoader>());
+    // Opt into the import cache only when a root is configured. The cache is
+    // inert otherwise, so the loader's cache check is a no-op and the load path
+    // is byte-for-byte the pre-cache behaviour.
+    if (!config.cache_root.empty()) {
+        resources_->import_cache().set_root(config.cache_root);
+        FE_LOG_INFO("import cache root '%s'", resources_->import_cache().root().c_str());
+    }
+    resources_->register_loader(std::make_unique<ImageLoader>(&resources_->import_cache()));
     resources_->register_loader(std::make_unique<Texture2DLoader>(*device_, *resources_));
     resources_->register_loader(std::make_unique<ObjLoader>());
 

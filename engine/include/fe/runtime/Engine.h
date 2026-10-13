@@ -48,6 +48,11 @@ public:
         // Minimum log severity. Defaults to Info so a shipped game is quiet but
         // still reports warnings and errors.
         fe::LogLevel log_level = fe::LogLevel::Info;
+        // Root of the content-addressed import cache. Empty (the default) leaves
+        // the cache inert, so a run behaves exactly as it did before the cache
+        // existed. A project sets it to a disposable directory (for example
+        // "<project>/.fork/cache"). See docs/adr/0029-import-cache.md.
+        std::string cache_root;
     };
 
     // Declared but not defined here: the unique_ptr members need their types
