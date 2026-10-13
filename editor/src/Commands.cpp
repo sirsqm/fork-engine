@@ -4,6 +4,7 @@
 
 #include "fe/reflect/Registry.h"
 #include "fe/reflect/TypeDesc.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/scene/Component.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -340,6 +341,114 @@ void SetPropertyCommand::undo(Scene& scene) {
     // The previous value is not needed on undo; a failure to write means the
     // target vanished and there is nothing to restore.
     (void)write_property(scene, node_id_, component_index_, path_, old_value_, &ignored);
+}
+
+// ---------------------------------------------------------------------------
+// SetResourceCommand
+// ---------------------------------------------------------------------------
+
+SetResourceCommand::SetResourceCommand(Uuid node_id, usize component_index, std::string property_name,
+                                       std::string reference, ResourceManager* resources)
+    : node_id_(node_id), component_index_(component_index), property_name_(std::move(property_name)),
+      reference_(std::move(reference)), resources_(resources) {}
+
+std::string SetResourceCommand::coalesce_key() const {
+    std::string key = node_id_.to_string();
+    key += '#';
+    key += std::to_string(component_index_);
+    key += ':';
+    key += property_name_;
+    return key;
+}
+
+bool SetResourceCommand::merge_with(const Command& newer) {
+    const auto* other = dynamic_cast<const SetResourceCommand*>(&newer);
+    if (other == nullptr || other->coalesce_key() != coalesce_key()) {
+        return false;
+    }
+    reference_ = other->reference_;
+    return true;
+}
+
+namespace {
+
+// The resource-reference property named `property_name` on the component at
+// `index`, or nullptr when the target or the property does not exist. A property
+// without a resolver (a value that is not a resource reference) is also rejected.
+[[nodiscard]] const reflect::Property* resource_property(Scene& scene, const Uuid& node_id, usize component_index,
+                                                         std::string_view property_name) {
+    Node* node = scene.find_node(node_id);
+    if (node == nullptr) {
+        return nullptr;
+    }
+    Component* component = component_at(*node, component_index);
+    if (component == nullptr) {
+        return nullptr;
+    }
+    const reflect::TypeDesc* type = reflect::Registry::instance().find(component->type_name());
+    if (type == nullptr) {
+        return nullptr;
+    }
+    for (const reflect::Property& property : type->properties) {
+        if (property.name == property_name && property.value_kind == reflect::ValueKind::ResourceRef) {
+            return &property;
+        }
+    }
+    return nullptr;
+}
+
+// Reads the current reference, resolves `reference` through the resource manager,
+// and stores the result. Shared by execute() and undo() so they cannot diverge.
+// An empty reference clears the slot. Returns false (without mutating) when the
+// target is gone or the reference cannot be resolved.
+[[nodiscard]] bool write_resource(Scene& scene, ResourceManager& resources, const Uuid& node_id, usize component_index,
+                                  const std::string& property_name, const std::string& reference,
+                                  std::string* out_previous) {
+    Node* node = scene.find_node(node_id);
+    if (node == nullptr) {
+        return false;
+    }
+    Component* component = component_at(*node, component_index);
+    if (component == nullptr) {
+        return false;
+    }
+    const reflect::Property* property = resource_property(scene, node_id, component_index, property_name);
+    if (property == nullptr || !property->resource_ref || !property->resolve_resource) {
+        return false;
+    }
+    if (out_previous != nullptr) {
+        *out_previous = property->resource_ref(component);
+    }
+    // A resolve failure returns nullptr and stores nothing, so a bad reference
+    // never clobbers a good one. An empty reference is the explicit clear.
+    (void)property->resolve_resource(component, reference, resources);
+    return true;
+}
+
+} // namespace
+
+void SetResourceCommand::execute(Scene& scene) {
+    // The manager is reached through the scene's engine-independent seam: the
+    // command carries only a reference, and the panel that builds it supplies
+    // the manager via the document. A command with no manager cannot resolve, so
+    // it is a no-op rather than a half-applied edit.
+    if (resources_ == nullptr) {
+        return;
+    }
+    std::string previous;
+    if (write_resource(scene, *resources_, node_id_, component_index_, property_name_, reference_, &previous) &&
+        !captured_) {
+        old_reference_ = std::move(previous);
+        captured_ = true;
+    }
+}
+
+void SetResourceCommand::undo(Scene& scene) {
+    if (!captured_ || resources_ == nullptr) {
+        return;
+    }
+    std::string ignored;
+    (void)write_resource(scene, *resources_, node_id_, component_index_, property_name_, old_reference_, &ignored);
 }
 
 } // namespace fe::editor

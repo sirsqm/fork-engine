@@ -69,7 +69,7 @@ needed a concrete mechanism before gameplay could grow. See
 
 ## M3 — Reflection and a real asset pipeline
 
-- [ ] Property inspector integration with editor hints (Range, Color, Resource)
+- [x] Property inspector integration with editor hints (Range, Color, Resource) — typed hints on `Property` (`RangeHint`/`ColorHint`/`ResourceHint`) drive a bounded slider, a colour picker, and an asset drop target; resource edits are undoable via `SetResourceCommand` ([ADR-0028](adr/0028-editor-hint-metadata.md))
 - [x] GUID-based resource references that survive file moves — a per-asset GUID
       sidecar and an asset database; see
       [ADR-0020](adr/0020-resource-identity-guid-sidecar.md)
