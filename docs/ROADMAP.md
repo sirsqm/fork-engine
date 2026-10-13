@@ -164,6 +164,12 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
 
 - [x] Profiler: `Profiler` + `ProfileScope` in `core` (ADR-0022), recording named
       scopes and counters into a fixed frame ring
+- [x] Profiler instrumentation and runtime integration (ADR-0024):
+      `FE_PROFILE_SCOPE`/`FE_PROFILE_FUNCTION` macros with a free disabled build;
+      `Application` brackets `frame`/`frame/update`/`frame/render` and
+      `SceneSchedule` times each system as `system/<name>`; a by-value
+      `FrameReport` (per-name totals, counters, summary/to_string) is the stats
+      surface
 - [ ] Benchmark: a headless target reporting frame-time percentiles; CI records
       the numbers and fails on regression
 - [ ] Render extraction: split both renderers into "extract a flat instance
