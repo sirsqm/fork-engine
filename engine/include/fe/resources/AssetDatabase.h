@@ -5,6 +5,7 @@
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
 #include "fe/resources/AssetId.h"
+#include "fe/resources/ImportSettings.h"
 
 #include <string>
 #include <string_view>
@@ -14,7 +15,8 @@ namespace fe {
 
 // The persisted metadata for one asset, stored in a sidecar file next to it
 // ("hero.png.meta"). The GUID is the asset's stable identity; `source` and
-// `scheme` describe the file it names and how it is imported.
+// `scheme` describe the file it names and how it is imported, and `settings`
+// carries the per-type import settings applied when it loads.
 struct AssetMeta {
     static constexpr i32 kFormatVersion = 1;
 
@@ -29,6 +31,12 @@ struct AssetMeta {
     // and a GPU Texture2D), so the scheme is a genuine import setting, not a
     // function of the path.
     std::string scheme;
+    // Per-asset import settings for this asset's type (how a texture is
+    // sampled, and later how a mesh or an audio clip is imported). A default
+    // value means "no type-specific settings", which is what a sidecar written
+    // before import settings existed carries. See
+    // docs/adr/0027-asset-import-settings.md.
+    ImportSettings settings;
 };
 
 // Reads a sidecar file. Fails with a clear error on a missing file, malformed
@@ -62,6 +70,9 @@ public:
         std::string path;
         // Loader scheme the asset is imported under ("tex", "obj", or "").
         std::string scheme;
+        // Per-asset import settings for this asset's type. Default when the
+        // sidecar carries none.
+        ImportSettings settings;
     };
 
     AssetDatabase() = default;
@@ -84,7 +95,13 @@ public:
     // a moved or edited asset keeps its identity; otherwise a new GUID is
     // minted. The sidecar is written and the index updated. Returns the
     // resulting asset.
+    //
+    // The two-argument form imports with default settings for the scheme; the
+    // three-argument form stores `settings` in the sidecar. Re-importing with a
+    // different scheme or settings keeps the GUID and rewrites the metadata, so
+    // changing how an asset is imported never breaks references to it.
     [[nodiscard]] Result<Asset> import(std::string_view path, std::string_view scheme);
+    [[nodiscard]] Result<Asset> import(std::string_view path, std::string_view scheme, ImportSettings settings);
 
     [[nodiscard]] const Asset* find(const AssetId& id) const;
     [[nodiscard]] const Asset* find_by_path(std::string_view path) const;

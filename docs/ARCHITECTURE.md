@@ -511,6 +511,31 @@ This is the foundation of the asset pipeline. Import settings, a
 content-addressed cache, and hot reload build on top of it without changing the
 load/cache/release contract.
 
+### Import settings
+
+How an asset is turned into a resource -- how a texture is sampled, and later how
+a mesh is scaled or a sprite sheet is sliced -- is a property of the asset, not
+of every component that references it. Those choices live in the asset's sidecar,
+in a `settings` object whose `kind` names the importer's settings type, and are
+applied when the asset loads. `ImportSettings` is a tagged value type: the
+texture kind carries a sampling filter, an addressing mode, and a mipmap flag.
+An asset with no settings loads with the importer's defaults, which reproduce the
+behaviour from before the mechanism existed, so **a sidecar written earlier still
+loads unchanged**; a sidecar whose settings are malformed is rejected rather than
+silently imported differently. See
+[ADR-0027](adr/0027-asset-import-settings.md).
+
+The settings reach the loader without changing `ResourceLoader::load`: the
+`ResourceManager` scopes the current asset's settings for the duration of the
+load, and a loader that cares reads them through `current_import_settings()`.
+`Texture2DLoader` already loads the CPU `Image` through the manager, so it
+honours the texture settings with no new dependency. Both a `guid:` reference and
+a path reference to a known asset resolve the same settings; a path to an
+unindexed file simply has none. `AssetDatabase::import(path, scheme, settings)`
+is the single write point, and re-importing with new settings keeps the asset's
+GUID (ADR-0020), so changing how an asset is imported never breaks references to
+it.
+
 ### Asset identity
 
 A reference that is a file path breaks when the file moves. To fix that, an
@@ -609,9 +634,12 @@ by `AssetId`, so a rescan (a file move, an import) is reflected without the
 browser knowing about paths. The one thing it produces that outlives the session
 is an asset's stable `guid:<uuid>` reference, which is what a drag out of the
 browser hands to a drop target such as a sprite's texture field. Listing is
-read-only; importing and moving assets are later work.
+read-only; importing and moving assets are later work. Each entry also reports its
+import settings kind (ADR-0027), so the browser shows what an asset will be
+imported as; editing those settings in the editor is a follow-up.
 
-Still to come under M2: asset import (import settings per asset type).
+The remaining M2 groundwork item is done: per-asset import settings live in the
+sidecar and are applied at load ([ADR-0027](adr/0027-asset-import-settings.md)).
 
 ### The project file
 

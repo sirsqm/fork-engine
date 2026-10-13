@@ -28,6 +28,7 @@ add_executable(fork_engine_tests
     src/test_audio.cpp
     src/test_resource_manager.cpp
     src/test_asset_database.cpp
+    src/test_import_settings.cpp
     src/test_version.cpp
 )
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
