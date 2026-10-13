@@ -20,9 +20,24 @@ ship complete 2D and 3D games. That sets the priorities:
   convenience.
 - The editor is a first-class part of the product, not a bolted-on tool.
 
-Non-goals for now: matching a specific existing engine feature-for-feature,
-supporting every platform on day one, and optimising before there is something
-worth optimising.
+Three capabilities shape the architecture as much as they shape the roadmap, and
+are planned in [`STRATEGY.md`](STRATEGY.md):
+
+- **Performance is a product feature.** The engine is fast by construction and
+  by measurement, not by a late optimization pass. The authoring model (the
+  scene graph) and the processing model (flat, cache-friendly arrays) are
+  deliberately different, and the conversion happens at one seam — see
+  [ADR-0017](adr/0017-performance-strategy.md) and section 5.
+- **Games ship anywhere.** The target is that a game reaches every platform its
+  players use, not that the editor runs on several OSes — see
+  [ADR-0018](adr/0018-multi-platform-shipping.md) and section 10.
+- **Editing is collaborative.** Several people edit one project live, with
+  presence and no manual merge — see
+  [ADR-0019](adr/0019-collaborative-editing.md) and section 8.
+
+Non-goals for now: matching a specific existing engine feature-for-feature, and
+optimising before there is something worth optimising (which is why performance
+work begins with measurement, not with a rewrite).
 
 ## 2. Module graph
 
@@ -33,6 +48,7 @@ depend only "downwards"; the dependency graph is acyclic by construction.
 core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
 core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
+core  <-  jobs  <-  systems
 core, scene, resources  <-  systems
 core, scene, systems, reflect  <-  physics2d
 core, scene, resources  <-  mesh
@@ -40,6 +56,7 @@ core, scene, resources  <-  scene3d
 core, rhi, resources, scene, mesh  <-  renderer3d
 core, scene, systems, resources  <-  audio
 everything  <-  runtime
+core  <-  net                     (planned: collaborative editing)
 ```
 
 | Module | Responsibility | Depends on |
@@ -56,6 +73,8 @@ everything  <-  runtime
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
+| `jobs` *(planned)* | Thread pool, `parallel_for`, and a task graph; consumed by systems and by render extraction | core |
+| `net` *(planned)* | Transport abstraction and the collaborative-editing session client | core |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
 | `renderer3d` | 3D mesh rendering with a lit pass and directional shadow map | core, rhi, resources, scene, mesh |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
@@ -352,6 +371,24 @@ reports the depth-pass draw count.
 Batching, point/spot shadows, a spatial tree, and a material graph are later work
 behind these same interfaces.
 
+### The extraction seam (planned)
+
+The renderers today walk the hierarchy and issue draws in the same pass. As the
+scene grows that is both cache-hostile and hard to parallelise, so the planned
+structure separates the two steps — see
+[ADR-0017](adr/0017-performance-strategy.md):
+
+- **Extract** — one walk of the hierarchy that emits a flat array of instances
+  (mesh or sprite, world matrix, material handle, visibility).
+- **Issue** — draws the flat array, after sorting, batching, culling, and
+  instancing have operated on it.
+
+The flat array is the unit a job system chunks and the unit instancing and a
+render graph build on. The authoring model (the scene graph) and the processing
+model (the array) are deliberately different, and this seam is the only place
+they meet. It is the concrete form of the hybrid architecture
+([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md)) in the hot path.
+
 ### Camera selection
 
 "Which camera is active for this scene?" has exactly one implementation per
@@ -477,6 +514,33 @@ authored scene would be invisible.
 
 Still to come under M2: the asset browser and project settings.
 
+### Collaborative editing (planned)
+
+The goal is that several people edit one project at once, see each other's
+changes and presence live, and never run a manual merge — see
+[ADR-0019](adr/0019-collaborative-editing.md) and
+[`STRATEGY.md`](STRATEGY.md). The editor is already shaped for it:
+
+- Every edit goes through the command stack rather than mutating the scene
+  ([ADR-0015](adr/0015-editor-undo-redo.md)), so an edit is already a discrete,
+  invertible step.
+- Serialization and the inspector are reflection-driven
+  ([ADR-0005](adr/0005-reflection-and-serialization.md)), so a property edit is
+  already addressable as `(component, property path, value)` with no per-type
+  code.
+- Nodes already carry a stable `Uuid`.
+
+Collaboration generalises this. Components gain stable ids; the command stack is
+generalised into a serializable `Operation`; a `Session` holds the document and
+an ordered, replicated log that every replica applies to converge. An
+authoritative session server orders structural operations and resolves
+concurrent property edits last-writer-wins per property; presence (cursors,
+selections, viewport cameras) rides alongside as ephemeral messages. The first
+steps are local and headless — two in-process replicas, no network — which also
+makes undo/redo more robust, so they earn their keep before any server exists.
+The `net` module is where the transport lives; nothing above it knows whether
+the peer is in-process or remote.
+
 ## 9. Scripting (planned)
 
 Scripting will be integrated through reflection and the component system:
@@ -491,9 +555,33 @@ and custom components are the supported path today.
 Cross-platform support is designed in from the start, not retrofitted. All
 platform-specific functionality — window creation, input, filesystem access,
 threading, graphics context initialisation — lives behind the `platform` module
-and is not scattered through the engine. Desktop (Linux, macOS, Windows) is the
-initial target; the abstraction exists so additional targets are a new backend,
-not a rewrite.
+and is not scattered through the engine.
+
+The goal is not that the editor runs on several operating systems; it is that a
+game built here reaches every platform its players use — see
+[ADR-0018](adr/0018-multi-platform-shipping.md) and
+[`STRATEGY.md`](STRATEGY.md). That raises the bar on the layer:
+
+- **The contract is complete.** Beyond window and input, it covers touch and
+  gamepad input, threads, time, dynamic libraries, and application lifecycle
+  (suspend, resume, resize, orientation). A target is a new backend, not a
+  scattering of `#ifdef`s.
+- **A null backend exists.** A headless implementation of the whole contract —
+  no window, no-op input, an in-memory filesystem view — for CI, dedicated
+  servers, and deterministic tests. It is the proof that nothing leaks past the
+  abstraction, and it builds and passes the suite on any machine.
+- **Assets ship in a pack.** Browsers and mobile do not give a game a normal
+  filesystem, so the runtime reads assets from a pack through the same resource
+  paths it uses on disk. The resource system never assumes loose files.
+- **Export templates.** A prebuilt runtime per target plus an export step turns
+  a project into a runnable build. This is release infrastructure, separate from
+  the library build.
+- **Backends on demand.** Desktop is OpenGL 3.3 core; web wants WebGL2/WebGPU,
+  mobile wants GLES/Vulkan/Metal, and consoles want their own APIs. A backend is
+  written when a target needs it, and never requires touching code above the RHI.
+
+Desktop (Linux, macOS, Windows) is the initial target; web and mobile follow,
+and consoles are an architecture goal implemented only when SDK access permits.
 
 ## 11. Testing strategy
 
@@ -541,6 +629,15 @@ Every milestone must build and pass its tests before the next one begins.
 - Tilemaps, particles, animation clips and state machines.
 - Scripting.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
-  contract already states that a device is owned by one thread).
+  contract already states that a device is owned by one thread). The `jobs`
+  module and parallel extraction are planned in M9.
+- The performance work itself: the profiler, the extraction seam, the job
+  system, the frame arena, and instancing are planned in M9 (section 5 describes
+  the extraction seam the rest depends on).
+- Shipping to platforms beyond desktop: asset packs, export templates, and the
+  web/mobile backends are planned in M8 (section 10).
+- Collaborative editing: component identity, the operation model, the
+  replicated log, the session server, and presence are planned in M10
+  (section 8).
 
 These are sequenced in [`docs/ROADMAP.md`](ROADMAP.md).

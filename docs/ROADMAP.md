@@ -8,6 +8,16 @@ and changes are recorded in the ADRs.
 The guiding rule: a few genuinely working systems beat a long list of
 half-finished features.
 
+Three capabilities shape the sequence and are planned in depth in
+[`STRATEGY.md`](STRATEGY.md): **performance** (a product feature, measured and
+protected), **shipping to every platform players use** (not just running the
+editor on several OSes), and **collaborative editing** (several people in one
+project, live, no manual merge). Their milestones are **M9**, **M8**, and
+**M10** below; the trade-offs are in ADRs
+[0017](adr/0017-performance-strategy.md),
+[0018](adr/0018-multi-platform-shipping.md), and
+[0019](adr/0019-collaborative-editing.md).
+
 ## M1 — Foundation (done)
 
 The smallest useful engine: something that builds, runs, renders, and is tested.
@@ -96,10 +106,9 @@ needed a concrete mechanism before gameplay could grow. See
 ## M6 — Animation and audio
 
 - [x] 2D sprite-sheet animation (frame playback; the first system) — see M2 prerequisite
-- [~] Audio playback and mixing (in progress): `AudioDevice` with a real
-      (miniaudio) and a null backend, `AudioClip` + `WavLoader`, `AudioSource`,
-      and `AudioSystem` with a pure mixer — see
-      [ADR-0016](adr/0016-audio-module.md)
+- [x] Audio playback and mixing: `AudioDevice` with a real (miniaudio) and a null
+      backend, `AudioClip` + `WavLoader`, `AudioSource`, and `AudioSystem` with a
+      pure mixer — see [ADR-0016](adr/0016-audio-module.md)
 - [ ] Audio refinements: 3D positional attenuation, streaming / large-file
       playback, compressed codecs, and audio buses / mixing groups
 - [ ] Tilemaps
@@ -113,12 +122,68 @@ needed a concrete mechanism before gameplay could grow. See
 - [ ] Editor integration (attach, inspect, hot reload)
 - [ ] Debugging support
 
-## M8 — Cross-platform and shipping
+## M8 — Ship anywhere (cross-platform targets)
 
-- [ ] macOS and Windows backends brought to parity
-- [ ] Packaging and export templates
-- [ ] Additional graphics backend (for example Vulkan)
-- [ ] Profiling and performance tooling
+The goal is that a game built in Fork Engine reaches every platform its players
+use, not merely that the editor runs on several OSes. Plan and trade-offs:
+[`STRATEGY.md`](STRATEGY.md), [ADR-0018](adr/0018-multi-platform-shipping.md).
+
+- [ ] Platform interface audit: define the full OS contract (window/surface,
+      input incl. touch and gamepad, filesystem, threads, time, dynamic
+      libraries, lifecycle) and add a **null/headless** backend for CI and
+      servers
+- [ ] Asset packaging: a pack format and a loader scheme so the runtime reads
+      from a pack as transparently as from disk
+- [ ] Export templates: a prebuilt runtime per desktop target and a `fork
+      export` path that assembles a runnable build from a project
+- [ ] Desktop parity: macOS and Windows backends brought to parity with Linux
+- [ ] Web target: Emscripten/WASM build with a WebGL2 backend (the cheapest
+      proof that the abstraction holds)
+- [ ] Mobile: Android and iOS lifecycle, touch input, GLES/Vulkan/Metal
+      backends, and app packaging
+- [ ] Additional graphics backends as targets require them (Vulkan/Metal/WebGPU)
+- [ ] Consoles: architecture-ready; implementation only when SDK access permits
+
+## M9 — Performance (a product feature)
+
+The engine holds a stable, low frame time on real scenes, and the team can
+prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
+[ADR-0017](adr/0017-performance-strategy.md).
+
+- [ ] Measurement: `Profiler` + `ProfileScope` in `core`; a headless benchmark
+      target reporting frame-time percentiles; CI records the numbers and fails
+      on regression
+- [ ] Render extraction: split both renderers into "extract a flat instance
+      list" and "issue draws" (the data-oriented seam)
+- [ ] Job system: a `jobs` module (thread pool, `parallel_for`, task graph);
+      `FrameContext` exposes it to systems
+- [ ] Parallel extraction and culling: chunk the instance array; output must be
+      identical to the serial path
+- [ ] Memory: a per-frame arena for transient data, with allocation counters
+- [ ] GPU efficiency: instancing, material batching, and a render-graph seam for
+      passes and post-processing
+- [ ] An in-editor profiler panel fed by the profiler data
+
+## M10 — Collaborative editing
+
+Several people edit one project live, with presence and no manual merge. It
+lands after the editor is mature because it reaches into the editor's core. Plan
+and trade-offs: [`STRATEGY.md`](STRATEGY.md),
+[ADR-0019](adr/0019-collaborative-editing.md).
+
+- [ ] Component identity: stable ids that survive serialization, reimport, and
+      undo
+- [ ] Operation model (local only): generalise `Command` into a serializable
+      `Operation`; route local edits through it
+- [ ] Replicated log (local only): a `Session` holding a document and an ordered
+      log; two in-process replicas converge; undo becomes log-based
+- [ ] Transport and server: a `net` module with an in-process loopback transport
+      (tests) and WebSocket (production), plus an authoritative session server
+      (ordered structural operations, last-writer-wins per property)
+- [ ] Presence: cursors, selections, and per-user viewport cameras
+- [ ] Conflict policy refinement: node-level locking for structural edits, or
+      property CRDTs, only against a reproduced conflict
+- [ ] Asset sync: a content-addressed store with dedup and delta transfer
 
 ## Ongoing
 
