@@ -32,12 +32,17 @@ class EditorHost {
 public:
     struct Config {
         Engine::Config engine{};
+        // A project file to open at startup. Its settings (name, asset root,
+        // startup scene) are adopted: the asset root is indexed before any scene
+        // loads, and its startup scene opens unless `scene_to_open` overrides it.
+        std::string project_file;
         // The project's asset root: the directory the asset browser lists and
         // that GUID asset references resolve against. Empty means "no project",
         // which leaves the browser empty and only path references working.
+        // Ignored when `project_file` is set (the file's asset root wins).
         std::string project_root;
-        // A scene file to open at startup; empty opens a built-in example
-        // scene instead.
+        // A scene file to open at startup; empty opens the project's startup
+        // scene, or a built-in example scene when there is no project.
         std::string scene_to_open;
         // Run at most this many frames, then exit. 0 means "until the window
         // closes". A non-zero limit with a hidden window is the headless smoke
