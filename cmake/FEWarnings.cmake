@@ -26,12 +26,21 @@ else()
 endif()
 
 # Mark a dependency's include directories as SYSTEM so its headers do not
-# produce warnings inside our translation units.
+# produce warnings inside our translation units. Accepts an alias target (for
+# example nlohmann_json::nlohmann_json) by resolving it to the real target,
+# because set_target_properties() cannot be applied to an alias.
 function(fe_mark_system target)
-  if(TARGET ${target})
-    get_target_property(_dirs ${target} INTERFACE_INCLUDE_DIRECTORIES)
-    if(_dirs)
-      set_target_properties(${target} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_dirs}")
-    endif()
+  if(NOT TARGET ${target})
+    return()
+  endif()
+  get_target_property(_aliased ${target} ALIASED_TARGET)
+  if(_aliased)
+    set(_real ${_aliased})
+  else()
+    set(_real ${target})
+  endif()
+  get_target_property(_dirs ${_real} INTERFACE_INCLUDE_DIRECTORIES)
+  if(_dirs)
+    set_target_properties(${_real} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_dirs}")
   endif()
 endfunction()

@@ -63,7 +63,8 @@ public:
     Node* add_child(std::unique_ptr<Node> child);
 
     // Creates and attaches a child of concrete type T.
-    template <typename T, typename... Args> T* create_child(Args&&... args) {
+    template <typename T, typename... Args>
+    T* create_child(Args&&... args) {
         static_assert(std::is_base_of_v<Node, T>, "T must derive from fe::Node");
         auto child = std::unique_ptr<T>(new T(std::forward<Args>(args)...));
         T* raw = child.get();
@@ -94,7 +95,8 @@ public:
     // Adds a component of concrete type T, owned by this node. The node may
     // hold several components of different types; adding a second component of
     // the same type is allowed and both remain addressable by index.
-    template <typename T, typename... Args> T* add_component(Args&&... args) {
+    template <typename T, typename... Args>
+    T* add_component(Args&&... args) {
         static_assert(std::is_base_of_v<Component, T>, "T must derive from fe::Component");
         auto component = std::unique_ptr<T>(new T(std::forward<Args>(args)...));
         T* raw = component.get();
@@ -107,7 +109,8 @@ public:
     }
 
     // Returns the first component of type T, or nullptr.
-    template <typename T> [[nodiscard]] T* get_component() noexcept {
+    template <typename T>
+    [[nodiscard]] T* get_component() noexcept {
         for (const auto& component : components_) {
             if (component->type_info() == typeid(T)) {
                 return static_cast<T*>(component.get());
@@ -116,7 +119,8 @@ public:
         return nullptr;
     }
 
-    template <typename T> [[nodiscard]] const T* get_component() const noexcept {
+    template <typename T>
+    [[nodiscard]] const T* get_component() const noexcept {
         for (const auto& component : components_) {
             if (component->type_info() == typeid(T)) {
                 return static_cast<const T*>(component.get());
@@ -127,7 +131,8 @@ public:
 
     // Removes and destroys the first component of type T. Returns true if one
     // was found.
-    template <typename T> bool remove_component() {
+    template <typename T>
+    bool remove_component() {
         for (auto it = components_.begin(); it != components_.end(); ++it) {
             if ((*it)->type_info() == typeid(T)) {
                 (*it)->on_detach(*this);
@@ -151,10 +156,10 @@ protected:
 
     // Called after the node is attached to a scene, once for the node and then
     // for each descendant. Subclasses use it to acquire resources.
-    virtual void on_attach(Scene& scene) {}
+    virtual void on_attach(Scene&) {}
     // Called before the node leaves its scene, once for the node and then for
     // each descendant.
-    virtual void on_detach(Scene& scene) {}
+    virtual void on_detach(Scene&) {}
 
 private:
     friend class Scene;

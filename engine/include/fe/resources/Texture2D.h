@@ -19,8 +19,7 @@ class Texture2D final : public Resource {
 public:
     static constexpr const char* kTypeName = "Texture2D";
 
-    Texture2D(std::string path, rhi::TextureRef texture)
-        : Resource(std::move(path)), texture_(std::move(texture)) {}
+    Texture2D(std::string path, rhi::TextureRef texture) : Resource(std::move(path)), texture_(std::move(texture)) {}
 
     [[nodiscard]] const char* type_name() const noexcept override { return kTypeName; }
 
@@ -29,9 +28,7 @@ public:
     [[nodiscard]] u32 width() const noexcept { return texture_->width(); }
     [[nodiscard]] u32 height() const noexcept { return texture_->height(); }
 
-    [[nodiscard]] usize memory_usage() const noexcept override {
-        return static_cast<usize>(width()) * height() * 4U;
-    }
+    [[nodiscard]] usize memory_usage() const noexcept override { return static_cast<usize>(width()) * height() * 4U; }
 
 private:
     rhi::TextureRef texture_;

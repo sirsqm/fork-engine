@@ -15,7 +15,7 @@ namespace fe {
 // composition API.
 struct Transform {
     Vec3 position{};
-    Vec3 rotation{};   // Euler angles, radians.
+    Vec3 rotation{}; // Euler angles, radians.
     Vec3 scale{1.0f, 1.0f, 1.0f};
 
     [[nodiscard]] static Transform identity() noexcept { return Transform{}; }

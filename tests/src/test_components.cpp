@@ -94,8 +94,11 @@ TEST_CASE("detaching a node from the scene detaches its components") {
     auto* probe = root->add_component<LifecycleProbe>();
     CHECK(probe->attach_count == 1);
 
-    scene.remove_root(root);
+    // remove_root() hands ownership back; keep the node alive through the
+    // assertions that follow.
+    auto removed = scene.remove_root(root);
     CHECK(probe->detach_count == 1);
+    CHECK(removed != nullptr);
 }
 
 TEST_CASE("a camera builds a view-projection matrix centred on its node") {

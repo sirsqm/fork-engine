@@ -20,7 +20,9 @@ namespace {
 Texture2DLoader::Texture2DLoader(rhi::Device& device, ResourceManager& manager)
     : device_(&device), manager_(&manager) {}
 
-bool Texture2DLoader::supports(std::string_view extension) const noexcept { return is_image_extension(extension); }
+bool Texture2DLoader::supports(std::string_view extension) const noexcept {
+    return is_image_extension(extension);
+}
 
 Result<std::shared_ptr<Resource>> Texture2DLoader::load(std::string_view path) {
     // Decode (or reuse a decoded) CPU image first. The ImageLoader registers

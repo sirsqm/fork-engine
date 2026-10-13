@@ -37,10 +37,14 @@ enum class VertexFormat : u8 {
 
 [[nodiscard]] inline u32 component_count(VertexFormat format) noexcept {
     switch (format) {
-    case VertexFormat::Float1: return 1;
-    case VertexFormat::Float2: return 2;
-    case VertexFormat::Float3: return 3;
-    case VertexFormat::Float4: return 4;
+    case VertexFormat::Float1:
+        return 1;
+    case VertexFormat::Float2:
+        return 2;
+    case VertexFormat::Float3:
+        return 3;
+    case VertexFormat::Float4:
+        return 4;
     }
     return 0;
 }
@@ -71,9 +75,9 @@ struct VertexLayout {
 };
 
 enum class BlendMode : u8 {
-    None,        // Opaque; blending disabled.
-    Alpha,       // Straight alpha: src.rgb * src.a + dst.rgb * (1 - src.a)
-    Additive,    // Additive: src.rgb * src.a + dst.rgb
+    None,     // Opaque; blending disabled.
+    Alpha,    // Straight alpha: src.rgb * src.a + dst.rgb * (1 - src.a)
+    Additive, // Additive: src.rgb * src.a + dst.rgb
 };
 
 enum class TextureFilter : u8 {
@@ -87,7 +91,7 @@ enum class TextureWrap : u8 {
 };
 
 enum class PixelFormat : u8 {
-    Rgba8,  // 4 bytes per pixel, 8 bits per channel.
+    Rgba8, // 4 bytes per pixel, 8 bits per channel.
 };
 
 struct ShaderDesc {

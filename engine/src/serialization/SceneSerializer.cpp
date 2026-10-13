@@ -44,7 +44,8 @@ using json = nlohmann::json;
         // Store the manager cache key (including the "tex:" scheme) rather than
         // the resource's own file path, so that reloading the scene resolves the
         // same GPU texture instead of the CPU image that shares the file.
-        j["texture"] = sprite.texture != nullptr ? Texture2DLoader::reference_key(sprite.texture->path()) : std::string{};
+        j["texture"] =
+            sprite.texture != nullptr ? Texture2DLoader::reference_key(sprite.texture->path()) : std::string{};
         return j;
     }
 

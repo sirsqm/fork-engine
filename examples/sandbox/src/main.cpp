@@ -34,9 +34,9 @@
 #include "fe/serialization/SceneSerializer.h"
 
 #include <algorithm>
-#include <cstring>
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -50,8 +50,7 @@ constexpr const char* kTexturePath = "tex:assets/textures/checker.png";
 class Sandbox final : public fe::Application {
 public:
     Sandbox(fe::Engine::Config config, std::string scene_to_load, std::string scene_to_save)
-        : fe::Application(config), scene_to_load_(std::move(scene_to_load)),
-          scene_to_save_(std::move(scene_to_save)) {}
+        : fe::Application(config), scene_to_load_(std::move(scene_to_load)), scene_to_save_(std::move(scene_to_save)) {}
 
 protected:
     fe::Error on_start() override {
@@ -151,8 +150,7 @@ private:
             sprite->texture = typed;
             sprite->size = fe::Vec2{96.0f, 96.0f};
             sprite->color = fe::Vec4{1.0f, 1.0f, 1.0f, 1.0f};
-            node->transform().position =
-                fe::Vec3{static_cast<fe::f32>(i) * 128.0f - 192.0f, 0.0f, 0.0f};
+            node->transform().position = fe::Vec3{static_cast<fe::f32>(i) * 128.0f - 192.0f, 0.0f, 0.0f};
             node->transform().rotation = fe::Vec3{0.0f, 0.0f, static_cast<fe::f32>(i) * 0.15f};
         }
 

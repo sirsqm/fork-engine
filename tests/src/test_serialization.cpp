@@ -97,7 +97,7 @@ TEST_CASE("node identity survives a round trip") {
 
 TEST_CASE("the document records a format and version") {
     Scene scene;
-    scene.create_node("Root");
+    [[maybe_unused]] Node* root = scene.create_node("Root");
 
     auto text = serialization::scene::to_json(scene);
     REQUIRE(text);
@@ -138,8 +138,7 @@ TEST_CASE("Texture2DLoader::reference_key does not double-prefix a scheme") {
 
 TEST_CASE("loading rejects a newer format version") {
     Scene scene;
-    const Error error =
-        serialization::scene::from_json(R"({"format":"fork_scene","format_version":999})", scene);
+    const Error error = serialization::scene::from_json(R"({"format":"fork_scene","format_version":999})", scene);
     CHECK(error);
     CHECK(error.message().find("newer") != std::string::npos);
 }
