@@ -18,6 +18,7 @@
 #include "fe/reflect/Registry.h"
 #include "fe/reflect/TypeDesc.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/resources/AssetDatabase.h"
 #include "fe/rhi/Resources.h"
 #include "fe/rhi/Types.h"
 #include "fe/runtime/Engine.h"
@@ -25,6 +26,8 @@
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <variant>
 
@@ -137,4 +140,51 @@ TEST_CASE("EditorHost runs frames, reflects a Sprite2D, and exits cleanly") {
     // After shutdown the borrowed target is gone, proving it was released before
     // the device.
     CHECK(host.viewport_target() == nullptr);
+}
+
+TEST_CASE("a configured project root is indexed by the embedded engine") {
+    if (!graphics_available()) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // A real asset tree on disk, with the asset already imported (its .meta
+    // sidecar written through the engine's own importer) so the editor's scan
+    // indexes it. The host's project root is set before the first scene load, so
+    // the embedded engine's asset database is indexed by the time initialize()
+    // returns, and the editor's browser has something to list.
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "fe_editor_host_project_root_test";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "textures");
+    const std::filesystem::path asset = root / "textures" / "checker.png";
+    {
+        std::ofstream(asset, std::ios::binary) << "png";
+    }
+    {
+        fe::AssetDatabase seed;
+        seed.set_root(root.string());
+        auto imported = seed.import(asset.string(), "tex");
+        REQUIRE(imported);
+    }
+
+    fe::editor::EditorHost::Config config;
+    config.engine.window.title = "fork engine editor host project test";
+    config.engine.window.width = 128;
+    config.engine.window.height = 96;
+    config.engine.window.visible = false;
+    config.engine.window.vsync = false;
+    config.engine.log_level = fe::LogLevel::Error;
+    config.max_frames = 1;
+    config.project_root = root.string();
+
+    fe::editor::EditorHost host(std::move(config));
+    REQUIRE_FALSE(host.initialize());
+
+    CHECK(host.context().project_root() == root.string());
+    // The engine's database, not a private copy, was indexed: this is what makes
+    // the browser and GUID reference resolution agree.
+    CHECK(host.engine().resources().assets().asset_count() == 1);
+
+    host.shutdown();
+    std::filesystem::remove_all(root);
 }

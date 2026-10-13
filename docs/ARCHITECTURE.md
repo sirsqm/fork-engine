@@ -554,6 +554,18 @@ read-only; importing and moving assets are later work.
 
 Still to come under M2: asset import and project settings.
 
+### The project asset root
+
+The editor has no project file yet, but it does have the one project setting
+that changes engine behaviour today: where the assets live. `EditorContext::
+set_project_root` records that directory and points the engine's `AssetDatabase`
+at it, so the browser lists the project's assets and `guid:<uuid>` references
+resolve. The host sets it before the first scene is loaded, so GUID references
+inside the scene resolve during deserialization; the shell exposes it as
+`--project DIR`. With no root the editor still runs — the browser is simply
+empty and only path references resolve. A real project file, with more settings
+and a build/export path, is the remaining M2 work.
+
 ### Collaborative editing (planned)
 
 The goal is that several people edit one project at once, see each other's
