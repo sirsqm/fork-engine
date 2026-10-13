@@ -6,6 +6,8 @@
 #include "fe/core/Types.h"
 #include "fe/scene/Component.h"
 
+#include <cmath>
+
 namespace fe::physics2d {
 
 // Linear and angular motion and mass for a node, driven by the physics system.
@@ -74,6 +76,50 @@ public:
     // angular influence), which is what a body that must stay upright wants.
     bool fixed_rotation = false;
 
+    // --- Sleeping ----------------------------------------------------------
+    //
+    // A body that has been nearly still for a sustained number of steps is put
+    // to sleep: the solver skips it, so a settled pile stops costing solver
+    // time. Sleeping is grouped by island (see ADR-0024): a body sleeps only
+    // when every dynamic body it is connected to by a contact or a joint is also
+    // ready, and waking any one of them wakes the whole group.
+    //
+    // The state is observable and controllable on purpose. A game can ask
+    // `is_sleeping` and call `wake()`; the engine never hides the decision.
+
+    // When false, this body never sleeps, and -- because a body that never
+    // sleeps keeps its island awake -- neither does anything resting on it. Set
+    // it on a body that must keep integrating regardless, such as a
+    // platform driven by code.
+    bool can_sleep = true;
+
+    // True while the body is asleep. While asleep its velocity is treated as
+    // zero and the solver skips it entirely; a sleeping body is woken by a new
+    // contact or impulse from a moving body, by a jointed body moving, or by an
+    // explicit call to `wake()`.
+    bool is_sleeping = false;
+
+    // How long the body's motion must stay below the thresholds before it may
+    // sleep, in seconds. Counted while it is awake and reset whenever it moves
+    // faster than the thresholds or is woken. The default is short enough that a
+    // settled pile sleeps quickly, long enough that a body mid-bounce does not.
+    f32 sleep_time = 0.5f;
+
+    // Linear speed below which the body counts as at rest, in world units per
+    // second. Compared against the velocity the solver leaves after a step, so a
+    // body resting on a floor (whose velocity is driven to zero every frame)
+    // settles below it.
+    f32 sleep_linear_threshold = 0.05f;
+
+    // Angular speed below which the body counts as at rest, in radians per
+    // second.
+    f32 sleep_angular_threshold = 0.05f;
+
+    // Time the body's motion has been below the thresholds, in seconds. Read-only
+    // in practice: the solver owns it. Exposed so a test or a debug overlay can
+    // watch a body approach sleep.
+    f32 sleep_timer = 0.0f;
+
     [[nodiscard]] f32 inverse_mass() const noexcept {
         if (kinematic || mass <= 0.0f) {
             return 0.0f;
@@ -96,6 +142,40 @@ public:
     }
 
     [[nodiscard]] bool is_dynamic() const noexcept { return inverse_mass() > 0.0f; }
+
+    // True when the body's motion is slow enough to count as at rest: both the
+    // linear speed and the angular speed are below their thresholds. A sleeping
+    // body is at rest by definition. This is the raw test; the sustained-time
+    // requirement lives in the system, which advances `sleep_timer`.
+    [[nodiscard]] bool is_resting() const noexcept {
+        if (is_sleeping) {
+            return true;
+        }
+        return velocity.length_squared() <= sleep_linear_threshold * sleep_linear_threshold &&
+               std::abs(angular_velocity) <= sleep_angular_threshold;
+    }
+
+    // Puts the body to sleep immediately: it stops being integrated or solved
+    // until something wakes it. Clears its velocity, so it comes back to rest
+    // rather than resuming a stale speed, and zeroes the rest timer. Waking is
+    // per body here; the system wakes a whole island when one of its bodies is
+    // disturbed.
+    void sleep() noexcept {
+        is_sleeping = true;
+        velocity = Vec2{};
+        angular_velocity = 0.0f;
+        sleep_timer = 0.0f;
+    }
+
+    // Wakes the body: it is integrated and solved again, and its rest timer
+    // restarts. A body that was already awake is unchanged apart from the timer.
+    // Does nothing about the island; the system propagates a wake across a
+    // group when it detects one, so a game calling this on one body of a jointed
+    // pair will see the pair move on the next step.
+    void wake() noexcept {
+        is_sleeping = false;
+        sleep_timer = 0.0f;
+    }
 };
 
 } // namespace fe::physics2d
