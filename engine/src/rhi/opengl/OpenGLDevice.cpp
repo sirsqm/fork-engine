@@ -195,18 +195,25 @@ public:
     [[nodiscard]] u32 height() const noexcept override { return height_; }
     [[nodiscard]] GLuint handle() const noexcept { return handle_; }
 
-    // Allocates storage for the texture without uploading pixels. Used for
-    // render-target attachments, whose contents are produced by drawing.
+    // Allocates color storage without uploading pixels. Used for render-target
+    // attachments, whose contents are produced by drawing.
     void allocate(u32 width, u32 height, TextureFilter filter) {
         glBindTexture(GL_TEXTURE_2D, handle_);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, nullptr);
-        const GLint gl_filter = filter == TextureFilter::Nearest ? GL_NEAREST : GL_LINEAR;
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        set_sampling(filter, TextureWrap::ClampToEdge, TextureWrap::ClampToEdge);
+    }
+
+    // Allocates a depth-only texture. The shadow pass renders into it and then
+    // samples it as a plain float depth, so compare mode stays NONE: the shader
+    // does the comparison itself, which keeps it backend-agnostic.
+    void allocate_depth(u32 width, u32 height) {
+        glBindTexture(GL_TEXTURE_2D, handle_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, static_cast<GLsizei>(width), static_cast<GLsizei>(height),
+                     0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        // Nearest: depth must not be interpolated across the shadow map, and a
+        // shadow-map texel is a single depth value, not a gradient.
+        set_sampling(TextureFilter::Nearest, TextureWrap::ClampToEdge, TextureWrap::ClampToEdge);
     }
 
     void upload(const TextureDesc& desc) {
@@ -214,10 +221,7 @@ public:
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width_), static_cast<GLsizei>(height_), 0,
                      GL_RGBA, GL_UNSIGNED_BYTE, desc.pixels);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, to_gl_filter(desc.min_filter));
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, to_gl_filter(desc.mag_filter));
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, to_gl_wrap(desc.wrap_u));
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, to_gl_wrap(desc.wrap_v));
+        set_sampling(desc.min_filter, desc.wrap_u, desc.wrap_v, desc.mag_filter);
         if (desc.generate_mipmaps) {
             glGenerateMipmap(GL_TEXTURE_2D);
         }
@@ -225,11 +229,15 @@ public:
     }
 
 private:
-    [[nodiscard]] static GLint to_gl_filter(TextureFilter filter) noexcept {
-        return filter == TextureFilter::Nearest ? GL_NEAREST : GL_LINEAR;
-    }
-    [[nodiscard]] static GLint to_gl_wrap(TextureWrap wrap) noexcept {
-        return wrap == TextureWrap::Repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+    void set_sampling(TextureFilter min_filter, TextureWrap wrap_u, TextureWrap wrap_v,
+                      TextureFilter mag_filter = TextureFilter::Linear) {
+        const GLint gl_min = min_filter == TextureFilter::Nearest ? GL_NEAREST : GL_LINEAR;
+        const GLint gl_mag = mag_filter == TextureFilter::Nearest ? GL_NEAREST : GL_LINEAR;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_min);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_mag);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_u == TextureWrap::Repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_v == TextureWrap::Repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
     std::string name_;
@@ -243,11 +251,13 @@ private:
 // ---------------------------------------------------------------------------
 
 // A framebuffer object with a color texture and, optionally, a depth
-// renderbuffer. The color texture is the attachment the editor viewport blits.
+// attachment. The color texture is the attachment the editor viewport blits.
+// The depth attachment is either a renderbuffer (cheap, not sampleable) or a
+// texture (sampleable, for the shadow pass), chosen by `sample_depth`.
 class OpenGLRenderTarget final : public RenderTarget {
 public:
-    OpenGLRenderTarget(std::string name, u32 width, u32 height, bool depth)
-        : name_(std::move(name)), width_(width), height_(height), depth_(depth) {}
+    OpenGLRenderTarget(std::string name, u32 width, u32 height, bool depth, bool sample_depth)
+        : name_(std::move(name)), width_(width), height_(height), depth_(depth), sample_depth_(sample_depth) {}
 
     ~OpenGLRenderTarget() override {
         if (depth_buffer_ != 0) {
@@ -262,6 +272,7 @@ public:
     [[nodiscard]] u32 width() const noexcept override { return width_; }
     [[nodiscard]] u32 height() const noexcept override { return height_; }
     [[nodiscard]] TextureRef color_texture() const noexcept override { return color_; }
+    [[nodiscard]] TextureRef depth_texture() const noexcept override { return depth_texture_; }
 
     [[nodiscard]] GLuint framebuffer() const noexcept { return framebuffer_; }
 
@@ -291,11 +302,17 @@ public:
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_->handle(), 0);
 
         if (depth_) {
-            glGenRenderbuffers(1, &depth_buffer_);
-            glBindRenderbuffer(GL_RENDERBUFFER, depth_buffer_);
-            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, static_cast<GLsizei>(width_),
-                                  static_cast<GLsizei>(height_));
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_buffer_);
+            if (sample_depth_) {
+                depth_texture_ = std::make_shared<OpenGLTexture>(name_ + ".depth", width_, height_);
+                depth_texture_->allocate_depth(width_, height_);
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_texture_->handle(), 0);
+            } else {
+                glGenRenderbuffers(1, &depth_buffer_);
+                glBindRenderbuffer(GL_RENDERBUFFER, depth_buffer_);
+                glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, static_cast<GLsizei>(width_),
+                                      static_cast<GLsizei>(height_));
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_buffer_);
+            }
         }
 
         const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -311,9 +328,11 @@ private:
     u32 width_;
     u32 height_;
     bool depth_;
+    bool sample_depth_;
     GLuint framebuffer_ = 0;
     GLuint depth_buffer_ = 0;
     std::shared_ptr<OpenGLTexture> color_;
+    std::shared_ptr<OpenGLTexture> depth_texture_;
 };
 
 // ---------------------------------------------------------------------------
@@ -423,7 +442,8 @@ public:
         if (desc.width == 0 || desc.height == 0) {
             return Error("create_render_target: dimensions must be non-zero");
         }
-        auto target = std::make_shared<OpenGLRenderTarget>(desc.name, desc.width, desc.height, desc.depth);
+        auto target = std::make_shared<OpenGLRenderTarget>(desc.name, desc.width, desc.height, desc.depth,
+                                                           desc.depth && desc.sample_depth);
         if (Error error = target->create_attachments(); error) {
             return error;
         }

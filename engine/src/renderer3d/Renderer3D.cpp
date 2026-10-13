@@ -82,6 +82,43 @@ uniform vec4 u_spot_light_cone[8];
 
 out vec4 frag_color;
 
+// Shadow map: depth rendered from the directional light's point of view. The
+// comparison is done by hand (compare mode NONE) so the shader stays
+// backend-agnostic; `u_light_space_matrix` maps world space into the map's
+// clip space, and its .xyz/.w gives the depth the light saw at this fragment.
+uniform sampler2D u_shadow_map;
+uniform mat4 u_light_space_matrix;
+uniform float u_shadow_bias;
+
+// 1.0 where the fragment is lit, 0.0 where it is occluded. Samples a 3x3
+// neighbourhood and averages the pass/fail, which softens the hard texel edge
+// enough to read as a shadow rather than a staircase.
+float shadow_factor(vec3 world_position, vec3 to_light) {
+    vec4 light_space = u_light_space_matrix * vec4(world_position, 1.0);
+    vec3 projected = light_space.xyz / light_space.w;
+    projected = projected * 0.5 + 0.5; // Clip [-1, 1] to texture [0, 1].
+
+    // Outside the map there is no occlusion information, so treat it as lit.
+    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 || projected.z > 1.0) {
+        return 1.0;
+    }
+
+    // Slope-scaled bias: a surface nearly edge-on to the light needs a larger
+    // offset to avoid self-shadowing acne.
+    float slope = max(1.0 - dot(to_light, vec3(0.0, 0.0, 1.0)), 0.5);
+    float bias = u_shadow_bias * slope;
+
+    float occluded = 0.0;
+    vec2 texel = 1.0 / vec2(textureSize(u_shadow_map, 0));
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            float closest = texture(u_shadow_map, projected.xy + vec2(float(x), float(y)) * texel).r;
+            occluded += projected.z - bias > closest ? 1.0 : 0.0;
+        }
+    }
+    return 1.0 - occluded / 9.0;
+}
+
 // Blinn-Phong diffuse + specular for a light arriving along `to_light`
 // (unit vector towards the light) with the given colour and distance falloff.
 vec3 shade(vec3 n, vec3 v, vec3 to_light, vec3 light_color, float attenuation) {
@@ -97,9 +134,11 @@ void main() {
     vec3 n = normalize(v_normal);
     vec3 v = normalize(u_camera_position - v_world_position);
 
-    // Ambient plus the directional light.
+    // Ambient plus the directional light. Only the directional light casts a
+    // shadow; ambient stays unshadowed so occluded areas keep some fill.
     vec3 l = normalize(-u_light_direction);
-    vec3 lighting = vec3(u_ambient) + shade(n, v, l, u_light_color * u_light_intensity, 1.0);
+    float shadow = shadow_factor(v_world_position, l);
+    vec3 lighting = vec3(u_ambient) + shadow * shade(n, v, l, u_light_color * u_light_intensity, 1.0);
 
     // Point lights, with an inverse-square falloff windowed to reach zero at
     // the light's range so a light has a bounded influence.
@@ -145,6 +184,29 @@ void main() {
 }
 )glsl";
 
+// Depth-only pass. Renders the scene from the light's point of view; the depth
+// buffer is the only output the shadow map needs. There is no colour work and
+// no fragment output, so the driver can discard the fragment stage entirely.
+constexpr const char* kShadowVertexShaderSource = R"glsl(
+#version 330 core
+
+layout(location = 0) in vec3 a_position;
+
+uniform mat4 u_light_view_projection;
+uniform mat4 u_model;
+
+void main() {
+    gl_Position = u_light_view_projection * u_model * vec4(a_position, 1.0);
+}
+)glsl";
+
+constexpr const char* kShadowFragmentShaderSource = R"glsl(
+#version 330 core
+
+void main() {
+}
+)glsl";
+
 // The normal matrix is transpose(inverse(upper-left 3x3 of model)), so a
 // non-uniform scale does not skew normals. Returned in column-major order,
 // which is what the RHI uploads.
@@ -187,6 +249,39 @@ void expand_to_world_aabb(const Vec3& local_min, const Vec3& local_max, const Ma
     }
 }
 
+// Builds a world-to-light-clip matrix for a directional shadow map that covers
+// the given world AABB.
+//
+// A directional light has no position, so the light "eye" is placed back along
+// the light direction far enough that the whole scene sits in front of it. The
+// orthographic box is square and centred on the scene, sized from the scene's
+// bounding sphere: the sphere radius is view-independent, so the coverage does
+// not shrink when the scene is viewed edge-on, which an AABB fit would.
+//
+// One cascade over the whole scene is the deliberate first cut: it is correct
+// for the common "sun over a scene" case and needs no frustum fitting. The cost
+// is resolution - a large scene shares one map - which cascaded shadow maps
+// would fix later without changing this call site.
+[[nodiscard]] Mat4 directional_light_view_projection(const Vec3& scene_min, const Vec3& scene_max,
+                                                     const Vec3& light_direction) noexcept {
+    const Vec3 center = (scene_min + scene_max) * 0.5f;
+    const Vec3 extent = (scene_max - scene_min) * 0.5f;
+    const f32 radius = std::max(extent.length(), 1e-3f);
+
+    // `light_direction` is the direction the light travels, so the eye sits
+    // opposite it, one full diameter back plus a margin for geometry that sits
+    // above the scene box.
+    const Vec3 to_light = light_direction.normalized() * -1.0f;
+    const Vec3 eye = center + to_light * (radius * 2.0f + 1.0f);
+
+    // Pick an up vector that is not parallel to the light, or look_at degenerates.
+    const Vec3 up = std::abs(to_light.y) > 0.99f ? Vec3{0.0f, 0.0f, 1.0f} : Vec3{0.0f, 1.0f, 0.0f};
+
+    const Mat4 view = look_at(eye, center, up);
+    const Mat4 projection = Mat4::orthographic(-radius, radius, -radius, radius, 0.01f, radius * 4.0f + 2.0f);
+    return projection * view;
+}
+
 } // namespace
 
 Renderer3D::Renderer3D() = default;
@@ -203,6 +298,16 @@ Error Renderer3D::initialize(rhi::Device& device) {
         return shader.error();
     }
     shader_ = shader.value();
+
+    rhi::ShaderDesc shadow_desc;
+    shadow_desc.name = "renderer3d_shadow";
+    shadow_desc.vertex_source = kShadowVertexShaderSource;
+    shadow_desc.fragment_source = kShadowFragmentShaderSource;
+    auto shadow_shader = device.create_shader(shadow_desc);
+    if (!shadow_shader) {
+        return shadow_shader.error();
+    }
+    shadow_shader_ = shadow_shader.value();
 
     const u8 white[4] = {255, 255, 255, 255};
     rhi::TextureDesc white_desc;
@@ -279,6 +384,26 @@ Result<const Renderer3D::GpuMesh*> Renderer3D::acquire_mesh(rhi::Device& device,
     return &inserted->second;
 }
 
+Error Renderer3D::ensure_shadow_target(rhi::Device& device) {
+    if (shadow_target_ != nullptr || shadow_target_attempted_) {
+        return Error::none();
+    }
+    shadow_target_attempted_ = true;
+
+    rhi::RenderTargetDesc desc;
+    desc.name = "renderer3d_shadow_map";
+    desc.width = kShadowMapSize;
+    desc.height = kShadowMapSize;
+    desc.depth = true;
+    desc.sample_depth = true; // The main pass samples this depth; a renderbuffer would not do.
+    auto target = device.create_render_target(desc);
+    if (!target) {
+        return target.error();
+    }
+    shadow_target_ = target.value();
+    return Error::none();
+}
+
 Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(viewport_width > 0 && viewport_height > 0);
@@ -287,6 +412,7 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     last_culled_ = 0;
     last_point_lights_ = 0;
     last_spot_lights_ = 0;
+    last_shadow_casters_ = 0;
 
     const Camera3D* camera = find_active_camera(scene);
     if (camera == nullptr) {
@@ -410,6 +536,68 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
 
     u32 drawn = 0;
 
+    // --- 3b. Shadow pass ----------------------------------------------------
+    // Render the visible geometry's depth from the light's point of view into
+    // the shadow map, then restore the main pass' target. The map's coverage is
+    // fitted to the world bounds of the instances that survived culling: those
+    // are the only casters whose shadows can land on something visible, and it
+    // keeps the map from being spread thin by distant geometry.
+    bool shadows_enabled = false;
+    Mat4 light_view_projection = Mat4::identity();
+    if (light != nullptr && !instances.empty()) {
+        Vec3 scene_min{};
+        Vec3 scene_max{};
+        bool bounds_valid = false;
+        for (const Instance& instance : instances) {
+            Vec3 world_min{};
+            Vec3 world_max{};
+            expand_to_world_aabb(instance.mesh->bounds_min(), instance.mesh->bounds_max(), instance.model, world_min,
+                                 world_max);
+            if (!bounds_valid) {
+                scene_min = world_min;
+                scene_max = world_max;
+                bounds_valid = true;
+            } else {
+                scene_min.x = std::min(scene_min.x, world_min.x);
+                scene_min.y = std::min(scene_min.y, world_min.y);
+                scene_min.z = std::min(scene_min.z, world_min.z);
+                scene_max.x = std::max(scene_max.x, world_max.x);
+                scene_max.y = std::max(scene_max.y, world_max.y);
+                scene_max.z = std::max(scene_max.z, world_max.z);
+            }
+        }
+
+        if (Error error = ensure_shadow_target(device); error) {
+            FE_LOG_ERROR("renderer3d: shadow map unavailable: %s", error.message().c_str());
+        } else {
+            light_view_projection = directional_light_view_projection(scene_min, scene_max, light_direction);
+
+            rhi::RenderTarget* previous_target = device.bound_render_target();
+            device.bind_render_target(shadow_target_.get());
+            shadow_target_->clear(rhi::ClearColor{1.0f, 1.0f, 1.0f, 1.0f}); // Far depth.
+            device.set_depth_test(true);
+            device.bind_shader(*shadow_shader_);
+            shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
+
+            for (const Instance& instance : instances) {
+                auto gpu = acquire_mesh(device, *instance.mesh);
+                if (!gpu) {
+                    continue;
+                }
+                shadow_shader_->set_mat4("u_model", instance.model);
+                device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+                device.bind_index_buffer(*gpu.value()->index_buffer);
+                device.draw_indexed(gpu.value()->index_count);
+                ++last_shadow_casters_;
+            }
+
+            // Restore whatever the caller had bound (the window, or an editor
+            // panel's target) so the main pass draws where it was meant to.
+            device.bind_render_target(previous_target);
+            shadows_enabled = true;
+        }
+    }
+
     // --- 4. Pass state ------------------------------------------------------
     // The 3D pass is opaque and depth-tested. Blending is disabled so draws do
     // not depend on order.
@@ -425,6 +613,19 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
         shader_->set_float("u_ambient", ambient);
         shader_->set_vec3("u_light_direction", light_direction);
         shader_->set_vec3("u_camera_position", camera_position);
+
+        // Shadow uniforms. When no shadow map exists (no directional light, or
+        // creation failed) the light-space matrix stays identity and the map is
+        // never sampled usefully, but the sampler still needs a bound texture to
+        // be a complete program, so bind the white texel.
+        shader_->set_int("u_shadow_map", 1);
+        shader_->set_mat4("u_light_space_matrix", light_view_projection);
+        shader_->set_float("u_shadow_bias", kShadowBias);
+        if (shadows_enabled && shadow_target_->depth_texture() != nullptr) {
+            device.bind_texture(1, *shadow_target_->depth_texture());
+        } else {
+            device.bind_texture(1, *default_texture_);
+        }
 
         // Pack and upload the bounded light arrays. Only the first
         // point_count / spot_count elements are read by the shader, whose loop

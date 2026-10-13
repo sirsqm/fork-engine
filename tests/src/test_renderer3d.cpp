@@ -110,6 +110,33 @@ void add_camera_and_key_light(Scene& scene) {
     light->ambient = 0.0f;
 }
 
+// Renders `scene` and reads a pixel at (x, y) with the origin at the top-left of
+// the framebuffer, which is the coordinate a test reasons about when it wants a
+// specific screen region rather than the centre.
+[[nodiscard]] Pixel render_and_sample_at(GraphicsContext3D& context, const Scene& scene, u32 width, u32 height, u32 x,
+                                         u32 y) {
+    context.window->poll_events();
+    context.window->swap_buffers();
+
+    rhi::ClearColor clear{};
+    if (const Camera3D* camera = renderer3d::Renderer3D::find_active_camera(scene); camera != nullptr) {
+        clear = rhi::ClearColor{camera->clear_r, camera->clear_g, camera->clear_b, camera->clear_a};
+    }
+
+    context.device->begin_frame(width, height, clear);
+
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, width, height);
+    REQUIRE(result);
+
+    std::vector<u8> pixels(static_cast<usize>(width) * height * 4U, 0);
+    context.device->read_pixels(x, y, 1, 1, std::span<u8>(pixels.data(), pixels.size()));
+
+    context.device->end_frame();
+    return Pixel{pixels[0], pixels[1], pixels[2], pixels[3]};
+}
+
 } // namespace
 
 TEST_CASE("renderer3d draws a lit mesh covering the centre of the view") {
@@ -452,4 +479,137 @@ TEST_CASE("renderer3d lights a mesh inside a spot light's cone") {
     CHECK(centre.r > 100);
     CHECK(centre.g > 100);
     CHECK(centre.b > 100);
+}
+
+// --- Shadow mapping ---------------------------------------------------------
+//
+// These tests drive the directional shadow map through real GL. The setup that
+// makes the shadow observable is a lit floor with a large occluder floating
+// above it: the floor is uniformly lit without an occluder, and a patch of it
+// goes dark underneath when one is present. Sampling the floor near the screen
+// edge, rather than the centre, keeps the read away from the occluder's own
+// pixels.
+
+namespace {
+
+// A wide lit floor in the XZ plane and a camera above it looking down, so the
+// floor fills most of the view and a downward light casts shadows onto it.
+void add_floor_and_overhead_light(Scene& scene) {
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 4.0f, 4.0f};
+    // Tilt the camera down to look at the floor. Rotating about X by -45 degrees
+    // aims the local -Z at the origin from this position.
+    camera_node->transform().rotation = Vec3{-0.78539816339f, 0.0f, 0.0f};
+    camera_node->add_component<Camera3D>();
+
+    Node* light_node = scene.create_node("Sun");
+    auto* light = light_node->add_component<DirectionalLight3D>();
+    light->direction = Vec3{0.0f, -1.0f, 0.0f}; // Straight down.
+    light->color = Vec3{1.0f, 1.0f, 1.0f};
+    light->intensity = 1.0f;
+    light->ambient = 0.0f;
+
+    Node* floor_node = scene.create_node("Floor");
+    auto* floor_renderer = floor_node->add_component<MeshRenderer3D>();
+    floor_renderer->mesh = Mesh::make_plane(8.0f, 8.0f);
+    floor_renderer->base_color = Vec4{1.0f, 1.0f, 1.0f, 1.0f}; // White.
+    floor_renderer->specular = 0.0f;                           // Diffuse only, for a predictable value.
+}
+
+} // namespace
+
+TEST_CASE("renderer3d renders a depth pass when a directional light is present") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_floor_and_overhead_light(scene);
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    // The floor is the one caster, so the depth pass drew it exactly once.
+    CHECK(renderer.last_shadow_casters() == 1);
+    context.device->end_frame();
+}
+
+TEST_CASE("renderer3d runs no depth pass without a directional light") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    camera_node->add_component<Camera3D>();
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    renderer->mesh = Mesh::make_cube();
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D r;
+    REQUIRE_FALSE(r.initialize(*context.device));
+    auto result = r.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(r.last_shadow_casters() == 0);
+    context.device->end_frame();
+}
+
+TEST_CASE("an occluder darkens the floor beneath it") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // Baseline: the lit floor with no occluder. The centre of the view is floor
+    // at the world origin, which is exactly where the occluder's shadow falls.
+    Scene unshadowed;
+    add_floor_and_overhead_light(unshadowed);
+    const Pixel lit = render_and_sample_at(context, unshadowed, 64, 64, 32, 32);
+
+    // Same scene plus a slab floating above the floor. The camera looks at the
+    // origin from a 45-degree angle, so the slab (higher up) appears on screen
+    // above the floor point it shadows. That separation is what lets the test
+    // read the shadow itself rather than the slab's own pixels: the centre of
+    // the view is floor in both renders, and only the shadowed render darkens it.
+    Scene shadowed;
+    add_floor_and_overhead_light(shadowed);
+    Node* occluder = shadowed.create_node("Occluder");
+    auto* occluder_renderer = occluder->add_component<MeshRenderer3D>();
+    occluder_renderer->mesh = Mesh::make_plane(1.5f, 1.5f);
+    occluder->transform().position = Vec3{0.0f, 3.0f, 0.0f};
+
+    const Pixel dark = render_and_sample_at(context, shadowed, 64, 64, 32, 32);
+
+    // Move the occluder sideways. Its shadow must follow it off the centre of the
+    // floor, which proves the darkening tracks the occluder's light-space depth
+    // rather than being the occluder's own pixels covering the sample point.
+    Scene moved;
+    add_floor_and_overhead_light(moved);
+    Node* moved_occluder = moved.create_node("Occluder");
+    auto* moved_renderer = moved_occluder->add_component<MeshRenderer3D>();
+    moved_renderer->mesh = Mesh::make_plane(1.5f, 1.5f);
+    moved_occluder->transform().position = Vec3{2.0f, 3.0f, 0.0f};
+
+    const Pixel relit = render_and_sample_at(context, moved, 64, 64, 32, 32);
+
+    // The floor is fully lit with no occluder; the occluder overhead casts a
+    // shadow on the sample point, and moving the occluder away lifts it again.
+    // The last check is what makes this a shadow test rather than an accidental
+    // read of the occluder's own pixels: the sample point is floor in all three
+    // renders, and its brightness follows the occluder's position.
+    CHECK(lit.r > 200);
+    CHECK(dark.r < lit.r);
+    CHECK(static_cast<int>(lit.r) - static_cast<int>(dark.r) > 40);
+    CHECK(relit.r > 200);
+    CHECK(static_cast<int>(relit.r) - static_cast<int>(dark.r) > 40);
 }
