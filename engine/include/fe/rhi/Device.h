@@ -40,12 +40,23 @@ public:
     [[nodiscard]] virtual Result<BufferRef> create_vertex_buffer(const VertexLayout& layout, u32 capacity_bytes) = 0;
     [[nodiscard]] virtual Result<BufferRef> create_index_buffer(u32 capacity_indices) = 0;
     [[nodiscard]] virtual Result<TextureRef> create_texture(const TextureDesc& desc) = 0;
+    [[nodiscard]] virtual Result<RenderTargetRef> create_render_target(const RenderTargetDesc& desc) = 0;
 
     // --- Frame lifecycle ---------------------------------------------------
     // Clears the default framebuffer and establishes per-frame state. The
     // caller has already made the context current and sized the viewport.
     virtual void begin_frame(u32 framebuffer_width, u32 framebuffer_height, const ClearColor& clear_color) = 0;
     virtual void end_frame() = 0;
+
+    // --- Render targets ----------------------------------------------------
+    // Directs subsequent drawing into `target`. Binding nullptr restores the
+    // window's default framebuffer. Binding a target also sets the viewport to
+    // its size, so a panel can render a scene at the panel's dimensions
+    // independent of the window size.
+    virtual void bind_render_target(RenderTarget* target) = 0;
+
+    // The framebuffer currently bound for drawing, or nullptr for the window.
+    [[nodiscard]] virtual RenderTarget* bound_render_target() const noexcept = 0;
 
     // --- State -------------------------------------------------------------
     virtual void set_viewport(u32 x, u32 y, u32 width, u32 height) = 0;
