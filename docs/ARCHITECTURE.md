@@ -33,6 +33,7 @@ depend only "downwards"; the dependency graph is acyclic by construction.
 core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
 core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
+core, scene, resources  <-  systems
 everything  <-  runtime
 ```
 
@@ -45,6 +46,7 @@ everything  <-  runtime
 | `scene` | Node/component hierarchy, transforms | core |
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
+| `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
 
@@ -98,6 +100,43 @@ blending, future 3D render extraction) reads the component data it cares about
 into its own structure each frame. That is the data-oriented part of the hybrid:
 systems choose their own memory layout instead of inheriting the graph's. See
 [ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md).
+
+### Systems and the frame schedule
+
+Execution lives in **systems**, not on nodes. There is no `update()` virtual on
+`Node` or `Component`; instead a `System` owns its own traversal and runs once
+per frame from a `SceneSchedule`:
+
+```cpp
+class System {
+public:
+    virtual std::string_view name() const noexcept = 0;
+    virtual void update(const FrameContext& context, Scene& scene) = 0;
+};
+```
+
+`FrameContext` carries `delta_time`, `elapsed_time`, and a nullable
+`ResourceManager*`, so a system reads everything it needs from the frame rather
+than from globals -- which is what lets it run headlessly in a test.
+
+The schedule is a plain ordered list. It is **not** a job graph: systems run in
+registration order, on one thread, with no declared read/write sets. That is a
+deliberate floor, not a ceiling -- parallelism and dependency ordering can be
+added to `SceneSchedule` later without changing any system. The moment the
+ordering becomes implicit instead of explicit at the call site, debugging a
+frame becomes guesswork, so ordering is left visible. See
+[ADR-0008](adr/0008-systems-and-frame-schedule.md).
+
+The schedule lives with the scene, not in `Engine`. `Engine` owns no scene, so
+`Application` creates a scene and a schedule and pairs them; the editor pairs
+its own the same way, which is what makes play-in-editor run the same systems
+through the same path.
+
+`SpriteAnimationSystem` is the first system: it advances the `SpriteAnimator`
+component and writes the current cell's UVs onto the node's `Sprite2D`. It shows
+the shape -- gather the components you process into a flat array, advance them,
+hand the result to the subsystem that consumes it -- without the renderer
+knowing animation exists.
 
 ### Identity
 

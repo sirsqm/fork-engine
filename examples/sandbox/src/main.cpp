@@ -31,7 +31,9 @@
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene/SpriteAnimator.h"
 #include "fe/serialization/SceneSerializer.h"
+#include "fe/systems/SpriteAnimationSystem.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -170,6 +172,24 @@ private:
         child_sprite->color = fe::Vec4{0.6f, 1.0f, 0.6f, 1.0f};
         child->transform().position = fe::Vec3{80.0f, 0.0f, 0.0f};
         child->transform().rotation = fe::Vec3{0.0f, 0.0f, fe::kPi * 0.25f};
+
+        // An animated sprite, to exercise the systems layer end to end. The
+        // animator is a component like any other; adding it plus registering
+        // the system is the whole setup. The sheet is the same checker texture
+        // treated as a 4x4 grid of cells.
+        //
+        // This is the point of ADR-0008: gameplay is a system you add to the
+        // schedule, not a method a node inherits.
+        fe::Node* animated_node = scene().create_node("Animated");
+        auto* animated_sprite = animated_node->add_component<fe::Sprite2D>();
+        animated_sprite->texture = typed;
+        animated_sprite->size = fe::Vec2{96.0f, 96.0f};
+        auto* animator = animated_node->add_component<fe::SpriteAnimator>();
+        animator->frames_x = 4;
+        animator->frames_y = 4;
+        animator->fps = 8.0f;
+        animated_node->transform().position = fe::Vec3{-320.0f, 160.0f, 0.0f};
+        schedule().add_system<fe::SpriteAnimationSystem>();
 
         FE_LOG_INFO("built demo scene: %zu nodes", scene().node_count());
         return fe::Error::none();

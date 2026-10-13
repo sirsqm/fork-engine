@@ -44,6 +44,16 @@ the editor panels. See [ADR-0006](adr/0006-component-reflection.md).
 - [x] A reflection registry: types, properties, metadata, editor hints
 - [x] Serialization driven by reflection instead of per-component code
 
+### M2 prerequisite — systems and the frame schedule (done)
+
+The hybrid execution model ([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md))
+needed a concrete mechanism before gameplay could grow. See
+[ADR-0008](adr/0008-systems-and-frame-schedule.md).
+
+- [x] `System`, `SceneSchedule`, and `FrameContext` (ordered, single-threaded, no job graph)
+- [x] The runtime drives the schedule once per frame, after `on_update` and before rendering
+- [x] First concrete system: sprite-sheet animation (`SpriteAnimator` + `SpriteAnimationSystem`), reflected so animators serialize and are inspector-editable
+
 ## M3 — Reflection and a real asset pipeline
 
 - [ ] Property inspector integration with editor hints (Range, Color, Resource)
@@ -69,7 +79,8 @@ the editor panels. See [ADR-0006](adr/0006-component-reflection.md).
 
 ## M6 — Animation and audio
 
-- [ ] 2D sprite animation and tilemaps
+- [x] 2D sprite-sheet animation (frame playback; the first system) — see M2 prerequisite
+- [ ] Tilemaps
 - [ ] Skeletal animation and skinning
 - [ ] Animation state machines
 - [ ] Audio playback, mixing, and 3D spatialisation

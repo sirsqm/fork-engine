@@ -44,6 +44,16 @@ int Application::run() {
         engine_.window().poll_events();
 
         on_update(engine_.delta_time());
+
+        // Run the user's systems for this frame. This is the whole execution
+        // model: after the per-frame hook, before rendering, in the order the
+        // systems were added.
+        FrameContext frame;
+        frame.delta_time = engine_.delta_time();
+        frame.elapsed_time = engine_.elapsed_time();
+        frame.resources = &engine_.resources();
+        schedule_.update(frame, scene_);
+
         render_frame();
 
         // Presents the back buffer (or, headless, simply ends the frame). The
