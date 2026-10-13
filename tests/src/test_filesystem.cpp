@@ -110,12 +110,16 @@ TEST_CASE("relative_to strips a containing prefix and leaves the rest alone") {
 }
 
 TEST_CASE("is_absolute follows the host platform's path syntax") {
-    CHECK(fs::is_absolute("/usr/local/assets"));
-#ifdef _WIN32
-    CHECK(fs::is_absolute("C:/projects/demo"));
-    CHECK_FALSE(fs::is_absolute("assets"));
-#else
+    // Build the absolute example through std::filesystem so the expectation is
+    // the platform's, not a POSIX path asserted on Windows.
+    const std::string absolute = (std::filesystem::temp_directory_path() / "assets").string();
+    CHECK(fs::is_absolute(absolute));
     CHECK_FALSE(fs::is_absolute("assets"));
     CHECK_FALSE(fs::is_absolute("assets/textures"));
+    CHECK_FALSE(fs::is_absolute(""));
+#ifdef _WIN32
+    CHECK(fs::is_absolute("C:/projects/demo"));
+#else
+    CHECK(fs::is_absolute("/usr/local/assets"));
 #endif
 }

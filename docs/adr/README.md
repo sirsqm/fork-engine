@@ -32,7 +32,7 @@ rather than editing it.
 | [0021](0021-physics2d-joints.md) | 2D joints (distance and revolute constraints) | Accepted |
 | [0022](0022-profiler-and-frame-timing.md) | A frame profiler in `core` | Proposed |
 | [0023](0023-physics2d-broadphase.md) | A uniform-grid broad phase for 2D physics | Proposed |
-| [0024](0024-project-file.md) | The project file: settings as a JSON document the editor opens | Accepted |
+| [0025](0025-project-file.md) | The project file: settings as a JSON document the editor opens | Accepted |
 
 ## Format
 

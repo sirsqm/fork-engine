@@ -50,6 +50,13 @@ void write_file(const std::string& path, const std::string& contents) {
     out << contents;
 }
 
+// Joins a child onto a base through std::filesystem and normalizes it, so the
+// expectation matches what the engine returns on every platform (Windows would
+// otherwise compare backslashes against forward slashes).
+[[nodiscard]] std::string under(const std::string& base, const std::string& child) {
+    return fe::fs::normalize((std::filesystem::path(base) / child).string());
+}
+
 } // namespace
 
 TEST_CASE("project settings default to the conventional asset root") {
@@ -63,19 +70,21 @@ TEST_CASE("project settings default to the conventional asset root") {
 }
 
 TEST_CASE("project settings resolve paths against the project directory") {
+    TempDir dir("resolve");
     ProjectSettings settings;
-    settings.set_directory("/projects/demo");
+    settings.set_directory(dir.str());
     settings.set_name("Demo");
     settings.set_asset_root("assets");
     settings.set_startup_scene("scenes/main.json");
 
-    CHECK(settings.resolved_asset_root() == "/projects/demo/assets");
-    CHECK(settings.resolved_startup_scene() == "/projects/demo/scenes/main.json");
+    CHECK(settings.resolved_asset_root() == under(dir.str(), "assets"));
+    CHECK(settings.resolved_startup_scene() == under(dir.str(), "scenes/main.json"));
 }
 
 TEST_CASE("project settings round-trip through JSON, storing portable paths") {
+    TempDir dir("roundtrip_json");
     ProjectSettings settings;
-    settings.set_directory("/projects/demo");
+    settings.set_directory(dir.str());
     settings.set_name("Demo");
     settings.set_startup_scene("scenes/main.json");
 
@@ -83,28 +92,34 @@ TEST_CASE("project settings round-trip through JSON, storing portable paths") {
     REQUIRE(text);
 
     ProjectSettings loaded;
-    REQUIRE_FALSE(ProjectSettings::from_json(text.value(), "/projects/demo", loaded));
+    REQUIRE_FALSE(ProjectSettings::from_json(text.value(), dir.str(), loaded));
     CHECK(loaded.name() == "Demo");
     CHECK(loaded.asset_root() == "assets");
     CHECK(loaded.startup_scene() == "scenes/main.json");
     // The document itself carries no absolute paths, so it travels with the
     // project instead of naming the machine it was authored on.
-    CHECK(text.value().find("/projects/demo") == std::string::npos);
+    CHECK(text.value().find(dir.str()) == std::string::npos);
     CHECK(text.value().find("\"asset_root\": \"assets\"") != std::string::npos);
 }
 
 TEST_CASE("an absolute asset root outside the project is preserved verbatim") {
+    // A genuinely absolute root: built from the platform's own absolute temp
+    // path so the test means the same thing on POSIX and Windows.
+    const std::string shared = (std::filesystem::temp_directory_path() / "fe_shared_assets").string();
+
     ProjectSettings settings;
-    settings.set_directory("/projects/demo");
-    settings.set_asset_root("/shared/assets");
+    settings.set_directory((std::filesystem::temp_directory_path() / "fe_proj_dir").string());
+    settings.set_asset_root(shared);
 
     auto text = settings.to_json();
     REQUIRE(text);
 
     ProjectSettings loaded;
-    REQUIRE_FALSE(ProjectSettings::from_json(text.value(), "/projects/demo", loaded));
-    CHECK(loaded.asset_root() == "/shared/assets");
-    CHECK(loaded.resolved_asset_root() == "/shared/assets");
+    REQUIRE_FALSE(ProjectSettings::from_json(text.value(), settings.directory(), loaded));
+    // Stored and read back normalized, so compare against the normalized form.
+    CHECK(loaded.asset_root() == fs::normalize(shared));
+    // An absolute root is used as-is, not joined onto the project directory.
+    CHECK(loaded.resolved_asset_root() == fs::normalize(shared));
 }
 
 TEST_CASE("project settings reject a document that is not a project") {
@@ -142,7 +157,7 @@ TEST_CASE("a project file saves and loads through the filesystem") {
     CHECK(loaded.value().name() == "Roundtrip");
     // Saving set the project directory to the file's directory, so the asset
     // root resolves inside the project without an explicit set_directory.
-    CHECK(loaded.value().resolved_asset_root() == dir.str() + "/assets");
+    CHECK(loaded.value().resolved_asset_root() == under(dir.str(), "assets"));
 }
 
 TEST_CASE("loading a missing project file returns an error") {
@@ -172,7 +187,7 @@ TEST_CASE("opening a project indexes its asset root for the browser and GUIDs") 
     CHECK(context.project().name() == "Index");
     // The asset root was resolved and indexed: this is the effect that makes the
     // browser and GUID references agree.
-    CHECK(context.project_root() == dir.str() + "/assets");
+    CHECK(context.project_root() == under(dir.str(), "assets"));
     CHECK(resources.assets().asset_count() == 1);
 }
 
