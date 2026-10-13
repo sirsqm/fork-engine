@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/core/Error.h"
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
+#include "fe/physics2d/JointSolver.h"
 #include "fe/systems/System.h"
 
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace fe {
@@ -18,6 +21,8 @@ class Scene;
 namespace physics2d {
 
 class Collider2D;
+class DistanceJoint2D;
+class RevoluteJoint2D;
 class RigidBody2D;
 
 // Whether a contact event reports a contact that has just appeared or one that
@@ -92,6 +97,28 @@ public:
     [[nodiscard]] const std::vector<ContactEvent>& contact_events() const noexcept { return events_; }
     [[nodiscard]] usize contact_event_count() const noexcept { return events_.size(); }
 
+    // --- Joints ------------------------------------------------------------
+
+    // Number of joints solved in the most recent update: distance joints that
+    // were applied plus revolute joints that were applied (each revolute joint
+    // counts once, not once per row). A joint that could not be solved -- a nil
+    // body reference, a body that is not in the scene, a body with no rigid
+    // body, or a pair the solver cannot constrain -- is not counted and records
+    // a diagnostic instead.
+    [[nodiscard]] usize joint_count() const noexcept { return joints_solved_; }
+
+    // A diagnostic for the most recent update: the joints that were skipped,
+    // with the reason. Empty on a clean step. This is how a joint with a dead
+    // or missing body surfaces to the caller instead of failing silently, and
+    // how the editor can flag a broken constraint.
+    struct JointDiagnostic {
+        std::string_view type;
+        Uuid body_a{};
+        Uuid body_b{};
+        Error error;
+    };
+    [[nodiscard]] const std::vector<JointDiagnostic>& joint_diagnostics() const noexcept { return joint_diagnostics_; }
+
 private:
     // One simulated node, flattened out of the scene for the duration of the
     // update so the solver works on a contiguous array.
@@ -145,6 +172,28 @@ private:
     void reconcile_contacts(Scene& scene);
     void append_event(ContactPhase phase, const BodyPair& pair, Scene& scene);
 
+    // One joint flattened out of the scene for the duration of the update. Both
+    // ends are resolved to nodes up front; a nil, missing, or self-referential
+    // reference leaves one null and the joint is skipped with a diagnostic.
+    struct Joint {
+        DistanceJoint2D* distance = nullptr;
+        RevoluteJoint2D* revolute = nullptr;
+        Node* a = nullptr;
+        Node* b = nullptr;
+    };
+
+    // Solves every joint in the scene once. Runs after the contact pass has
+    // written back, so it reads each end's current transform and velocity fresh
+    // and a joint correction is the last word on position -- which is what keeps
+    // a pinned body pinned even while it also rests on a collider. A joint end
+    // may be any node: it does not need a collider, so a pendulum can hang from
+    // a bare pivot node.
+    void solve_joints(Scene& scene, f32 delta_time);
+
+    // Records a skipped joint with its reason, so a broken reference is visible
+    // rather than silent. Never throws and never mutates the world.
+    void note_joint_skipped(std::string_view type, const Uuid& body_a, const Uuid& body_b, Error error);
+
     std::vector<Body> bodies_;
     usize contacts_ = 0;
 
@@ -152,6 +201,14 @@ private:
     std::vector<BodyPair> active_pairs_;
     std::vector<BodyPair> previous_pairs_;
     std::vector<ContactEvent> events_;
+
+    // Joints, rebuilt each update from the scene.
+    std::vector<Joint> joints_;
+    usize joints_solved_ = 0;
+    std::vector<JointDiagnostic> joint_diagnostics_;
+    // Maps a node id to its node so a joint can resolve either end in O(1)
+    // instead of scanning. Rebuilt each update.
+    std::unordered_map<Uuid, Node*> node_index_;
 };
 
 } // namespace physics2d

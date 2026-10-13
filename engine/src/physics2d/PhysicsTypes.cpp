@@ -3,6 +3,8 @@
 #include "fe/physics2d/PhysicsTypes.h"
 
 #include "fe/physics2d/Collider2D.h"
+#include "fe/physics2d/DistanceJoint2D.h"
+#include "fe/physics2d/RevoluteJoint2D.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/reflect/PropertyBuilders.h"
 #include "fe/reflect/Registry.h"
@@ -93,12 +95,91 @@ void register_rigid_body2d(Registry& registry) {
     registry.register_type(std::move(desc));
 }
 
+// A body reference: a node id, stored as a Uuid. The default is a nil id, which
+// the solver treats as "unset" and skips, so a freshly created joint is inert
+// until it is pointed at two bodies.
+Property make_body_ref_property(std::string name, Uuid physics2d::DistanceJoint2D::* field) {
+    Property property;
+    property.name = std::move(name);
+    property.value_kind = ValueKind::Uuid;
+    property.getter = [field](const void* object) -> Value {
+        return static_cast<const physics2d::DistanceJoint2D*>(object)->*field;
+    };
+    property.setter = [field](void* object, const Value& value) -> bool {
+        const auto* as_id = std::get_if<Uuid>(&value);
+        if (as_id == nullptr) {
+            return false;
+        }
+        static_cast<physics2d::DistanceJoint2D*>(object)->*field = *as_id;
+        return true;
+    };
+    property.default_value = Uuid{};
+    return property;
+}
+
+Property make_body_ref_property(std::string name, Uuid physics2d::RevoluteJoint2D::* field) {
+    Property property;
+    property.name = std::move(name);
+    property.value_kind = ValueKind::Uuid;
+    property.getter = [field](const void* object) -> Value {
+        return static_cast<const physics2d::RevoluteJoint2D*>(object)->*field;
+    };
+    property.setter = [field](void* object, const Value& value) -> bool {
+        const auto* as_id = std::get_if<Uuid>(&value);
+        if (as_id == nullptr) {
+            return false;
+        }
+        static_cast<physics2d::RevoluteJoint2D*>(object)->*field = *as_id;
+        return true;
+    };
+    property.default_value = Uuid{};
+    return property;
+}
+
+void register_distance_joint2d(Registry& registry) {
+    physics2d::DistanceJoint2D defaults;
+
+    TypeDesc desc;
+    desc.name = physics2d::DistanceJoint2D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics2d::DistanceJoint2D>()); };
+
+    desc.properties.push_back(make_body_ref_property("body_a", &physics2d::DistanceJoint2D::body_a));
+    desc.properties.push_back(make_body_ref_property("body_b", &physics2d::DistanceJoint2D::body_b));
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
+        "rest_length", &physics2d::DistanceJoint2D::rest_length, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
+        "stiffness", &physics2d::DistanceJoint2D::stiffness, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
+        "damping", &physics2d::DistanceJoint2D::damping, ValueKind::Float, &defaults));
+
+    registry.register_type(std::move(desc));
+}
+
+void register_revolute_joint2d(Registry& registry) {
+    physics2d::RevoluteJoint2D defaults;
+
+    TypeDesc desc;
+    desc.name = physics2d::RevoluteJoint2D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics2d::RevoluteJoint2D>()); };
+
+    desc.properties.push_back(make_body_ref_property("body_a", &physics2d::RevoluteJoint2D::body_a));
+    desc.properties.push_back(make_body_ref_property("body_b", &physics2d::RevoluteJoint2D::body_b));
+    desc.properties.push_back(make_vector_group<physics2d::RevoluteJoint2D, Vec2>(
+        "anchor_a", &physics2d::RevoluteJoint2D::anchor_a, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_vector_group<physics2d::RevoluteJoint2D, Vec2>(
+        "anchor_b", &physics2d::RevoluteJoint2D::anchor_b, "Vec2", {"x", "y"}));
+
+    registry.register_type(std::move(desc));
+}
+
 } // namespace
 
 void register_physics_types() {
     Registry& registry = Registry::instance();
     register_collider2d(registry);
     register_rigid_body2d(registry);
+    register_distance_joint2d(registry);
+    register_revolute_joint2d(registry);
 }
 
 } // namespace fe::reflect

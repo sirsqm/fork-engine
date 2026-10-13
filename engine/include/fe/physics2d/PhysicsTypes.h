@@ -4,8 +4,8 @@
 
 namespace fe::reflect {
 
-// Registers the physics2d component types (Collider2D, RigidBody2D) with the
-// reflection registry.
+// Registers the physics2d component types (Collider2D, RigidBody2D,
+// DistanceJoint2D, RevoluteJoint2D) with the reflection registry.
 //
 // Kept separate from register_builtin_types() so that the reflection layer does
 // not have to depend on the physics module. The engine calls both during
