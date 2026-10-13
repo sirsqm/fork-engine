@@ -123,4 +123,8 @@ if(FE_BUILD_TESTS)
     FetchContent_MakeAvailable(doctest)
     set(FE_DOCTEST_TARGET doctest::doctest)
   endif()
+
+  # doctest is a header-only dependency included from our test translation
+  # units; treat its headers as external so they never warn (MSVC C5285).
+  fe_mark_system(${FE_DOCTEST_TARGET})
 endif()
