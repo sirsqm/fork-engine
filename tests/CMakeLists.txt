@@ -20,6 +20,7 @@ add_executable(fork_engine_tests
     src/test_reflect.cpp
     src/test_systems.cpp
     src/test_physics2d.cpp
+    src/test_broadphase.cpp
     src/test_mesh.cpp
     src/test_scene3d.cpp
     src/test_audio.cpp
