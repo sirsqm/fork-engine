@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #include "fe/core/Profiler.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <string>
 
 namespace fe {
@@ -96,9 +98,9 @@ Result<void> Profiler::end_frame() {
     return Result<void>{};
 }
 
-u32 Profiler::begin_scope(std::string_view name) noexcept {
-    if (!in_frame_) {
-        return kInvalidIndex;
+u32 Profiler::begin_scope(std::string_view name, u64 generation) noexcept {
+    if (!in_frame_ || generation != frame_generation_) {
+        return kInvalidIndex; // no frame, or the caller belongs to a different one
     }
 
     FrameSample& sample = frames_[write_index_];
@@ -250,6 +252,127 @@ Result<i64> Profiler::counter_value(std::string_view name, usize frame_offset) c
         }
     }
     return Error("profiler: counter '" + std::string(name) + "' is not present in that frame");
+}
+
+Result<FrameReport> Profiler::frame_report(usize frame_offset) const {
+    const FrameSample* frame = frame_from_latest(frame_offset);
+    if (frame == nullptr) {
+        return Error("profiler: frame offset is out of range");
+    }
+
+    FrameReport report;
+    report.total_ms = frame->end_ms - frame->begin_ms;
+    if (report.total_ms < 0.0) {
+        report.total_ms = 0.0;
+    }
+    report.sample_count = frame->scope_count;
+    report.dropped_scopes = frame->dropped_scopes;
+    report.dropped_counters = frame->dropped_counters;
+
+    // Fold every sample into its name's aggregate, in first-seen order. The
+    // sample count per frame is bounded (kMaxScopesPerFrame), so this is a short
+    // O(n^2) over distinct names, not a per-frame hot path -- it runs when a
+    // caller asks for a report, not while recording.
+    for (u32 i = 0; i < frame->scope_count; ++i) {
+        const ScopeSample& sample = frame->scopes[i];
+        const std::string_view name = name_of(sample.name);
+        if (name.empty()) {
+            continue;
+        }
+        ScopeAggregate* slot = nullptr;
+        for (u32 j = 0; j < report.scope_count; ++j) {
+            if (report.scopes[j].name == name) {
+                slot = &report.scopes[j];
+                break;
+            }
+        }
+        if (slot == nullptr) {
+            if (report.scope_count >= FrameReport::kMaxAggregates) {
+                ++report.dropped_names;
+                continue;
+            }
+            slot = &report.scopes[report.scope_count++];
+            slot->name.assign(name);
+        }
+        slot->total_ms += sample.duration_ms;
+        ++slot->count;
+    }
+
+    // The two regions the runtime brackets, pulled out of the breakdown for the
+    // summary line. Absent when the caller did not instrument them.
+    for (u32 i = 0; i < report.scope_count; ++i) {
+        if (report.scopes[i].name == "frame/update") {
+            report.update_ms = report.scopes[i].total_ms;
+        } else if (report.scopes[i].name == "frame/render") {
+            report.render_ms = report.scopes[i].total_ms;
+        }
+    }
+
+    // Biggest cost first, so a reader (or the editor panel) sees the hot spot at
+    // the top. Ties keep insertion order.
+    std::stable_sort(report.scopes.begin(), report.scopes.begin() + report.scope_count,
+                     [](const ScopeAggregate& a, const ScopeAggregate& b) { return a.total_ms > b.total_ms; });
+
+    for (u32 i = 0; i < frame->counter_count && report.counter_count < FrameReport::kMaxCounters; ++i) {
+        const CounterSample& counter = frame->counters[i];
+        const std::string_view name = name_of(counter.name);
+        if (name.empty()) {
+            continue;
+        }
+        report.counters[report.counter_count].name.assign(name);
+        report.counters[report.counter_count].value = counter.value;
+        ++report.counter_count;
+    }
+
+    return report;
+}
+
+namespace {
+
+// Fixed-precision milliseconds with a trailing "ms", without pulling in
+// <sstream> or <format> for one call site.
+std::string format_ms(f64 value) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%.3fms", value);
+    return std::string(buffer);
+}
+
+} // namespace
+
+std::string FrameReport::summary() const {
+    std::string out = "frame ";
+    out += format_ms(total_ms);
+    out += " | update ";
+    out += format_ms(update_ms);
+    out += " | render ";
+    out += format_ms(render_ms);
+    out += " | " + std::to_string(sample_count) + " scopes | " + std::to_string(counter_count) + " counters";
+    if (dropped_scopes > 0 || dropped_counters > 0) {
+        out += " | dropped " + std::to_string(dropped_scopes) + " scopes, " + std::to_string(dropped_counters) +
+               " counters";
+    }
+    return out;
+}
+
+std::string FrameReport::to_string() const {
+    std::string out = summary();
+    out += '\n';
+    for (u32 i = 0; i < scope_count; ++i) {
+        out += "  ";
+        out += scopes[i].name;
+        out += ' ';
+        out += format_ms(scopes[i].total_ms);
+        if (scopes[i].count > 1) {
+            out += " (x" + std::to_string(scopes[i].count) + ")";
+        }
+        out += '\n';
+    }
+    for (u32 i = 0; i < counter_count; ++i) {
+        out += "  #";
+        out += counters[i].name;
+        out += " = " + std::to_string(counters[i].value) + '\n';
+    }
+    return out;
 }
 
 } // namespace fe
