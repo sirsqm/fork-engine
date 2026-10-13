@@ -103,8 +103,12 @@ needed a concrete mechanism before gameplay could grow. See
 - [x] 2D joints: distance and revolute constraints solved by the same
       sequential-impulse loop as contacts, with node-id body references that
       serialize — see [ADR-0021](adr/0021-physics2d-joints.md)
+- [x] A uniform-grid (spatial hash) broad phase: candidate pairs are found once
+      per step instead of once per iteration, so a step is O(candidates *
+      iterations) rather than O(bodies² * iterations) — see
+      [ADR-0023](adr/0023-physics2d-broadphase.md)
 - [ ] 2D physics refinements: collider offsets, oriented-box colliders,
-      continuous collision detection, sleeping, a spatial partition
+      continuous collision detection, sleeping
 - [ ] 3D physics
 - [ ] Integration with the scene and the editor
 - [ ] Debug drawing
