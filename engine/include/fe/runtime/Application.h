@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/core/Profiler.h"
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Scene.h"
 #include "fe/systems/SceneSchedule.h"
@@ -51,6 +52,28 @@ public:
 
     [[nodiscard]] bool headless() const noexcept { return headless_; }
 
+    // --- Profiling ---------------------------------------------------------
+    // The application's profiler. The frame loop installs it as the thread's
+    // current profiler for the duration of each frame and brackets the frame,
+    // the update phase (hooks + systems), and the render phase with named
+    // scopes, so a frame's breakdown is recorded without the caller adding a
+    // macro. Systems are timed individually by the schedule ("system/<name>").
+    //
+    // Recording is cheap and allocation-free; it is on by default. Call
+    // set_profiling(false) to skip begin_frame()/end_frame() and pay only the
+    // (idle) scope checks -- useful when a host wants zero profiler activity.
+    [[nodiscard]] Profiler& profiler() noexcept { return profiler_; }
+    [[nodiscard]] const Profiler& profiler() const noexcept { return profiler_; }
+
+    void set_profiling(bool enabled) noexcept { profiling_enabled_ = enabled; }
+    [[nodiscard]] bool profiling_enabled() const noexcept { return profiling_enabled_; }
+
+    // A snapshot of the most recent completed frame, or an error when the frame
+    // loop has not completed a frame yet (or profiling is disabled). This is the
+    // read-only surface a test, a log, or the editor reads; it does not expose
+    // the ring.
+    [[nodiscard]] Result<FrameReport> last_frame_report(usize frame_offset = 0) const;
+
     // A headless run initialises the engine, runs a fixed number of frames, and
     // exits without presenting. Used by automated tests and CI, where there is
     // no display. Frame count 0 means "run until the window closes".
@@ -88,6 +111,8 @@ private:
     Engine::Config config_;
     Scene scene_;
     SceneSchedule schedule_;
+    Profiler profiler_;
+    bool profiling_enabled_ = true;
     bool exit_requested_ = false;
     bool headless_ = false;
     u32 headless_frames_ = 0;
