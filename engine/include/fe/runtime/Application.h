@@ -4,6 +4,7 @@
 
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Scene.h"
+#include "fe/systems/SceneSchedule.h"
 
 #include <string>
 
@@ -39,6 +40,14 @@ public:
     [[nodiscard]] Engine& engine() noexcept { return engine_; }
     [[nodiscard]] Scene& scene() noexcept { return scene_; }
     [[nodiscard]] const Scene& scene() const noexcept { return scene_; }
+
+    // The systems run once per frame, in registration order, after on_update()
+    // and before rendering. A subclass adds its systems here -- typically in
+    // on_start() -- and the base class drives them. The editor pairs a schedule
+    // with its own scene the same way, which is what lets play-in-editor run the
+    // user's systems through the identical path.
+    [[nodiscard]] SceneSchedule& schedule() noexcept { return schedule_; }
+    [[nodiscard]] const SceneSchedule& schedule() const noexcept { return schedule_; }
 
     [[nodiscard]] bool headless() const noexcept { return headless_; }
 
@@ -78,6 +87,7 @@ private:
     Engine engine_;
     Engine::Config config_;
     Scene scene_;
+    SceneSchedule schedule_;
     bool exit_requested_ = false;
     bool headless_ = false;
     u32 headless_frames_ = 0;

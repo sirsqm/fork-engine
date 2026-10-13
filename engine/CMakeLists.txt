@@ -9,6 +9,7 @@
 #   core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
 #   core  <-  reflect  <-  scene, resources
 #   core  <-  serialization  <-  scene, resources, reflect
+#   core, scene, resources  <-  systems
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 
@@ -30,6 +31,9 @@ set(FE_ENGINE_SOURCES
     src/scene/Components.cpp
     src/reflect/Registry.cpp
     src/reflect/ComponentTypes.cpp
+    src/systems/System.cpp
+    src/systems/SceneSchedule.cpp
+    src/systems/SpriteAnimationSystem.cpp
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/renderer2d/Renderer2D.cpp
