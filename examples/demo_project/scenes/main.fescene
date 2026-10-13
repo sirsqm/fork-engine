@@ -1,0 +1,41 @@
+{
+  "format": "fork_scene",
+  "format_version": 2,
+  "name": "Main",
+  "roots": [
+    {
+      "name": "Background",
+      "type": "Node",
+      "transform": {
+        "position": [640.0, 360.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "components": [
+        {
+          "type": "Sprite2D",
+          "texture": "tex:assets/textures/checker.png",
+          "size": [256.0, 256.0],
+          "color": [1.0, 1.0, 1.0, 1.0]
+        }
+      ]
+    },
+    {
+      "name": "Hero",
+      "type": "Node",
+      "transform": {
+        "position": [640.0, 360.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "components": [
+        {
+          "type": "Sprite2D",
+          "texture": "tex:assets/textures/checker.png",
+          "size": [128.0, 128.0],
+          "color": [1.0, 0.6, 0.2, 1.0]
+        }
+      ]
+    }
+  ]
+}
