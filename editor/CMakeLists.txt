@@ -22,6 +22,7 @@ add_library(fork_editor_core STATIC
     src/EditorContext.cpp
     src/PlaySession.cpp
     src/PropertyEditor.cpp
+    src/Viewport.cpp
 )
 add_library(FE::editor_core ALIAS fork_editor_core)
 
@@ -41,6 +42,7 @@ add_library(fork_editor STATIC
     src/HierarchyPanel.cpp
     src/PlayPanel.cpp
     src/InspectorPanel.cpp
+    src/ViewportPanel.cpp
 )
 add_library(FE::editor ALIAS fork_editor)
 

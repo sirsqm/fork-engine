@@ -5,11 +5,14 @@
 #include "fe/core/Types.h"
 #include "fe/editor/EditorContext.h"
 #include "fe/editor/EditorUi.h"
+#include "fe/rhi/Types.h"
 #include "fe/runtime/Engine.h"
 
 #include <string>
 
 namespace fe::editor {
+
+class ViewportPanel;
 
 // The editor host: an embedded `Engine`, the document, and the ImGui UI, wired
 // into one loop.
@@ -71,6 +74,12 @@ public:
     [[nodiscard]] EditorContext& context() noexcept { return context_; }
     [[nodiscard]] Engine& engine() noexcept { return engine_; }
 
+    // The viewport's off-screen render target after at least one frame, or null
+    // before the first draw or if the viewport failed to allocate. Exposed for
+    // the end-to-end test, which asserts the editor really renders the scene into
+    // a panel-sized target rather than only the window.
+    [[nodiscard]] rhi::RenderTarget* viewport_target() const noexcept;
+
 private:
     // Consumes a pending play request from the UI and performs it against the
     // embedded engine.
@@ -84,6 +93,9 @@ private:
     Engine engine_;
     EditorContext context_;
     EditorUi ui_;
+    // Borrowed from the panel set owned by `ui_`; used to release the viewport's
+    // GPU target before the device shuts down.
+    ViewportPanel* viewport_panel_ = nullptr;
     bool initialized_ = false;
     u32 frame_ = 0;
 };

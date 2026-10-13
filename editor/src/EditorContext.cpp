@@ -7,6 +7,7 @@
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene/SpriteAnimator.h"
 #include "fe/serialization/SceneSerializer.h"
 
 #include <memory>
@@ -52,6 +53,20 @@ void copy_sprite(const Node& source_node, Node& destination_node) {
     destination->texture = source->texture;
 }
 
+void copy_animator(const Node& source_node, Node& destination_node) {
+    const auto* source = source_node.get_component<SpriteAnimator>();
+    if (source == nullptr) {
+        return;
+    }
+    auto* destination = destination_node.add_component<SpriteAnimator>();
+    destination->frames_x = source->frames_x;
+    destination->frames_y = source->frames_y;
+    destination->fps = source->fps;
+    destination->playing = source->playing;
+    destination->loop = source->loop;
+    destination->current_frame = source->current_frame;
+}
+
 } // namespace
 
 EditorContext::EditorContext() = default;
@@ -59,6 +74,7 @@ EditorContext::EditorContext() = default;
 void EditorContext::register_default_component_factories() {
     play_.register_component_factory(Camera2D::kTypeName, copy_camera);
     play_.register_component_factory(Sprite2D::kTypeName, copy_sprite);
+    play_.register_component_factory(SpriteAnimator::kTypeName, copy_animator);
 }
 
 Error EditorContext::new_scene(ResourceManager* resources) {

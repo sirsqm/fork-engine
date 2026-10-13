@@ -73,6 +73,11 @@ public:
 private:
     void draw_dock_space(unsigned int dockspace_id);
 
+    // The top menu bar: play/stop control and the scene's identity. Kept here
+    // rather than in a panel so it is always visible regardless of the dock
+    // layout, the way a real editor's transport bar is.
+    void draw_toolbar(EditorContext& context);
+
     bool initialized_ = false;
     std::vector<std::unique_ptr<Panel>> panels_;
     // Set once the default dock layout has been applied, so a user's rearranged

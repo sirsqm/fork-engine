@@ -5,8 +5,17 @@
 #include "fe/core/Log.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
+#include "fe/systems/SpriteAnimationSystem.h"
 
 namespace fe::editor {
+
+void PlaySession::register_default_systems() {
+    // Idempotent: leave any systems a caller already registered (including ones
+    // the editor added) in place, and only add the defaults that are missing.
+    if (schedule_.find("SpriteAnimationSystem") == nullptr) {
+        schedule_.add_system<SpriteAnimationSystem>();
+    }
+}
 
 void PlaySession::register_component_factory(std::string type_name, ComponentFactory factory) {
     for (auto& entry : factories_) {
@@ -80,6 +89,10 @@ Error PlaySession::start(const Scene& authored_scene) {
                     last_copy_warning_.c_str());
     }
 
+    // Make play exercise real gameplay: register the default systems so the
+    // schedule runs over the play scene each tick.
+    register_default_systems();
+
     frames_played_ = 0;
     last_sprite_count_ = 0;
     play_time_ = 0.0;
@@ -95,6 +108,17 @@ Result<usize> PlaySession::tick(Engine& engine) {
 
     engine.tick();
     play_time_ = engine.elapsed_time();
+
+    // Run gameplay before rendering: the systems advance component state (an
+    // animator's current cell, and the UVs it writes to its sprite), and the
+    // renderer then draws the world the systems produced. This is the same
+    // Scene + SceneSchedule pairing `Application` uses, so play-in-editor is not
+    // a second execution path.
+    FrameContext frame;
+    frame.delta_time = engine.delta_time();
+    frame.elapsed_time = engine.elapsed_time();
+    frame.resources = &engine.resources();
+    schedule_.update(frame, play_scene_);
 
     const u32 width = engine.window().framebuffer_width();
     const u32 height = engine.window().framebuffer_height();

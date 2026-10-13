@@ -338,8 +338,8 @@ never back. It is built as three targets:
 
 | Target | Responsibility | Depends on |
 | --- | --- | --- |
-| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`), and the headless property helpers (`PropertyEditor`). No toolkit, no window. | `fork_engine` |
-| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, play-in-editor (`PlaySession`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
+| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
 | `fork_editor_shell` | The executable entry point. | `fork_editor` |
 
 The split exists so the editable, testable logic has no UI dependency: the
@@ -350,9 +350,22 @@ logic. The UI toolkit choice and its consequences are recorded in
 
 Play-in-editor copies the authored scene into a play scene, drives frames of the
 copy through the embedded `Engine`, and discards the copy when play stops, so
-playing can never mutate what the user is editing. Panel-to-host actions are a
-one-shot request (`PlayRequest`) rather than a direct call, which keeps the
-panels free of the engine.
+playing can never mutate what the user is editing. Each tick the session runs a
+`SceneSchedule` over the play scene - the same `Scene + SceneSchedule` pairing
+`Application` uses (ADR-0008) - so play exercises real gameplay (at least
+`SpriteAnimationSystem`) through the identical execution path. Panel-to-host
+actions are a one-shot request (`PlayRequest`) rather than a direct call, which
+keeps the panels free of the engine.
+
+The viewport renders the scene into an off-screen `rhi::RenderTarget` sized to
+the panel, then shows the target's colour texture as an `ImGui::Image`. This
+reuses the runtime's own `Renderer2D` and `Camera2D` rather than a second render
+path, and is why the RHI grew render targets. Showing a backend texture inside
+the toolkit needs an interop identifier, which `rhi::Texture::native_handle()`
+provides as a deliberately narrow escape hatch. Camera pan/zoom and node picking
+live in the headless `Viewport` (screen/world transforms and a smallest-quad
+hit-test), so the interaction is unit-testable without a window; `ViewportPanel`
+is its thin toolkit projection.
 
 The inspector is driven entirely by the reflection registry
 ([ADR-0006](adr/0006-component-reflection.md)): for the selected node it looks
@@ -365,8 +378,7 @@ crashing, and resource references are resolved through the document's
 editable). Text widgets need a buffer that outlives the frame, so the panel
 holds that scratch state.
 
-Still to come under M2: an in-panel 2D viewport, the asset browser, undo/redo,
-and project settings.
+Still to come under M2: the asset browser, undo/redo, and project settings.
 
 ## 9. Scripting (planned)
 
@@ -400,8 +412,8 @@ not a rewrite.
   because both need a context.
 - **Editor tests** (`fork_editor_tests`) cover the headless editor logic: the
   hierarchy view model, the document, the play-scene copy, the command stack,
-  and the property helpers. They link `fork_editor_core` only, never the UI
-  toolkit.
+  the property helpers, and the viewport's camera maths and picking. They link
+  `fork_editor_core` only, never the UI toolkit.
 - Tests exercise real code paths. Mocks are avoided; where one is used, it is
   justified in the pull request.
 
@@ -416,8 +428,8 @@ Every milestone must build and pass its tests before the next one begins.
   dynamics, collider offsets, joints, continuous collision detection, sleeping,
   and a spatial partition (see [ADR-0009](adr/0009-physics2d-system.md)).
 - Audio, tilemaps, particles, animation clips and state machines.
-- The editor's viewport, asset browser, undo/redo, and project settings (the
-  editor shell, hierarchy, inspector, and play-in-editor exist; see section 8).
+- The editor's asset browser, undo/redo, and project settings (the editor shell,
+  hierarchy, inspector, 2D viewport, and play-in-editor exist; see section 8).
 - Scripting.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread).

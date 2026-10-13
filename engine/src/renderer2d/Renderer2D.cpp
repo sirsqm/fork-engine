@@ -177,6 +177,13 @@ const Camera2D* Renderer2D::find_active_camera(const Scene& scene) {
     return found != nullptr ? found : fallback;
 }
 
+Camera2D* Renderer2D::find_active_camera(Scene& scene) {
+    // Same rule as the const overload, expressed once. `const_cast` on the
+    // result is safe because the lookup only reads the scene to locate a node;
+    // it never mutates anything through the const path.
+    return const_cast<Camera2D*>(find_active_camera(static_cast<const Scene&>(scene)));
+}
+
 void Renderer2D::append_quad(const Sprite2D& sprite, const Mat4& world, const Vec2& size, const Vec2& pivot_offset) {
     const u32 base = static_cast<u32>(vertices_.size());
 
