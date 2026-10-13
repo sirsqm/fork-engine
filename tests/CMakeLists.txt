@@ -18,6 +18,8 @@ add_executable(fork_engine_tests
     src/test_reflect.cpp
     src/test_systems.cpp
     src/test_physics2d.cpp
+    src/test_mesh.cpp
+    src/test_scene3d.cpp
     src/test_resource_manager.cpp
     src/test_version.cpp
 )
@@ -33,6 +35,7 @@ add_test(NAME engine_tests COMMAND fork_engine_tests)
 add_executable(fork_graphics_tests
     src/graphics_main.cpp
     src/test_renderer2d.cpp
+    src/test_renderer3d.cpp
 )
 target_link_libraries(fork_graphics_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_graphics_tests PRIVATE cxx_std_20)

@@ -222,7 +222,110 @@ struct Mat4 {
 
     [[nodiscard]] constexpr f32& at(usize row, usize col) noexcept { return m[col * 4 + row]; }
     [[nodiscard]] constexpr f32 at(usize row, usize col) const noexcept { return m[col * 4 + row]; }
+
+    // The transpose. For a pure rotation this is the inverse, which is the
+    // cheap way to invert a view matrix built from an orthonormal basis.
+    [[nodiscard]] constexpr Mat4 transposed() const noexcept {
+        Mat4 r;
+        for (usize col = 0; col < 4; ++col) {
+            for (usize row = 0; row < 4; ++row) {
+                r.at(row, col) = at(col, row);
+            }
+        }
+        return r;
+    }
 };
+
+// Right-handed perspective projection with depth in [-1, 1] (the OpenGL
+// convention). `fov_y_radians` is the vertical field of view; `aspect` is
+// width / height. Maps the camera's -Z direction into the view volume.
+[[nodiscard]] inline Mat4 perspective(f32 fov_y_radians, f32 aspect, f32 near_plane, f32 far_plane) noexcept {
+    const f32 f = 1.0f / std::tan(fov_y_radians * 0.5f);
+    Mat4 r;
+    r.at(0, 0) = f / aspect;
+    r.at(1, 1) = f;
+    r.at(2, 2) = (far_plane + near_plane) / (near_plane - far_plane);
+    r.at(2, 3) = (2.0f * far_plane * near_plane) / (near_plane - far_plane);
+    r.at(3, 2) = -1.0f;
+    return r;
+}
+
+// Right-handed view matrix looking from `eye` towards `target`, with `up`
+// selecting the roll. The camera looks down its own -Z axis, matching
+// perspective() above.
+[[nodiscard]] inline Mat4 look_at(const Vec3& eye, const Vec3& target, const Vec3& up) noexcept {
+    const Vec3 forward = (target - eye).normalized();
+    const Vec3 right = forward.cross(up).normalized();
+    const Vec3 true_up = right.cross(forward);
+
+    Mat4 r = Mat4::identity();
+    r.at(0, 0) = right.x;
+    r.at(1, 0) = right.y;
+    r.at(2, 0) = right.z;
+    r.at(0, 1) = true_up.x;
+    r.at(1, 1) = true_up.y;
+    r.at(2, 1) = true_up.z;
+    r.at(0, 2) = -forward.x;
+    r.at(1, 2) = -forward.y;
+    r.at(2, 2) = -forward.z;
+    r.at(0, 3) = -right.dot(eye);
+    r.at(1, 3) = -true_up.dot(eye);
+    r.at(2, 3) = forward.dot(eye);
+    return r;
+}
+
+// The general 4x4 inverse, by cofactor expansion. Returns identity for a
+// singular matrix rather than producing NaNs, so a degenerate transform fails
+// visibly instead of poisoning every downstream vertex.
+[[nodiscard]] inline Mat4 inverse(const Mat4& mat) noexcept {
+    const f32* a = mat.m;
+    f32 inv[16];
+
+    inv[0] = a[5] * a[10] * a[15] - a[5] * a[11] * a[14] - a[9] * a[6] * a[15] + a[9] * a[7] * a[14] +
+             a[13] * a[6] * a[11] - a[13] * a[7] * a[10];
+    inv[4] = -a[4] * a[10] * a[15] + a[4] * a[11] * a[14] + a[8] * a[6] * a[15] - a[8] * a[7] * a[14] -
+             a[12] * a[6] * a[11] + a[12] * a[7] * a[10];
+    inv[8] = a[4] * a[9] * a[15] - a[4] * a[11] * a[13] - a[8] * a[5] * a[15] + a[8] * a[7] * a[13] +
+             a[12] * a[5] * a[11] - a[12] * a[7] * a[9];
+    inv[12] = -a[4] * a[9] * a[14] + a[4] * a[10] * a[13] + a[8] * a[5] * a[14] - a[8] * a[6] * a[13] -
+              a[12] * a[5] * a[10] + a[12] * a[6] * a[9];
+    inv[1] = -a[1] * a[10] * a[15] + a[1] * a[11] * a[14] + a[9] * a[2] * a[15] - a[9] * a[3] * a[14] -
+             a[13] * a[2] * a[11] + a[13] * a[3] * a[10];
+    inv[5] = a[0] * a[10] * a[15] - a[0] * a[11] * a[14] - a[8] * a[2] * a[15] + a[8] * a[3] * a[14] +
+             a[12] * a[2] * a[11] - a[12] * a[3] * a[10];
+    inv[9] = -a[0] * a[9] * a[15] + a[0] * a[11] * a[13] + a[8] * a[1] * a[15] - a[8] * a[3] * a[13] -
+             a[12] * a[1] * a[11] + a[12] * a[3] * a[9];
+    inv[13] = a[0] * a[9] * a[14] - a[0] * a[10] * a[13] - a[8] * a[1] * a[14] + a[8] * a[2] * a[13] +
+              a[12] * a[1] * a[10] - a[12] * a[2] * a[9];
+    inv[2] = a[1] * a[6] * a[15] - a[1] * a[7] * a[14] - a[5] * a[2] * a[15] + a[5] * a[3] * a[14] +
+             a[13] * a[2] * a[7] - a[13] * a[3] * a[6];
+    inv[6] = -a[0] * a[6] * a[15] + a[0] * a[7] * a[14] + a[4] * a[2] * a[15] - a[4] * a[3] * a[14] -
+             a[12] * a[2] * a[7] + a[12] * a[3] * a[6];
+    inv[10] = a[0] * a[5] * a[15] - a[0] * a[7] * a[13] - a[4] * a[1] * a[15] + a[4] * a[3] * a[13] +
+              a[12] * a[1] * a[7] - a[12] * a[3] * a[5];
+    inv[14] = -a[0] * a[5] * a[14] + a[0] * a[6] * a[13] + a[4] * a[1] * a[14] - a[4] * a[2] * a[13] -
+              a[12] * a[1] * a[6] + a[12] * a[2] * a[5];
+    inv[3] = -a[1] * a[6] * a[11] + a[1] * a[7] * a[10] + a[5] * a[2] * a[11] - a[5] * a[3] * a[10] -
+             a[9] * a[2] * a[7] + a[9] * a[3] * a[6];
+    inv[7] = a[0] * a[6] * a[11] - a[0] * a[7] * a[10] - a[4] * a[2] * a[11] + a[4] * a[3] * a[10] +
+             a[8] * a[2] * a[7] - a[8] * a[3] * a[6];
+    inv[11] = -a[0] * a[5] * a[11] + a[0] * a[7] * a[9] + a[4] * a[1] * a[11] - a[4] * a[3] * a[9] -
+              a[8] * a[1] * a[7] + a[8] * a[3] * a[5];
+    inv[15] = a[0] * a[5] * a[10] - a[0] * a[6] * a[9] - a[4] * a[1] * a[10] + a[4] * a[2] * a[9] + a[8] * a[1] * a[6] -
+              a[8] * a[2] * a[5];
+
+    f32 det = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
+    if (det == 0.0f) {
+        return Mat4::identity();
+    }
+    det = 1.0f / det;
+
+    Mat4 r;
+    for (usize i = 0; i < 16; ++i) {
+        r.m[i] = inv[i] * det;
+    }
+    return r;
+}
 
 // Matrix product `a * b`. Applying (a * b) to a vector is equivalent to
 // applying b first, then a.

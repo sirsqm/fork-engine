@@ -131,15 +131,17 @@ template <typename Class, typename FieldT>
     return property;
 }
 
-// A group over a fixed-size vector field (Vec2, Vec4), with one float member per
-// component. The vector must be standard-layout and hold only floats so that its
-// storage can be read as a float array; that is asserted, not assumed.
+// A group over a fixed-size vector field (Vec2, Vec3, Vec4), with one float
+// member per component. The vector must be standard-layout and hold only floats
+// so that its storage can be read as a float array; that is asserted, not
+// assumed.
 template <typename Class, typename VectorT>
 [[nodiscard]] Property make_vector_group(std::string name, VectorT Class::* field, std::string type_name,
                                          std::vector<std::string> component_names) {
     static_assert(std::is_standard_layout_v<VectorT>, "reflect vector groups require a standard-layout type");
-    static_assert(sizeof(VectorT) == sizeof(f32) * 2 || sizeof(VectorT) == sizeof(f32) * 4,
-                  "reflect vector groups support Vec2 and Vec4");
+    static_assert(sizeof(VectorT) == sizeof(f32) * 2 || sizeof(VectorT) == sizeof(f32) * 3 ||
+                      sizeof(VectorT) == sizeof(f32) * 4,
+                  "reflect vector groups support Vec2, Vec3 and Vec4");
 
     std::vector<Property> members;
     members.reserve(component_names.size());

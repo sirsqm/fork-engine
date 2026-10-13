@@ -63,7 +63,9 @@ needed a concrete mechanism before gameplay could grow. See
 
 ## M4 — 3D rendering
 
-- [ ] Meshes, materials, cameras, and a 3D renderer
+- [x] Meshes, materials, cameras, and a 3D renderer — the first lit pass; see
+      [ADR-0010](adr/0010-3d-rendering-foundation.md)
+- [x] A directional light
 - [ ] Directional, point, and spot lights
 - [ ] Shadow mapping
 - [ ] Spatial hierarchy and frustum culling
