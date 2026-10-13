@@ -11,6 +11,7 @@
 #   core  <-  serialization  <-  scene, resources, reflect
 #   core, scene, resources  <-  systems
 #   core, scene, systems, reflect  <-  physics2d
+#   core, scene, systems, resources  <-  audio
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 
@@ -43,6 +44,13 @@ set(FE_ENGINE_SOURCES
     src/mesh/ObjLoader.cpp
     src/scene3d/Camera3D.cpp
     src/scene3d/Scene3DTypes.cpp
+    src/audio/AudioDevice.cpp
+    src/audio/AudioMixer.cpp
+    src/audio/AudioSystem.cpp
+    src/audio/WavLoader.cpp
+    src/audio/AudioTypes.cpp
+    src/audio/AudioBackend.cpp
+    src/audio/MiniAudioDevice.cpp
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/renderer2d/Renderer2D.cpp
@@ -64,7 +72,7 @@ target_include_directories(
 target_link_libraries(
   fork_engine
   PUBLIC FE::glad ${FE_JSON_TARGET} FE::stb
-  PRIVATE ${FE_GLFW_TARGET} fe_warnings
+  PRIVATE ${FE_GLFW_TARGET} fe_warnings miniaudio
 )
 
 # The public headers must not leak GLFW. GLFW is a private implementation detail
