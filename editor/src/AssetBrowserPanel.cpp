@@ -45,6 +45,9 @@ void AssetBrowserPanel::draw(EditorContext& context) {
                 if (!entry.scheme.empty()) {
                     ImGui::TextDisabled("scheme: %s", entry.scheme.c_str());
                 }
+                if (!entry.settings_kind.empty()) {
+                    ImGui::TextDisabled("import: %s", entry.settings_kind.c_str());
+                }
                 ImGui::EndTooltip();
             }
 

@@ -223,3 +223,92 @@ TEST_CASE("resolve_reference upgrades a known path to a guid and leaves unknown 
     ResourceManager plain;
     CHECK(plain.resolve_reference("tex:assets/hero.fake") == "tex:assets/hero.fake");
 }
+
+namespace {
+
+// Records the import settings that were in scope for its load, so a test can
+// prove the manager scopes an asset's settings around the loader call.
+class SettingsProbeLoader final : public ResourceLoader {
+public:
+    explicit SettingsProbeLoader(int& load_counter) : counter_(&load_counter) {}
+
+    [[nodiscard]] std::string_view scheme() const noexcept override { return "tex"; }
+    [[nodiscard]] bool supports(std::string_view extension) const noexcept override { return extension == ".fake"; }
+
+    [[nodiscard]] Result<std::shared_ptr<Resource>> load(std::string_view path) override {
+        ++(*counter_);
+        if (const ImportSettings* current = manager_->current_import_settings(); current != nullptr) {
+            seen = *current;
+        } else {
+            seen = ImportSettings{};
+        }
+        return std::static_pointer_cast<Resource>(std::make_shared<FakeResource>(std::string(path), *counter_));
+    }
+
+    void set_manager(ResourceManager& manager) noexcept { manager_ = &manager; }
+
+    ImportSettings seen;
+
+private:
+    int* counter_;
+    ResourceManager* manager_ = nullptr;
+};
+
+} // namespace
+
+TEST_CASE("a guid load scopes the asset's import settings around the loader call") {
+    TempDir dir("scope_settings");
+    int load_count = 0;
+    ResourceManager manager;
+    auto probe = std::make_unique<SettingsProbeLoader>(load_count);
+    SettingsProbeLoader* probe_ptr = probe.get();
+    manager.register_loader(std::move(probe));
+    probe_ptr->set_manager(manager);
+
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/hero.fake"), "x"));
+    manager.assets().set_root(dir.str());
+    ImportSettings settings = ImportSettings::texture_defaults();
+    settings.filter = rhi::TextureFilter::Nearest;
+    auto imported = manager.assets().import("assets/hero.fake", "tex", settings);
+    REQUIRE(imported);
+
+    auto loaded = manager.load(to_reference(imported.value().id));
+    REQUIRE(loaded);
+    // The loader saw the asset's settings.
+    CHECK(probe_ptr->seen.kind == ImportSettings::Kind::Texture);
+    CHECK(probe_ptr->seen.filter == rhi::TextureFilter::Nearest);
+
+    // And the settings are cleared again once the load returns.
+    CHECK(manager.current_import_settings() == nullptr);
+}
+
+TEST_CASE("a path load honours the settings of a known asset, and a direct loader call sees none") {
+    TempDir dir("scope_path");
+    int load_count = 0;
+    ResourceManager manager;
+    auto probe = std::make_unique<SettingsProbeLoader>(load_count);
+    SettingsProbeLoader* probe_ptr = probe.get();
+    manager.register_loader(std::move(probe));
+    probe_ptr->set_manager(manager);
+
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/hero.fake"), "x"));
+    manager.assets().set_root(dir.str());
+    ImportSettings settings = ImportSettings::texture_defaults();
+    settings.wrap = rhi::TextureWrap::Repeat;
+    REQUIRE(manager.assets().import("assets/hero.fake", "tex", settings));
+
+    // A scheme-prefixed path resolves the same asset and sees its settings.
+    auto loaded = manager.load("tex:assets/hero.fake");
+    REQUIRE(loaded);
+    CHECK(probe_ptr->seen.wrap == rhi::TextureWrap::Repeat);
+    CHECK(manager.current_import_settings() == nullptr);
+
+    // A loader called directly, outside load(), has no settings in scope, so a
+    // loader that is invoked by hand (as a test or tool might) keeps its
+    // defaults rather than inheriting a stale asset's settings.
+    probe_ptr->seen = ImportSettings{};
+    auto direct = probe_ptr->load("assets/hero.fake");
+    REQUIRE(direct);
+    CHECK(probe_ptr->seen.kind == ImportSettings::Kind::Generic);
+    CHECK(probe_ptr->seen.is_default());
+}
