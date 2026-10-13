@@ -354,6 +354,7 @@ struct Options {
     std::string scene_to_load;
     std::string scene_to_save;
     std::string assets_root;
+    std::string cache_root;
     fe::LogLevel log_level = fe::LogLevel::Info;
 };
 
@@ -373,13 +374,15 @@ struct Options {
             options.scene_to_save = argv[++i];
         } else if (arg == "--assets" && i + 1 < argc) {
             options.assets_root = argv[++i];
+        } else if (arg == "--cache" && i + 1 < argc) {
+            options.cache_root = argv[++i];
         } else if (arg == "--verbose") {
             options.log_level = fe::LogLevel::Debug;
         } else if (arg == "--quiet") {
             options.log_level = fe::LogLevel::Warn;
         } else if (arg == "--help" || arg == "-h") {
             std::puts("usage: sandbox [--headless [frames]] [--scene PATH] [--save-scene PATH] [--assets DIR] "
-                      "[--verbose] [--quiet]");
+                      "[--cache DIR] [--verbose] [--quiet]");
             std::exit(0);
         }
     }
@@ -396,6 +399,7 @@ int main(int argc, char** argv) {
     config.window.width = 1280;
     config.window.height = 720;
     config.log_level = options.log_level;
+    config.cache_root = options.cache_root;
     if (options.headless) {
         // Keep the window hidden but still request a real GL context, so the
         // render path is identical to an interactive run.

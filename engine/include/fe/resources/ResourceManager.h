@@ -5,6 +5,7 @@
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
 #include "fe/resources/AssetDatabase.h"
+#include "fe/resources/ImportCache.h"
 #include "fe/resources/ImportSettings.h"
 #include "fe/resources/Resource.h"
 
@@ -65,6 +66,13 @@ public:
     [[nodiscard]] AssetDatabase& assets() noexcept { return assets_; }
     [[nodiscard]] const AssetDatabase& assets() const noexcept { return assets_; }
 
+    // The content-addressed import cache loaders may reuse. It is inert by
+    // default (no root), so a load behaves exactly as it did before the cache
+    // existed; a caller opts in by setting a root. See
+    // docs/adr/0029-import-cache.md.
+    [[nodiscard]] ImportCache& import_cache() noexcept { return import_cache_; }
+    [[nodiscard]] const ImportCache& import_cache() const noexcept { return import_cache_; }
+
     // The import settings in effect for the load currently running on this
     // thread, or nullptr when the load was not initiated by load() (a direct
     // loader call) or the asset has none.
@@ -114,6 +122,7 @@ private:
     std::vector<std::unique_ptr<ResourceLoader>> loaders_;
     std::unordered_map<std::string, CacheEntry> cache_;
     AssetDatabase assets_;
+    ImportCache import_cache_;
     // The settings for the load currently running, or nullptr. Set and cleared
     // around each loader call in load_file(); see current_import_settings().
     const ImportSettings* current_settings_ = nullptr;
