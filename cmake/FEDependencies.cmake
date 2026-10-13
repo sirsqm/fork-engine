@@ -172,14 +172,17 @@ add_library(fe_imgui STATIC
     "${FE_IMGUI_SOURCE_DIR}/imgui_tables.cpp"
     "${FE_IMGUI_SOURCE_DIR}/imgui_widgets.cpp"
     "${FE_IMGUI_SOURCE_DIR}/imgui_demo.cpp"
+    "${FE_IMGUI_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp"
     "${FE_IMGUI_SOURCE_DIR}/backends/imgui_impl_glfw.cpp"
     "${FE_IMGUI_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp"
 )
 add_library(FE::imgui ALIAS fe_imgui)
 
+# misc/cpp is added so std::string text widgets (imgui_stdlib.h) are available
+# to the panels.
 target_include_directories(
   fe_imgui
-  SYSTEM PUBLIC "${FE_IMGUI_SOURCE_DIR}" "${FE_IMGUI_SOURCE_DIR}/backends"
+  SYSTEM PUBLIC "${FE_IMGUI_SOURCE_DIR}" "${FE_IMGUI_SOURCE_DIR}/backends" "${FE_IMGUI_SOURCE_DIR}/misc/cpp"
 )
 target_compile_definitions(fe_imgui PUBLIC GLFW_INCLUDE_NONE)
 target_link_libraries(fe_imgui PUBLIC ${FE_GLFW_TARGET})

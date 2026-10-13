@@ -45,8 +45,27 @@ public:
     EditorHost(const EditorHost&) = delete;
     EditorHost& operator=(const EditorHost&) = delete;
 
-    // Runs until the window closes. Returns the process exit code (0 on a clean
-    // run). Never throws.
+    // Brings up the embedded engine, the document, and the UI, and registers the
+    // panels. Returns an Error describing the first failure; a failed call
+    // leaves the host shutdown-safe (calling shutdown() is still valid).
+    [[nodiscard]] Error initialize();
+
+    // Runs exactly one frame: poll events, consume a play request, draw the
+    // scene, draw the panels, present. Requires initialize() to have succeeded.
+    void step();
+
+    // True when the window has been asked to close, i.e. the loop in run()
+    // should stop.
+    [[nodiscard]] bool should_close() const;
+
+    // Releases the UI, the document, and the engine in the order their
+    // destructors require. Safe to call more than once.
+    void shutdown();
+
+    // initialize(), then a frame loop until should_close() or the configured
+    // frame limit, then shutdown(). Returns the process exit code (0 on a clean
+    // run). Never throws. This is what the shell calls; step() exists so a test
+    // can act between frames.
     [[nodiscard]] int run();
 
     [[nodiscard]] EditorContext& context() noexcept { return context_; }
@@ -65,6 +84,8 @@ private:
     Engine engine_;
     EditorContext context_;
     EditorUi ui_;
+    bool initialized_ = false;
+    u32 frame_ = 0;
 };
 
 } // namespace fe::editor

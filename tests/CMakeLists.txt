@@ -45,6 +45,7 @@ if(FE_BUILD_EDITOR)
       src/test_hierarchy_view_model.cpp
       src/test_editor_context.cpp
       src/test_play_session.cpp
+      src/test_property_editor.cpp
   )
   target_link_libraries(fork_editor_tests PRIVATE FE::editor_core ${FE_DOCTEST_TARGET} fe_warnings)
   target_compile_features(fork_editor_tests PRIVATE cxx_std_20)
@@ -70,8 +71,11 @@ set_target_properties(fork_graphics_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$
 # the ImGui UI layer): play-in-editor is deliberately designed to be driven
 # without the UI toolkit.
 if(FE_BUILD_EDITOR)
-  target_sources(fork_graphics_tests PRIVATE src/test_editor_play.cpp)
+  target_sources(fork_graphics_tests PRIVATE src/test_editor_play.cpp src/test_editor_host.cpp)
   target_link_libraries(fork_graphics_tests PRIVATE FE::editor_core)
+  # The host test runs the whole editor, panels included, so it needs the ImGui
+  # UI layer as well.
+  target_link_libraries(fork_graphics_tests PRIVATE FE::editor)
 endif()
 
 add_test(NAME graphics_tests COMMAND fork_graphics_tests)

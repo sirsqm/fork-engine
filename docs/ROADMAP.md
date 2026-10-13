@@ -29,7 +29,7 @@ built editor-friendly from the start rather than adapted later.
 
 - [x] A windowing/UI layer for tools (docking, panels) — ADR-0007, `fork_editor`
 - [x] Scene hierarchy panel — `HierarchyViewModel` + `HierarchyPanel`
-- [ ] Property inspector, driven by the reflection system
+- [x] Property inspector, driven by the reflection system — `PropertyEditor` + `InspectorPanel`
 - [ ] 2D viewport rendering into an editor panel
 - [ ] Asset browser
 - [ ] Undo/redo
