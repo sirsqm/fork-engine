@@ -1,0 +1,44 @@
+# Build output. Never commit generated binaries, fetched dependencies, or
+# caches; a clean checkout must build from source with one command.
+build/
+build-*/
+cmake-build-*/
+out/
+install/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+_deps/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.user
+compile_commands.json
+.cache/
+
+# Compiled objects and libraries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local scratch
+*.log
+/tmp/

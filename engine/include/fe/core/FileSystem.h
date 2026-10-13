@@ -1,0 +1,58 @@
+// Copyright (c) 2026 sqm
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include "fe/core/Error.h"
+#include "fe/core/Types.h"
+
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace fe {
+
+// Filesystem access.
+//
+// All platform-specific path handling lives behind this interface so that no
+// other module calls a native filesystem API directly. Paths are treated as
+// UTF-8 strings; they are normalized to forward slashes internally, which the
+// Windows APIs accept as well.
+namespace fs {
+
+// Reads an entire file into memory. Returns the contents, or an Error when the
+// file cannot be opened or read. An empty file is a successful read of size 0.
+[[nodiscard]] Result<std::vector<u8>> read_binary_file(std::string_view path);
+
+// Reads an entire file into a string (text mode is not used; the bytes are
+// returned verbatim).
+[[nodiscard]] Result<std::string> read_text_file(std::string_view path);
+
+// Writes the buffer, creating parent directories as needed. Overwrites any
+// existing file. Returns an Error on failure.
+[[nodiscard]] Error write_binary_file(std::string_view path, const void* data, usize size);
+[[nodiscard]] Error write_text_file(std::string_view path, std::string_view text);
+
+[[nodiscard]] bool exists(std::string_view path);
+
+// Creates a directory and all missing parents. Returns an Error on failure.
+[[nodiscard]] Error create_directories(std::string_view path);
+
+// Returns the parent directory of a path, or "" if there is none.
+[[nodiscard]] std::string parent_path(std::string_view path);
+
+// Returns the final component of a path (file name or directory name).
+[[nodiscard]] std::string filename(std::string_view path);
+
+// Returns the extension including the leading dot, lower-cased (".png"), or ""
+// when there is no extension.
+[[nodiscard]] std::string extension(std::string_view path);
+
+// Joins two path fragments with a single separator.
+[[nodiscard]] std::string join(std::string_view a, std::string_view b);
+
+// Normalizes separators and collapses redundant "./" segments. Does not touch
+// the filesystem and does not resolve "..".
+[[nodiscard]] std::string normalize(std::string_view path);
+
+} // namespace fs
+} // namespace fe
