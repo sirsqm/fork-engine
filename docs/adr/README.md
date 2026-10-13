@@ -25,6 +25,9 @@ rather than editing it.
 | [0014](0014-directional-shadow-mapping.md) | Directional shadow mapping | Accepted |
 | [0015](0015-editor-undo-redo.md) | Editor undo/redo: a command stack with coalescing | Accepted |
 | [0016](0016-audio-module.md) | Audio as a module with a device seam and a pure mixer | Accepted |
+| [0017](0017-performance-strategy.md) | Performance strategy: measurement first, a data-oriented seam | Proposed |
+| [0018](0018-multi-platform-shipping.md) | Multi-platform shipping: one runtime, many targets | Proposed |
+| [0019](0019-collaborative-editing.md) | Collaborative editing: operations, a replicated log, an authority | Proposed |
 
 ## Format
 

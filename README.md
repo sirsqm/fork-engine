@@ -9,9 +9,24 @@ established design is the right answer, it is adopted deliberately and
 documented; where there is a real benefit to doing something different, that
 decision is recorded as an architecture decision record (ADR).
 
-The project is young and honest about it. This repository currently contains the
-**foundation milestone**: a buildable engine library, a working 2D renderer, a
-scene/resource/serialization core, and a runnable example, all covered by tests.
+Three capabilities shape how the engine is designed, not just what it
+eventually features:
+
+- **Performance is a product feature.** The engine is fast by construction and
+  by measurement: an authoring model that stays human-friendly and a processing
+  model that stays cache-friendly, with a benchmark that guards both.
+- **Games ship anywhere.** The goal is that a game built in Fork Engine reaches
+  every platform its players use — desktop today, web and mobile next, consoles
+  when the SDKs allow — not merely that the editor runs on several OSes.
+- **Editing is collaborative.** Several people open the same project, edit it
+  live, see each other's changes and presence, and never run a manual merge.
+
+The plan for these is in [`docs/STRATEGY.md`](docs/STRATEGY.md).
+
+The project is young and honest about it. The repository currently contains the
+engine core through its first several milestones: a buildable library, working
+2D and 3D renderers, a scene/resource/serialization/reflection core, 2D physics,
+audio, an editor foundation, and a runnable example, all covered by tests.
 Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Status
@@ -28,10 +43,16 @@ Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Scene graph (nodes, transforms, components) | Working |
 | Resource manager (load, cache, release) | Working |
 | Scene serialization (JSON) | Working |
+| Reflection and component serialization | Working |
+| Systems and the frame schedule | Working |
+| 2D physics (colliders, rigid bodies, solver, queries, contact events) | Working |
+| Audio (device seam, WAV loader, pure mixer, mixing system) | Working (first pass) |
+| Editor (docking shell, hierarchy, inspector, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
 | Runtime frame loop + sandbox example | Working |
-| Physics, editor, scripting | Not started (see roadmap) |
+| Scripting, asset browser, project settings, build/export | Not started (see roadmap) |
+| Performance tooling, extra platforms, collaborative editing | Planned (see roadmap) |
 
-Unit and graphics tests pass locally; see [Building and testing](#building-and-testing).
+Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
 
 ## Philosophy
 
@@ -42,6 +63,8 @@ Unit and graphics tests pass locally; see [Building and testing](#building-and-t
   editor-facing authoring model. Systems that are performance-critical are free
   to consume that data in a data-oriented way without the hierarchy dictating
   how they execute. Not every subsystem is forced into the same model.
+- **Measure before optimizing.** Performance work starts with a benchmark and
+  ends with a regression guard, never with clever code that cannot show a win.
 - **Errors are values.** Recoverable failures travel through `fe::Error` and
   `fe::Result<T>`, not exceptions. Assertions are for programming errors only.
 - **The editor is a client of the runtime, not a fork of it.** The editor talks
@@ -59,9 +82,13 @@ The engine is built from modules that depend only "downwards":
 
 ```
 core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
-core  <-  serialization  <-  scene
+core  <-  reflect  <-  scene, resources
+core  <-  serialization  <-  scene, resources, reflect
+core, scene, resources  <-  systems
+core, scene, systems, reflect  <-  physics2d
 core, scene, resources  <-  mesh  <-  renderer3d
 core, scene, resources  <-  scene3d
+core, scene, systems, resources  <-  audio
 everything  <-  runtime
 ```
 
@@ -70,17 +97,26 @@ everything  <-  runtime
 - **rhi** — a small graphics device abstraction; the OpenGL 3.3 core backend is
   one implementation of it. Nothing above this layer includes a backend header.
 - **resources** — loading, caching, and lifetime of assets (images, textures,
-  meshes).
+  meshes, audio clips).
 - **scene** — the node/component hierarchy and transforms.
-- **serialization** — JSON persistence of scenes and components.
+- **reflect** — component property descriptions and the type registry.
+- **serialization** — JSON persistence of scenes and components, driven by
+  reflection.
+- **systems** — `System`, `SceneSchedule`, `FrameContext`, and the concrete
+  gameplay systems.
+- **physics2d** — 2D colliders, a rigid-body solver, queries, and contact events.
 - **mesh** — CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, and an
   OBJ loader.
 - **scene3d** — 3D scene components (`Camera3D`, `MeshRenderer3D`,
   `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection.
+- **audio** — audio device seam, decoded clips, and a mixing system.
 - **renderer2d** — batched 2D rendering on top of the RHI.
 - **renderer3d** — 3D mesh rendering with a forward lit pass (directional, point,
-  and spot lights).
+  and spot lights) and a directional shadow map.
 - **runtime** — `Engine` (subsystem lifetime) and `Application` (frame loop).
+
+The editor lives under `editor/`, outside the engine library; it depends on the
+engine, never the reverse.
 
 Public headers live under `engine/include/fe/`, so consumers write
 `#include <fe/core/Log.h>`.
@@ -91,13 +127,14 @@ Public headers live under `engine/include/fe/`, so consumers write
 engine/           the engine library (the only thing a game links against)
   include/fe/     public headers, one directory per module
   src/            module implementations
+editor/           the visual editor, built on the engine (core, UI, shell)
 examples/sandbox/ a small runnable program that exercises every layer
-tests/            doctest-based unit tests and a separate graphics test target
+tests/            doctest-based unit, editor, and graphics test targets
 cmake/            dependency policy, build settings, warning interface
 third_party/      vendored sources (glad, stb) with their own licenses
 assets/           sample assets used by the example
 tools/            small development scripts
-docs/             architecture, roadmap, and ADRs
+docs/             architecture, strategy, roadmap, and ADRs
 ```
 
 ## Building and testing
@@ -141,12 +178,17 @@ Interactive controls: `WASD`/arrows move the camera, `Q`/`E` zoom, `Esc` quits.
 
 ### Tests
 
-- `fork_engine_tests` — pure-logic tests (math, filesystem, scene, resources,
-  serialization, input). Run anywhere.
+- `fork_engine_tests` — pure-logic tests (math, filesystem, scene, components,
+  resources, serialization, reflection, physics, mesh, systems). Run anywhere.
+- `fork_editor_tests` — headless editor logic (hierarchy view model, document,
+  play-in-editor, command stack, property helpers, viewport maths). Link only
+  `fork_editor_core`, never the UI toolkit.
 - `fork_graphics_tests` — create a hidden window and a GL context, render a
   scene, and read the framebuffer back to assert what was actually drawn. They
   skip automatically when no context is available, so `ctest` stays green on
   machines without a GPU.
+
+The editor is built with `-DFE_BUILD_EDITOR=ON` (on by default).
 
 On a headless Linux machine the graphics tests need a virtual display and a
 software renderer, for example:
