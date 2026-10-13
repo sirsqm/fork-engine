@@ -3,10 +3,13 @@
 #include <doctest/doctest.h>
 
 #include "fe/physics2d/Collider2D.h"
+#include "fe/physics2d/DistanceJoint2D.h"
 #include "fe/physics2d/Geometry.h"
+#include "fe/physics2d/JointSolver.h"
 #include "fe/physics2d/Physics2DQueries.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/PhysicsTypes.h"
+#include "fe/physics2d/RevoluteJoint2D.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Registry.h"
@@ -59,6 +62,46 @@ Node* add_dynamic_box(Scene& scene, const Vec2& position, f32 half, f32 mass) {
     body->mass = mass;
     node->transform().position = Vec3{position.x, position.y, 0.0f};
     return node;
+}
+
+// A dynamic point mass with no collider: the simplest joint end. Used for the
+// joint tests so a constraint is the only thing acting on the body, which keeps
+// the expected numbers exact.
+Node* add_point_mass(Scene& scene, const Vec2& position, f32 mass) {
+    Node* node = scene.create_node("Mass");
+    auto* body = node->add_component<physics2d::RigidBody2D>();
+    body->mass = mass;
+    node->transform().position = Vec3{position.x, position.y, 0.0f};
+    return node;
+}
+
+// A bare immovable node: no rigid body, no collider. This is a fixed pivot.
+Node* add_pivot(Scene& scene, const Vec2& position) {
+    Node* node = scene.create_node("Pivot");
+    node->transform().position = Vec3{position.x, position.y, 0.0f};
+    return node;
+}
+
+// Attaches a distance joint to `host`, wiring it to the two given nodes.
+physics2d::DistanceJoint2D* add_distance_joint(Node& host, const Node& a, const Node& b, f32 rest_length,
+                                               f32 stiffness = 0.0f, f32 damping = 0.0f) {
+    auto* joint = host.add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = a.id();
+    joint->body_b = b.id();
+    joint->rest_length = rest_length;
+    joint->stiffness = stiffness;
+    joint->damping = damping;
+    return joint;
+}
+
+physics2d::RevoluteJoint2D* add_revolute_joint(Node& host, const Node& a, const Node& b, const Vec2& anchor_a = {},
+                                               const Vec2& anchor_b = {}) {
+    auto* joint = host.add_component<physics2d::RevoluteJoint2D>();
+    joint->body_a = a.id();
+    joint->body_b = b.id();
+    joint->anchor_a = anchor_a;
+    joint->anchor_b = anchor_b;
+    return joint;
 }
 
 } // namespace
@@ -848,4 +891,425 @@ TEST_CASE("angular properties round-trip through the serializer") {
     CHECK(loaded_body->inertia == doctest::Approx(0.75f));
     CHECK(loaded_body->angular_damping == doctest::Approx(0.25f));
     CHECK(loaded_body->fixed_rotation == true);
+}
+
+// ---------------------------------------------------------------------------
+// Joints: pure constraint rows, tested without a scene.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A dynamic joint end with the given mass, at the origin, at rest. A helper so
+// the row tests read as physics rather than as struct literals.
+physics2d::JointBody dynamic_body(f32 mass) {
+    physics2d::JointBody body;
+    body.inv_mass = mass > 0.0f ? 1.0f / mass : 0.0f;
+    body.inv_inertia = mass > 0.0f ? 1.0f / mass : 0.0f;
+    return body;
+}
+
+} // namespace
+
+TEST_CASE("a distance row measures the separation along the centre line") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{3.0f, 4.0f}; // length 5 along (0.6, 0.8)
+
+    physics2d::DistanceJointParams params;
+    params.rest_length = 5.0f; // already satisfied
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE(row);
+
+    // The Jacobian is the unit direction, negated on A and positive on B.
+    CHECK(row.value().jacobian_a.x == doctest::Approx(-0.6f));
+    CHECK(row.value().jacobian_a.y == doctest::Approx(-0.8f));
+    CHECK(row.value().jacobian_b.x == doctest::Approx(0.6f));
+    CHECK(row.value().jacobian_b.y == doctest::Approx(0.8f));
+
+    // Two equal masses: the apparent mass is 1 / (1/1 + 1/1) = 0.5.
+    CHECK(row.value().effective_mass == doctest::Approx(0.5f));
+
+    // At the rest length there is no error, so a rigid rod does nothing.
+    CHECK(row.value().position_error == doctest::Approx(0.0f));
+    CHECK(row.value().bias == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a distance row reports the stretch as its position error") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{2.0f, 0.0f};
+
+    physics2d::DistanceJointParams params;
+    params.rest_length = 1.5f;
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE(row);
+    CHECK(row.value().position_error == doctest::Approx(0.5f));
+    CHECK(row.value().position_factor == doctest::Approx(0.2f));
+    // A rigid rod has no velocity bias; it corrects position directly.
+    CHECK(row.value().bias == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a distance row is unsolvable when both bodies are immovable") {
+    physics2d::JointBody a; // zero inverses: a static end
+    physics2d::JointBody b;
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{1.0f, 0.0f};
+
+    physics2d::DistanceJointParams params;
+    params.rest_length = 1.0f;
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE_FALSE(row);
+}
+
+TEST_CASE("a distance row is unsolvable when the bodies are coincident") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    // Both at the origin: the constraint has no direction to measure along.
+
+    physics2d::DistanceJointParams params;
+    params.rest_length = 1.0f;
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE_FALSE(row);
+}
+
+TEST_CASE("a rigid distance row removes a fixed fraction of the error") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{2.0f, 0.0f};
+
+    physics2d::DistanceJointParams params;
+    params.rest_length = 1.0f; // stretched by 1
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE(row);
+    physics2d::apply_row_position(row.value(), a, b);
+
+    // 0.2 of the 1.0 error is removed, split evenly: each body moves 0.1, so the
+    // separation shrinks by the full 0.2, from 2.0 to 1.8.
+    const f32 new_length = (b.position - a.position).length();
+    CHECK(new_length == doctest::Approx(1.8f));
+}
+
+TEST_CASE("a spring distance row pulls back with a velocity bias") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{2.0f, 0.0f};
+
+    physics2d::DistanceJointParams params;
+    params.rest_length = 1.0f; // stretched by 1
+    params.stiffness = 8.0f;   // 8 Hz
+    params.damping = 0.0f;
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE(row);
+    // bias = stiffness * stretch = 8 * 1 = 8, a closing velocity.
+    CHECK(row.value().bias == doctest::Approx(8.0f));
+    // A spring corrects through velocity, not a direct position fix.
+    CHECK(row.value().position_factor == doctest::Approx(0.0f));
+
+    physics2d::apply_row(row.value(), a, b);
+    // A and B are pulled towards each other: A gains +x velocity, B loses x.
+    CHECK(a.velocity.x > 0.0f);
+    CHECK(b.velocity.x < 0.0f);
+}
+
+TEST_CASE("a revolute row pins two centres together with two rows") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{1.0f, 0.5f}; // offset; both anchors at the centres
+
+    physics2d::RevoluteJointParams params; // anchors default to the centres
+    physics2d::ConstraintRow rows[physics2d::kRevoluteJointRows];
+    auto built = physics2d::build_revolute_rows(a, b, params, 1.0f / 60.0f, rows);
+    REQUIRE(built);
+
+    // Row 0 is the x separation, row 1 the y separation. The error is
+    // A_anchor - B_anchor, which is negative of the centre offset here.
+    CHECK(rows[0].position_error == doctest::Approx(-1.0f));
+    CHECK(rows[1].position_error == doctest::Approx(-0.5f));
+    CHECK(rows[0].jacobian_a.x == doctest::Approx(1.0f));
+    CHECK(rows[1].jacobian_a.y == doctest::Approx(1.0f));
+
+    for (const physics2d::ConstraintRow& row : rows) {
+        physics2d::apply_row_position(row, a, b);
+    }
+    // 0.2 of the separation is removed, split evenly: the centres end up 80% of
+    // the way apart they started.
+    CHECK((b.position - a.position).length() == doctest::Approx(0.8f * Vec2{1.0f, 0.5f}.length()));
+}
+
+TEST_CASE("a revolute row couples an offset anchor to rotation") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{0.0f, -1.0f};
+
+    physics2d::RevoluteJointParams params;
+    params.anchor_b = Vec2{0.0f, 1.0f}; // bob's top, at the pivot (0,0)
+    physics2d::ConstraintRow rows[physics2d::kRevoluteJointRows];
+    auto built = physics2d::build_revolute_rows(a, b, params, 1.0f / 60.0f, rows);
+    REQUIRE(built);
+
+    // The lever arm on B is (0, 1) and the row Jacobian is -axis. For the x row
+    // that is cross((0,1), (-1,0)) = 1; for the y row cross((0,1), (0,-1)) = 0.
+    // So the x correction is what spins B, and the y correction does not.
+    CHECK(rows[0].angular_b == doctest::Approx(1.0f));
+    CHECK(rows[1].angular_b == doctest::Approx(0.0f));
+}
+
+TEST_CASE("applying a revolute row keeps the shared anchor pinned") {
+    physics2d::JointBody a = dynamic_body(1.0f); // the pivot, movable here
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{1.0f, 0.0f};
+
+    physics2d::RevoluteJointParams params;
+    params.anchor_b = Vec2{-1.0f, 0.0f}; // bob's left end, at the pivot (0,0)
+    physics2d::ConstraintRow rows[physics2d::kRevoluteJointRows];
+    REQUIRE(physics2d::build_revolute_rows(a, b, params, 1.0f / 60.0f, rows));
+    for (const physics2d::ConstraintRow& row : rows) {
+        physics2d::apply_row_position(row, a, b);
+    }
+    // Both anchor world points should now nearly coincide.
+    const Vec2 anchor_a = physics2d::revolute_world_anchor(a, params);
+    const Vec2 anchor_b = b.position + Vec2{-1.0f, 0.0f};
+    CHECK((anchor_a - anchor_b).length() < 0.05f);
+}
+
+// ---------------------------------------------------------------------------
+// Joints in the scene: gathering, solving, and diagnostics.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a distance joint holds two bodies at its rest length") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{0.0f, -2.0f}, 1.0f);
+    mass->get_component<physics2d::RigidBody2D>()->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Joint");
+    add_distance_joint(*host, *pivot, *mass, 1.0f); // pin the length at 1
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 60; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    CHECK(system.joint_diagnostics().empty());
+
+    // Gravity pulls the mass down, but the rod keeps it 1 unit from the pivot.
+    const Vec2 separation = Vec2{mass->transform().position.x - pivot->transform().position.x,
+                                 mass->transform().position.y - pivot->transform().position.y};
+    CHECK(separation.length() == doctest::Approx(1.0f).epsilon(0.05));
+    // It ends up hanging below the pivot, not beside it.
+    CHECK(mass->transform().position.y < 0.0f);
+}
+
+TEST_CASE("a revolute joint swings a bob about a fixed pivot") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* bob = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    auto* bob_body = bob->get_component<physics2d::RigidBody2D>();
+    bob_body->affected_by_gravity = true;
+    // A point mass has no rotational inertia, so give it a moment of inertia
+    // about the pin. The pin is 1 unit from the centre, so I = m r^2 = 1.
+    bob_body->inertia = 1.0f;
+
+    Node* host = scene.create_node("Joint");
+    // The bob's left end is pinned to the pivot; the bob starts horizontal so
+    // gravity has a lever to turn.
+    add_revolute_joint(*host, *pivot, *bob, Vec2{}, Vec2{-1.0f, 0.0f});
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 30; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    CHECK(system.joint_diagnostics().empty());
+    // The bob swung down and started to rotate about the pin.
+    CHECK(bob->transform().position.y < 0.0f);
+    CHECK(std::abs(bob->get_component<physics2d::RigidBody2D>()->angular_velocity) > 0.0f);
+    // The anchor stayed pinned: the bob's left end is still at the pivot.
+    const f32 angle = bob->transform().rotation.z;
+    const Vec2 anchor = Vec2{bob->transform().position.x, bob->transform().position.y} +
+                        Vec2{-1.0f * std::cos(angle), -1.0f * std::sin(angle)};
+    CHECK(anchor.length() < 0.1f);
+}
+
+TEST_CASE("a joint with a nil body reference is skipped with a diagnostic") {
+    Scene scene;
+    Node* a = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    Node* b = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    // Turn gravity off so the check below is about the joint, not about falling.
+    a->get_component<physics2d::RigidBody2D>()->affected_by_gravity = false;
+    b->get_component<physics2d::RigidBody2D>()->affected_by_gravity = false;
+
+    Node* host = scene.create_node("Joint");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = a->id();
+    // body_b is left nil: the joint is inert.
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.joint_count() == 0);
+    REQUIRE(system.joint_diagnostics().size() == 1);
+    CHECK(system.joint_diagnostics().front().type == std::string_view{"DistanceJoint2D"});
+    // Nothing moved: the joint never touched the bodies.
+    CHECK(a->transform().position.y == doctest::Approx(0.0f));
+    CHECK(b->transform().position.x == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a joint whose body has left the scene is skipped with a diagnostic") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{0.0f, -1.0f}, 1.0f);
+
+    Node* host = scene.create_node("Joint");
+    add_distance_joint(*host, *pivot, *mass, 1.0f);
+
+    // Remove the pivot: the joint now references a node that is not in the
+    // scene. This must not crash and must surface as a diagnostic.
+    const auto removed_pivot = scene.remove_root(pivot);
+    CHECK(removed_pivot != nullptr);
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.joint_count() == 0);
+    REQUIRE(system.joint_diagnostics().size() == 1);
+    CHECK(system.joint_diagnostics().front().error.message().find("not in the scene") != std::string::npos);
+}
+
+TEST_CASE("a joint connecting a body to itself is skipped") {
+    Scene scene;
+    Node* a = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+
+    Node* host = scene.create_node("Joint");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = a->id();
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.joint_count() == 0);
+    REQUIRE(system.joint_diagnostics().size() == 1);
+    CHECK(system.joint_diagnostics().front().error.message().find("itself") != std::string::npos);
+}
+
+TEST_CASE("a joint with no movable body is skipped") {
+    Scene scene;
+    Node* a = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* b = add_pivot(scene, Vec2{1.0f, 0.0f});
+
+    Node* host = scene.create_node("Joint");
+    add_distance_joint(*host, *a, *b, 1.0f);
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.joint_count() == 0);
+    REQUIRE(system.joint_diagnostics().size() == 1);
+    CHECK(system.joint_diagnostics().front().error.message().find("movable") != std::string::npos);
+}
+
+TEST_CASE("a joint-only body with no collider is still simulated") {
+    // A point mass with no collider must fall under gravity on its own, or a
+    // joint to it would be pulling on something that never moves.
+    Scene scene;
+    Node* mass = add_point_mass(scene, Vec2{0.0f, 5.0f}, 1.0f);
+    mass->get_component<physics2d::RigidBody2D>()->affected_by_gravity = true;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 10; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    CHECK(mass->transform().position.y < 5.0f);
+}
+
+TEST_CASE("the joint components are registered with reflection") {
+    reflect::register_physics_types();
+    const reflect::Registry& registry = reflect::Registry::instance();
+    CHECK(registry.contains("DistanceJoint2D"));
+    CHECK(registry.contains("RevoluteJoint2D"));
+}
+
+TEST_CASE("a distance joint round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Joint");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->rest_length = 2.5f;
+    joint->stiffness = 6.0f;
+    joint->damping = 0.5f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Joint");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics2d::DistanceJoint2D>();
+    REQUIRE(loaded_joint != nullptr);
+    // The body references survive as stable ids and resolve back to the nodes.
+    CHECK(loaded.find_node(loaded_joint->body_a) != nullptr);
+    CHECK(loaded.find_node(loaded_joint->body_b) != nullptr);
+    CHECK(loaded_joint->body_a == a->id());
+    CHECK(loaded_joint->body_b == b->id());
+    CHECK(loaded_joint->rest_length == doctest::Approx(2.5f));
+    CHECK(loaded_joint->stiffness == doctest::Approx(6.0f));
+    CHECK(loaded_joint->damping == doctest::Approx(0.5f));
+}
+
+TEST_CASE("a revolute joint round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Joint");
+    auto* joint = host->add_component<physics2d::RevoluteJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->anchor_a = Vec2{0.25f, -0.5f};
+    joint->anchor_b = Vec2{-0.75f, 1.0f};
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Joint");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics2d::RevoluteJoint2D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->body_a == a->id());
+    CHECK(loaded_joint->body_b == b->id());
+    CHECK(loaded_joint->anchor_a.x == doctest::Approx(0.25f));
+    CHECK(loaded_joint->anchor_a.y == doctest::Approx(-0.5f));
+    CHECK(loaded_joint->anchor_b.x == doctest::Approx(-0.75f));
+    CHECK(loaded_joint->anchor_b.y == doctest::Approx(1.0f));
 }

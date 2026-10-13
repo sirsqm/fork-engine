@@ -29,6 +29,7 @@ rather than editing it.
 | [0018](0018-multi-platform-shipping.md) | Multi-platform shipping: one runtime, many targets | Proposed |
 | [0019](0019-collaborative-editing.md) | Collaborative editing: operations, a replicated log, an authority | Proposed |
 | [0020](0020-resource-identity-guid-sidecar.md) | Stable resource identity via a per-asset GUID sidecar | Accepted |
+| [0021](0021-physics2d-joints.md) | 2D joints (distance and revolute constraints) | Accepted |
 
 ## Format
 
