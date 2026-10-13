@@ -3,9 +3,9 @@
 #pragma once
 
 #include "fe/core/Error.h"
+#include "fe/core/Log.h"
 #include "fe/core/Types.h"
 #include "fe/platform/Window.h"
-#include "fe/core/Log.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/rhi/Device.h"
 

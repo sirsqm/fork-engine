@@ -177,8 +177,7 @@ const Camera2D* Renderer2D::find_active_camera(const Scene& scene) {
     return found != nullptr ? found : fallback;
 }
 
-void Renderer2D::append_quad(const Sprite2D& sprite, const Mat4& world, const Vec2& size,
-                             const Vec2& pivot_offset) {
+void Renderer2D::append_quad(const Sprite2D& sprite, const Mat4& world, const Vec2& size, const Vec2& pivot_offset) {
     const u32 base = static_cast<u32>(vertices_.size());
 
     // Local quad corners, centred on the origin and then offset so the sprite
@@ -268,8 +267,8 @@ Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 vi
     ensure_capacity(device, static_cast<u32>(vertices_.size()), static_cast<u32>(indices_.size()));
 
     // --- 4. Upload and draw -------------------------------------------------
-    vertex_buffer_->update(std::span<const u8>(reinterpret_cast<const u8*>(vertices_.data()),
-                                               vertices_.size() * sizeof(Vertex)));
+    vertex_buffer_->update(
+        std::span<const u8>(reinterpret_cast<const u8*>(vertices_.data()), vertices_.size() * sizeof(Vertex)));
     index_buffer_->update(
         std::span<const u8>(reinterpret_cast<const u8*>(indices_.data()), indices_.size() * sizeof(u32)));
 

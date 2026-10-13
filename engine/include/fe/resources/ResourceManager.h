@@ -46,7 +46,8 @@ public:
 
     // Typed convenience: returns nullptr (with an Error) when the resource is
     // missing or is not a `T`.
-    template <typename T> [[nodiscard]] Result<std::shared_ptr<T>> load_as(std::string_view path) {
+    template <typename T>
+    [[nodiscard]] Result<std::shared_ptr<T>> load_as(std::string_view path) {
         auto result = load(path);
         if (!result) {
             return result.error();

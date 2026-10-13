@@ -50,8 +50,8 @@ option(FE_USE_SYSTEM_DEPS "Prefer system-installed dependencies over FetchConten
 option(FE_ENABLE_ASAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer (Debug)" OFF)
 
 include(FESettings)
-include(FEDependencies)
 include(FEWarnings)
+include(FEDependencies)
 
 if(FE_ENABLE_ASAN AND NOT MSVC)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)

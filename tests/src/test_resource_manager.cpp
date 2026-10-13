@@ -18,7 +18,7 @@ class FakeResource final : public Resource {
 public:
     static constexpr const char* kTypeName = "FakeResource";
 
-    explicit FakeResource(std::string path, int tag) : Resource(std::move(path)), tag(tag) {}
+    explicit FakeResource(std::string path, int resource_tag) : Resource(std::move(path)), tag(resource_tag) {}
 
     [[nodiscard]] const char* type_name() const noexcept override { return kTypeName; }
 
@@ -33,9 +33,7 @@ public:
         : scheme_(std::move(scheme_name)), counter_(&load_counter) {}
 
     [[nodiscard]] std::string_view scheme() const noexcept override { return scheme_; }
-    [[nodiscard]] bool supports(std::string_view extension) const noexcept override {
-        return extension == ".fake";
-    }
+    [[nodiscard]] bool supports(std::string_view extension) const noexcept override { return extension == ".fake"; }
 
     [[nodiscard]] Result<std::shared_ptr<Resource>> load(std::string_view path) override {
         ++(*counter_);

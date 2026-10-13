@@ -55,17 +55,29 @@ void InputState::on_scroll(f32 dx, f32 dy) noexcept {
     scroll_delta_ = Vec2{scroll_delta_.x + dx, scroll_delta_.y + dy};
 }
 
-bool InputState::is_key_down(Key key) const noexcept { return keys_down_[index_of(key)]; }
+bool InputState::is_key_down(Key key) const noexcept {
+    return keys_down_[index_of(key)];
+}
 
-bool InputState::was_key_pressed(Key key) const noexcept { return keys_pressed_[index_of(key)]; }
+bool InputState::was_key_pressed(Key key) const noexcept {
+    return keys_pressed_[index_of(key)];
+}
 
-bool InputState::was_key_released(Key key) const noexcept { return keys_released_[index_of(key)]; }
+bool InputState::was_key_released(Key key) const noexcept {
+    return keys_released_[index_of(key)];
+}
 
-bool InputState::is_mouse_down(MouseButton button) const noexcept { return buttons_down_[index_of(button)]; }
+bool InputState::is_mouse_down(MouseButton button) const noexcept {
+    return buttons_down_[index_of(button)];
+}
 
-bool InputState::was_mouse_pressed(MouseButton button) const noexcept { return buttons_pressed_[index_of(button)]; }
+bool InputState::was_mouse_pressed(MouseButton button) const noexcept {
+    return buttons_pressed_[index_of(button)];
+}
 
-bool InputState::was_mouse_released(MouseButton button) const noexcept { return buttons_released_[index_of(button)]; }
+bool InputState::was_mouse_released(MouseButton button) const noexcept {
+    return buttons_released_[index_of(button)];
+}
 
 void InputState::release_all() noexcept {
     keys_down_.fill(false);
