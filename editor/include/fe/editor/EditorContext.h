@@ -7,6 +7,7 @@
 #include "fe/editor/Commands.h"
 #include "fe/editor/HierarchyViewModel.h"
 #include "fe/editor/PlaySession.h"
+#include "fe/editor/ProjectSettings.h"
 #include "fe/scene/Scene.h"
 
 #include <memory>
@@ -93,12 +94,10 @@ public:
     // project open, in which case the asset browser is empty and only path
     // references (not GUID references) resolve.
     //
-    // This is the first slice of "project settings": a real project is a file
-    // the editor opens, but the only setting that changes engine behaviour today
-    // is where the assets live, so that is what this carries. It is deliberately
-    // on the document, not on the engine: the engine's resource manager is
-    // reusable and is told the root here, so the same manager serves the editor
-    // and, later, a running game.
+    // This is a projection of the loaded project's settings (see below), kept as
+    // a plain accessor because it is what the asset browser and the serializer
+    // consult. A real project is a file the editor opens; that file is the
+    // source of truth and this is its effect.
     [[nodiscard]] const std::string& project_root() const noexcept { return project_root_; }
 
     // Sets the project's asset root and rescans the asset database through
@@ -106,6 +105,27 @@ public:
     // on every set keeps the database and this field in step; the scan is cheap
     // (a directory walk) and only happens when the root changes.
     void set_project_root(std::string root, ResourceManager* resources = nullptr);
+
+    // The loaded project settings. Default-constructed until a project file is
+    // opened, so `project().asset_root()` is the default ("assets") and
+    // `project().name()` is empty.
+    [[nodiscard]] ProjectSettings& project() noexcept { return project_; }
+    [[nodiscard]] const ProjectSettings& project() const noexcept { return project_; }
+
+    // The path the current project was loaded from or saved to; "" for a project
+    // that has never been persisted (including "no project").
+    [[nodiscard]] const std::string& project_path() const noexcept { return project_path_; }
+
+    // Opens a project file: reads and validates its settings, adopts its
+    // directory, and points the asset root at the database through `resources`
+    // (which rescans it). The current document is left alone - opening a project
+    // does not by itself load a scene; the host does that from the settings. On
+    // failure nothing changes.
+    [[nodiscard]] Error load_project(std::string_view path, ResourceManager* resources = nullptr);
+
+    // Writes the current settings to `path` (or to the current project path when
+    // `path` is empty). On success `project_path()` becomes the saved path.
+    [[nodiscard]] Error save_project(std::string_view path = {});
 
     // --- Play control ------------------------------------------------------
     // Records that the user asked to start or stop playing. The host consumes it
@@ -156,6 +176,8 @@ private:
     PlaySession play_;
     CommandStack commands_;
     std::string scene_path_;
+    ProjectSettings project_;
+    std::string project_path_;
     std::string project_root_;
     ResourceManager* resources_ = nullptr;
     PlayRequest play_request_ = PlayRequest::None;
