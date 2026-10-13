@@ -5,6 +5,8 @@
 #include "fe/resources/Resource.h"
 #include "fe/resources/ResourceManager.h"
 
+#include <string_view>
+
 namespace fe {
 
 namespace rhi {

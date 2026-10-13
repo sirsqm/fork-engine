@@ -7,6 +7,8 @@
 #include "fe/resources/Texture2D.h"
 #include "fe/rhi/Device.h"
 
+#include <string_view>
+
 namespace fe {
 namespace {
 

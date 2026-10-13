@@ -4,6 +4,8 @@
 
 #include "fe/resources/Resource.h"
 
+#include <string_view>
+
 namespace fe {
 
 // Decodes PNG/JPEG/BMP/TGA/GIF images into an Image resource.

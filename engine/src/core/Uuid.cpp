@@ -3,6 +3,7 @@
 #include "fe/core/Uuid.h"
 
 #include <random>
+#include <string_view>
 
 namespace fe {
 namespace {
