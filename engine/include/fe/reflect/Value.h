@@ -28,7 +28,8 @@ enum class ValueKind : u8 {
     String,
     Uuid,
     // A resource reference, stored as "<scheme>:<path>" (for example
-    // "tex:assets/hero.png"). The type is carried in Property::resource_type.
+    // "tex:assets/hero.png"). The expected resource type is carried in
+    // Property::resource (ResourceHint::type_name).
     ResourceRef,
     // A struct: "value" identifies the registered struct type ("Vec2", "Vec4",
     // "Transform"), and the members are listed in TypeDesc::groups.

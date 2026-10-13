@@ -610,6 +610,19 @@ crashing, and resource references are resolved through the document's
 editable). Text widgets need a buffer that outlives the frame, so the panel
 holds that scratch state.
 
+The widget for a property is chosen from typed *editor hints* carried on the
+`Property` ([ADR-0028](adr/0028-editor-hint-metadata.md)): a `RangeHint` turns a
+Float or Int into a bounded slider or drag, a `ColorHint` turns a float group
+into a colour picker (RGB or RGBA, from the group's member count), and a
+`ResourceHint` turns a resource reference into an asset drop target labelled
+with the expected type. A property with no hint falls back to the generic widget
+for its `ValueKind`. The hints are data, not strings: bounds are numbers and the
+resource type is a name, so there is no hint grammar to parse and a
+mis-registration is visible at the registration call site. The hint helpers
+(`resolve_range_hint`, `clamp_to_range`, `color_channel_count`) are pure and
+live in `fork_editor_core`, so they are covered headlessly while `InspectorPanel`
+stays a thin projection.
+
 Editing is reversible through a command stack in `fork_editor_core`
 ([ADR-0015](adr/0015-editor-undo-redo.md)), not by snapshotting the scene. Each
 edit is a `Command` with an exact `execute()`/`undo()` pair; the panels build
@@ -619,11 +632,14 @@ hold whatever they detach (a node's subtree, a component), so undo restores the
 identical object - ids, sibling order, and component order intact. Property
 edits go through one generic `SetPropertyCommand` that resolves its setter
 through the reflection registry, so a newly reflected field is undoable with no
-new code. A command may report a coalescing key: consecutive edits of the same
-property (the frames of a drag) merge into one undo step, and the editor ends
-the group when the widget's gesture finishes. Editing is refused while
-play-in-editor is running, because play shows a copy and an edit to the hidden
-authored scene would be invisible.
+new code. A resource reference is edited through `SetResourceCommand`, which
+carries the `ResourceManager` needed to resolve the reference and is otherwise
+the same undoable, coalescing edit ([ADR-0028](adr/0028-editor-hint-metadata.md)).
+A command may report a coalescing key: consecutive edits of the same property
+(the frames of a drag) merge into one undo step, and the editor ends the group
+when the widget's gesture finishes. Editing is refused while play-in-editor is
+running, because play shows a copy and an edit to the hidden authored scene
+would be invisible.
 
 The asset browser lists what the resource system has indexed. Its logic lives in
 the headless `AssetBrowserViewModel`, which reads the `AssetDatabase` the
