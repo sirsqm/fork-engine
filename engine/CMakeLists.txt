@@ -12,6 +12,7 @@
 #   core, scene, resources  <-  systems
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, resources  <-  audio
+#   core, resources  <-  pack
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 
@@ -58,6 +59,9 @@ set(FE_ENGINE_SOURCES
     src/audio/AudioTypes.cpp
     src/audio/AudioBackend.cpp
     src/audio/MiniAudioDevice.cpp
+    src/pack/PackFile.cpp
+    src/pack/PackWriter.cpp
+    src/pack/PackSource.cpp
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/renderer2d/Renderer2D.cpp

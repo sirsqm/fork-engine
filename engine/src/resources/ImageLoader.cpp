@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #include "fe/resources/ImageLoader.h"
 
-#include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/resources/Image.h"
 #include "fe/resources/ImportCache.h"
@@ -71,7 +70,7 @@ bool ImageLoader::supports(std::string_view extension) const noexcept {
 }
 
 Result<std::shared_ptr<Resource>> ImageLoader::load(std::string_view path) {
-    auto bytes = fs::read_binary_file(path);
+    auto bytes = read_bytes(path);
     if (!bytes) {
         return bytes.error();
     }

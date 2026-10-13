@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 #include "fe/audio/WavLoader.h"
 
-#include "fe/core/FileSystem.h"
-
 #include <cstring>
 #include <string>
 
@@ -195,7 +193,7 @@ Result<DecodedAudio> WavLoader::parse(const u8* data, usize size) {
 }
 
 Result<std::shared_ptr<Resource>> WavLoader::load(std::string_view path) {
-    auto bytes = fs::read_binary_file(path);
+    auto bytes = read_bytes(path);
     if (!bytes) {
         return bytes.error();
     }
