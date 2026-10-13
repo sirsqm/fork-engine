@@ -561,7 +561,7 @@ Still to come under M2: asset import (import settings per asset type).
 
 A project is a directory with a `fork.project.json` file in it, and that file is
 what the editor opens and saves
-([ADR-0024](adr/0024-project-file.md)). It carries the settings that change
+([ADR-0025](adr/0025-project-file.md)). It carries the settings that change
 behaviour today - the project name, the asset root, and the startup scene - as
 versioned UTF-8 JSON, the same shape and for the same reasons as a scene
 ([ADR-0005](adr/0005-reflection-and-serialization.md)). Paths inside it are
