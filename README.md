@@ -130,6 +130,7 @@ engine/           the engine library (the only thing a game links against)
   src/            module implementations
 editor/           the visual editor, built on the engine (core, UI, shell)
 examples/sandbox/ a small runnable program that exercises every layer
+examples/demo_project/ a minimal project to open in the editor shell
 tests/            doctest-based unit, editor, and graphics test targets
 cmake/            dependency policy, build settings, warning interface
 third_party/      vendored sources (glad, stb) with their own licenses
@@ -176,6 +177,25 @@ Headless runs, used by CI and useful on machines without a display:
 ```
 
 Interactive controls: `WASD`/arrows move the camera, `Q`/`E` zoom, `Esc` quits.
+
+### Try the editor
+
+The editor shell opens a project, loads its startup scene, and shows the scene
+hierarchy, inspector, viewport, and asset browser. A minimal project ships in
+`examples/demo_project`, so you can try it without authoring anything first:
+
+```bash
+./build/bin/fork_editor_shell --project examples/demo_project
+```
+
+On a machine without a display, open the same project headlessly and exit after
+a few frames, which is enough to confirm the project and scene load:
+
+```bash
+./build/bin/fork_editor_shell --project examples/demo_project --headless
+```
+
+See `examples/demo_project/README.md` for what the project contains.
 
 ### Tests
 
