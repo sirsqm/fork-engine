@@ -18,6 +18,8 @@
 #include "fe/reflect/Registry.h"
 #include "fe/reflect/TypeDesc.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/rhi/Resources.h"
+#include "fe/rhi/Types.h"
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Scene.h"
@@ -116,9 +118,23 @@ TEST_CASE("EditorHost runs frames, reflects a Sprite2D, and exits cleanly") {
     // One more frame draws the edited value.
     host.step();
 
+    // The viewport allocated an off-screen target and rendered the scene into
+    // it, not just the window: this is what makes the viewport a panel rather
+    // than a second window.
+    fe::rhi::RenderTarget* target = host.viewport_target();
+    REQUIRE(target != nullptr);
+    CHECK(target->width() > 0);
+    CHECK(target->height() > 0);
+    CHECK(target->color_texture()->width() == target->width());
+    CHECK(target->color_texture()->native_handle() != 0U);
+
     // The authored scene survives the run.
     CHECK(context.scene().node_count() > 0);
     CHECK(sprite_node->get_component<fe::Sprite2D>() != nullptr);
 
     host.shutdown();
+
+    // After shutdown the borrowed target is gone, proving it was released before
+    // the device.
+    CHECK(host.viewport_target() == nullptr);
 }

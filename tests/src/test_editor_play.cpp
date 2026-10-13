@@ -19,6 +19,7 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene/SpriteAnimator.h"
 
 #include <memory>
 #include <span>
@@ -87,6 +88,19 @@ void register_defaults(PlaySession& session) {
         copy->layer = component->layer;
         copy->texture = component->texture;
     });
+    session.register_component_factory(SpriteAnimator::kTypeName, [](const Node& source, Node& destination) {
+        const auto* component = source.get_component<SpriteAnimator>();
+        if (component == nullptr) {
+            return;
+        }
+        auto* copy = destination.add_component<SpriteAnimator>();
+        copy->frames_x = component->frames_x;
+        copy->frames_y = component->frames_y;
+        copy->fps = component->fps;
+        copy->playing = component->playing;
+        copy->loop = component->loop;
+        copy->current_frame = component->current_frame;
+    });
 }
 
 struct Pixel {
@@ -151,4 +165,68 @@ TEST_CASE("ticking a stopped play session is reported as an error") {
     // silently ignored.
     auto result = session.tick(context.engine);
     CHECK_FALSE(result);
+}
+
+TEST_CASE("play-in-editor runs the schedule, so an animator advances while playing") {
+    PlayContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // Author a scene with an animated sprite: SpriteAnimator state plus the
+    // Sprite2D it drives.
+    Scene authored;
+    authored.create_node("Camera")->add_component<Camera2D>();
+    Node* node = authored.create_node("Animated");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = make_solid_texture(context.engine.device(), 255, 255, 255, 255);
+    sprite->size = Vec2{32.0f, 32.0f};
+    auto* animator = node->add_component<SpriteAnimator>();
+    animator->frames_x = 4;
+    animator->frames_y = 1;
+    animator->fps = 20.0f; // One cell every 50ms; fast enough that a few hundred
+                           // real frames reach the next cell on any machine.
+
+    PlaySession session;
+    register_defaults(session);
+    // The session registers SpriteAnimationSystem by default, so this is here
+    // only to document the expectation: one default system, the animation one.
+    CHECK(session.schedule().system_count() == 0); // empty until start()
+
+    REQUIRE_FALSE(session.start(authored));
+    CHECK(session.schedule().find("SpriteAnimationSystem") != nullptr);
+
+    // The play copy owns its own animator, independent of the authored one.
+    const auto& play_scene = session.play_scene();
+    const Node* play_node = play_scene.find_node_by_name("Animated");
+    REQUIRE(play_node != nullptr);
+    const auto* play_animator = play_node->get_component<SpriteAnimator>();
+    const auto* play_sprite = play_node->get_component<Sprite2D>();
+    REQUIRE(play_animator != nullptr);
+    REQUIRE(play_sprite != nullptr);
+    // Before the first tick the system has not published UVs yet, so the copy's
+    // sprite still carries the authored default (the full texture).
+    CHECK(play_sprite->uv == Vec4{0.0f, 0.0f, 1.0f, 1.0f});
+
+    // Drive many frames. The engine's delta is real wall-clock time, so rather
+    // than guess the frame count we loop until the animator has advanced past
+    // its first cell, with a generous bound so a slow machine still finishes.
+    const u32 initial_cell = play_animator->current_frame;
+    bool advanced = false;
+    for (int frame = 0; frame < 600 && !advanced; ++frame) {
+        REQUIRE(session.tick(context.engine));
+        context.engine.device().end_frame();
+        if (play_animator->current_frame != initial_cell) {
+            advanced = true;
+        }
+    }
+    CHECK(advanced);
+    // The system wrote the new cell's UVs onto the play sprite, which is what
+    // the renderer draws: proof the schedule feeds the render path.
+    CHECK(play_sprite->uv.x == doctest::Approx(static_cast<f32>(play_animator->current_frame) * 0.25f));
+    CHECK(play_sprite->uv.z == doctest::Approx(static_cast<f32>(play_animator->current_frame + 1) * 0.25f));
+
+    // The authored animator was never touched: play-in-editor copies.
+    CHECK(animator->current_frame == 0);
 }

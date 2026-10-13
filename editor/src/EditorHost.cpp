@@ -6,6 +6,7 @@
 #include "fe/editor/HierarchyPanel.h"
 #include "fe/editor/InspectorPanel.h"
 #include "fe/editor/PlayPanel.h"
+#include "fe/editor/ViewportPanel.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Scene.h"
@@ -19,6 +20,10 @@ namespace fe::editor {
 EditorHost::EditorHost(Config config) : config_(std::move(config)) {}
 
 EditorHost::~EditorHost() = default;
+
+rhi::RenderTarget* EditorHost::viewport_target() const noexcept {
+    return viewport_panel_ != nullptr ? viewport_panel_->target() : nullptr;
+}
 
 Error EditorHost::initialize() {
     if (Error error = engine_.initialize(config_.engine); error) {
@@ -56,6 +61,13 @@ Error EditorHost::initialize() {
     ui_.add_panel(std::make_unique<HierarchyPanel>());
     ui_.add_panel(std::make_unique<InspectorPanel>());
     ui_.add_panel(std::make_unique<PlayPanel>());
+
+    // The viewport renders through the embedded engine's device and 2D renderer,
+    // and must release its off-screen target before the device shuts down.
+    auto viewport = std::make_unique<ViewportPanel>();
+    viewport->initialize(engine_.device(), engine_.renderer_2d());
+    viewport_panel_ = viewport.get();
+    ui_.add_panel(std::move(viewport));
 
     initialized_ = true;
     FE_LOG_INFO("editor: ready (fork engine v%s)", version::kEngineVersionString);
@@ -107,6 +119,13 @@ void EditorHost::shutdown() {
     }
     initialized_ = false;
 
+    // Release the viewport's off-screen target before the engine goes away: the
+    // target owns GPU objects whose destructors call into the device. This must
+    // happen before ui_.shutdown(), which destroys the panel that owns it.
+    if (viewport_panel_ != nullptr) {
+        viewport_panel_->shutdown();
+        viewport_panel_ = nullptr;
+    }
     if (ui_.is_initialized()) {
         ui_.shutdown();
     }

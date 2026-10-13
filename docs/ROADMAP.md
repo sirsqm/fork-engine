@@ -30,10 +30,10 @@ built editor-friendly from the start rather than adapted later.
 - [x] A windowing/UI layer for tools (docking, panels) — ADR-0007, `fork_editor`
 - [x] Scene hierarchy panel — `HierarchyViewModel` + `HierarchyPanel`
 - [x] Property inspector, driven by the reflection system — `PropertyEditor` + `InspectorPanel`
-- [ ] 2D viewport rendering into an editor panel
+- [x] 2D viewport rendering into an editor panel — `Viewport` + `ViewportPanel` (off-screen render target)
 - [ ] Asset browser
 - [ ] Undo/redo
-- [x] Play-in-editor (embed an `Engine` and drive frames) — `PlaySession`
+- [x] Play-in-editor (embed an `Engine`, drive frames, run the scene's `SceneSchedule`) — `PlaySession`
 - [ ] Project settings and a build/export path
 
 ### M2 prerequisite — reflection (done)

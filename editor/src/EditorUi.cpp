@@ -14,6 +14,9 @@
 
 #include <GLFW/glfw3.h>
 
+#include <string>
+#include <string_view>
+
 namespace fe::editor {
 namespace {
 
@@ -122,6 +125,7 @@ void EditorUi::draw_dock_space(unsigned int dockspace_id) {
 void EditorUi::draw_panels(EditorContext& context) {
     FE_CHECK(initialized_);
 
+    draw_toolbar(context);
     draw_dock_space(kDockSpaceId);
 
     // Apply a default layout the first frame after the dock space exists, so a
@@ -135,13 +139,25 @@ void EditorUi::draw_panels(EditorContext& context) {
             ImGui::DockBuilderSetNodeSize(kDockSpaceId, ImGui::GetMainViewport()->WorkSize);
 
             ImGuiID centre = kDockSpaceId;
-            // The hierarchy takes the left third; the remainder is left as the
-            // centre dock node for the viewport and future panels.
-            const ImGuiID left = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left, 0.30f, nullptr, &centre);
+            // Hierarchy on the left, inspector on the right, the viewport and
+            // play panel in the centre. The split is by name so it tracks which
+            // panels are actually registered.
+            const ImGuiID left = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left, 0.22f, nullptr, &centre);
+            const ImGuiID right = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.28f, nullptr, &centre);
+            const ImGuiID bottom = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down, 0.28f, nullptr, &centre);
 
-            ImGui::DockBuilderDockWindow(panels_.front()->name(), left);
-            for (usize i = 1; i < panels_.size(); ++i) {
-                ImGui::DockBuilderDockWindow(panels_[i]->name(), centre);
+            ImGui::DockBuilderDockWindow("Hierarchy", left);
+            ImGui::DockBuilderDockWindow("Inspector", right);
+            ImGui::DockBuilderDockWindow("Viewport", centre);
+            ImGui::DockBuilderDockWindow("Play", bottom);
+            // Any panel not named above (a future one) docks in the centre so it
+            // is visible rather than lost.
+            for (const auto& panel : panels_) {
+                const char* panel_name = panel->name();
+                if (std::string_view(panel_name) != "Hierarchy" && std::string_view(panel_name) != "Inspector" &&
+                    std::string_view(panel_name) != "Viewport" && std::string_view(panel_name) != "Play") {
+                    ImGui::DockBuilderDockWindow(panel_name, centre);
+                }
             }
             ImGui::DockBuilderFinish(kDockSpaceId);
         }
@@ -151,6 +167,34 @@ void EditorUi::draw_panels(EditorContext& context) {
     for (const auto& panel : panels_) {
         panel->draw(context);
     }
+}
+
+void EditorUi::draw_toolbar(EditorContext& context) {
+    if (!ImGui::BeginMainMenuBar()) {
+        return;
+    }
+
+    const PlaySession& play = context.play();
+    if (play.is_playing()) {
+        if (ImGui::Button("Stop")) {
+            context.request_stop_play();
+        }
+    } else {
+        if (ImGui::Button("Play")) {
+            context.request_start_play();
+        }
+    }
+
+    ImGui::SameLine();
+    const std::string scene_name = context.scene().name();
+    const std::string path = context.scene_path().empty() ? "(unsaved)" : context.scene_path();
+    ImGui::Text("  %s  -  %s  |  %zu nodes", scene_name.c_str(), path.c_str(), context.scene().node_count());
+    if (play.is_playing()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "  PLAYING");
+    }
+
+    ImGui::EndMainMenuBar();
 }
 
 void EditorUi::end_frame() {
