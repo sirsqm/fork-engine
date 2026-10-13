@@ -19,6 +19,7 @@ rather than editing it.
 | [0009](0009-physics2d-system.md) | 2D physics as the first gameplay system | Accepted |
 | [0010](0010-3d-rendering-foundation.md) | A 3D rendering foundation on the shared RHI | Accepted |
 | [0011](0011-frustum-culling.md) | Conservative frustum culling in the 3D renderer | Accepted |
+| [0012](0012-forward-lighting-model.md) | A forward lighting model with a bounded light budget | Accepted |
 
 ## Format
 

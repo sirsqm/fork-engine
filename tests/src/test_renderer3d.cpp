@@ -17,6 +17,8 @@
 #include "fe/scene3d/Camera3D.h"
 #include "fe/scene3d/DirectionalLight3D.h"
 #include "fe/scene3d/MeshRenderer3D.h"
+#include "fe/scene3d/PointLight3D.h"
+#include "fe/scene3d/SpotLight3D.h"
 
 #include <memory>
 #include <span>
@@ -299,4 +301,155 @@ TEST_CASE("renderer3d depth-tests so a nearer mesh occludes a farther one") {
     const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
     CHECK(centre.r > 200);
     CHECK(centre.g < 60);
+}
+
+TEST_CASE("renderer3d lights a mesh with a point light") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    // A camera and no directional light: the point light is the only emitter, so
+    // a lit centre proves the point-light path, not the ambient term.
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    camera_node->add_component<Camera3D>();
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    renderer->mesh = Mesh::make_cube();
+    renderer->base_color = Vec4{1.0f, 1.0f, 1.0f, 1.0f};
+
+    // A white point light between the camera and the cube, in range.
+    Node* light_node = scene.create_node("Lamp");
+    auto* light = light_node->add_component<PointLight3D>();
+    light->color = Vec3{1.0f, 1.0f, 1.0f};
+    light->intensity = 1.0f;
+    light->range = 10.0f;
+    light_node->transform().position = Vec3{0.0f, 0.0f, 2.0f};
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D r;
+    REQUIRE_FALSE(r.initialize(*context.device));
+    auto result = r.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(r.last_point_lights() == 1);
+    context.device->end_frame();
+
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
+    CHECK(centre.r > 100);
+    CHECK(centre.g > 100);
+    CHECK(centre.b > 100);
+}
+
+TEST_CASE("renderer3d leaves a mesh dark when a point light is out of range") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    camera_node->add_component<Camera3D>();
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    renderer->mesh = Mesh::make_cube();
+    renderer->base_color = Vec4{1.0f, 1.0f, 1.0f, 1.0f};
+
+    // A directional light contributes nothing (intensity 0, ambient 0), so the
+    // out-of-range point light below is the only emitter and the centre must be
+    // black. Without this the renderer's no-light fallback ambient would light
+    // the mesh and the test would not isolate the range cutoff.
+    Node* sun = scene.create_node("Sun");
+    auto* sun_light = sun->add_component<DirectionalLight3D>();
+    sun_light->intensity = 0.0f;
+    sun_light->ambient = 0.0f;
+
+    // A point light whose range is far smaller than its distance to the cube.
+    Node* light_node = scene.create_node("Lamp");
+    auto* light = light_node->add_component<PointLight3D>();
+    light->range = 0.5f;
+    light_node->transform().position = Vec3{0.0f, 0.0f, 2.0f};
+
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
+    // No ambient and no other light: an out-of-range point light leaves black.
+    CHECK(centre.r < 20);
+    CHECK(centre.g < 20);
+    CHECK(centre.b < 20);
+}
+
+TEST_CASE("renderer3d caps the number of point lights it forwards") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    renderer->mesh = Mesh::make_cube();
+
+    for (u32 i = 0; i < renderer3d::Renderer3D::kMaxPointLights + 3; ++i) {
+        Node* light_node = scene.create_node("Lamp");
+        light_node->add_component<PointLight3D>();
+        light_node->transform().position = Vec3{static_cast<f32>(i) * 0.1f, 0.0f, 2.0f};
+    }
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D r;
+    REQUIRE_FALSE(r.initialize(*context.device));
+    auto result = r.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(r.last_point_lights() == renderer3d::Renderer3D::kMaxPointLights);
+    context.device->end_frame();
+}
+
+TEST_CASE("renderer3d lights a mesh inside a spot light's cone") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    camera_node->add_component<Camera3D>();
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    renderer->mesh = Mesh::make_cube();
+    renderer->base_color = Vec4{1.0f, 1.0f, 1.0f, 1.0f};
+
+    // A spot light at +Z pointing down -Z (the default node orientation) at the
+    // cube, with a wide enough cone to cover it.
+    Node* light_node = scene.create_node("Spot");
+    auto* light = light_node->add_component<SpotLight3D>();
+    light->color = Vec3{1.0f, 1.0f, 1.0f};
+    light->intensity = 1.0f;
+    light->range = 10.0f;
+    light->inner_cone_degrees = 30.0f;
+    light->outer_cone_degrees = 45.0f;
+    light_node->transform().position = Vec3{0.0f, 0.0f, 2.0f};
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D r;
+    REQUIRE_FALSE(r.initialize(*context.device));
+    auto result = r.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(r.last_spot_lights() == 1);
+    context.device->end_frame();
+
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
+    CHECK(centre.r > 100);
+    CHECK(centre.g > 100);
+    CHECK(centre.b > 100);
 }

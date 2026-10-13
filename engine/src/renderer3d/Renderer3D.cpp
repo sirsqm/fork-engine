@@ -11,9 +11,12 @@
 #include "fe/scene3d/Camera3D.h"
 #include "fe/scene3d/DirectionalLight3D.h"
 #include "fe/scene3d/MeshRenderer3D.h"
+#include "fe/scene3d/PointLight3D.h"
+#include "fe/scene3d/SpotLight3D.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <span>
 
 namespace fe::renderer3d {
@@ -55,25 +58,89 @@ uniform vec4 u_base_color;
 uniform float u_specular;
 
 uniform vec3 u_camera_position;
+
+// Directional light: global, no position.
 uniform vec3 u_light_direction;  // Direction the light travels.
 uniform vec3 u_light_color;
 uniform float u_light_intensity;
 uniform float u_ambient;
 
+// Point lights. Each element packs position.xyz and range in .w.
+uniform int u_point_light_count;
+uniform vec4 u_point_light_position_range[8];
+uniform vec4 u_point_light_color_intensity[8];  // rgb + intensity.
+
+// Spot lights. Each light uses one vec4 in each of three arrays.
+//   u_spot_light_data[i]        = position.xyz, range in .w
+//   u_spot_light_data[i + 8]    = direction.xyz (the direction the light travels)
+//   u_spot_light_color_intensity[i] = color.rgb, intensity in .w
+//   u_spot_light_cone[i]        = cos(inner half-angle), cos(outer half-angle), 0, 0
+uniform int u_spot_light_count;
+uniform vec4 u_spot_light_data[16];
+uniform vec4 u_spot_light_color_intensity[8];
+uniform vec4 u_spot_light_cone[8];
+
 out vec4 frag_color;
+
+// Blinn-Phong diffuse + specular for a light arriving along `to_light`
+// (unit vector towards the light) with the given colour and distance falloff.
+vec3 shade(vec3 n, vec3 v, vec3 to_light, vec3 light_color, float attenuation) {
+    float diffuse = max(dot(n, to_light), 0.0);
+    vec3 h = normalize(to_light + v);
+    float spec = pow(max(dot(n, h), 0.0), 32.0) * u_specular;
+    return light_color * (diffuse + spec) * attenuation;
+}
 
 void main() {
     vec4 albedo = texture(u_texture, v_uv) * u_base_color;
 
     vec3 n = normalize(v_normal);
-    vec3 l = normalize(-u_light_direction);                       // Towards the light.
-    vec3 v = normalize(u_camera_position - v_world_position);     // Towards the viewer.
+    vec3 v = normalize(u_camera_position - v_world_position);
 
-    float diffuse = max(dot(n, l), 0.0);
-    vec3 h = normalize(l + v);
-    float spec = pow(max(dot(n, h), 0.0), 32.0) * u_specular;
+    // Ambient plus the directional light.
+    vec3 l = normalize(-u_light_direction);
+    vec3 lighting = vec3(u_ambient) + shade(n, v, l, u_light_color * u_light_intensity, 1.0);
 
-    vec3 lighting = u_light_color * u_light_intensity * (diffuse + spec) + vec3(u_ambient);
+    // Point lights, with an inverse-square falloff windowed to reach zero at
+    // the light's range so a light has a bounded influence.
+    for (int i = 0; i < u_point_light_count && i < 8; ++i) {
+        vec3 to_light = u_point_light_position_range[i].xyz - v_world_position;
+        float distance = length(to_light);
+        float range = u_point_light_position_range[i].w;
+        if (range <= 0.0) {
+            continue;
+        }
+        float window = max(1.0 - distance / range, 0.0);
+        float attenuation = window * window;
+        lighting += shade(n, v, to_light / max(distance, 1e-4), u_point_light_color_intensity[i].rgb *
+                          u_point_light_color_intensity[i].a, attenuation);
+    }
+
+    // Spot lights: a point light gated by a smooth cone.
+    for (int i = 0; i < u_spot_light_count && i < 8; ++i) {
+        vec3 to_light = u_spot_light_data[i].xyz - v_world_position;
+        float distance = length(to_light);
+        float range = u_spot_light_data[i].w;
+        if (range <= 0.0) {
+            continue;
+        }
+        vec3 light_dir = u_spot_light_data[i + 8].xyz;   // Direction the light travels.
+        float cos_inner = u_spot_light_cone[i].x;
+        float cos_outer = u_spot_light_cone[i].y;
+
+        float cos_angle = dot(normalize(-to_light), light_dir);
+        // Smoothstep between the outer and inner cosine gives a soft edge. The
+        // division is guarded: the renderer keeps outer < inner, but a hand-set
+        // equal pair must not divide by zero.
+        float denom = max(cos_inner - cos_outer, 1e-4);
+        float cone = clamp((cos_angle - cos_outer) / denom, 0.0, 1.0);
+
+        float window = max(1.0 - distance / range, 0.0);
+        float attenuation = window * window * cone;
+        lighting += shade(n, v, to_light / max(distance, 1e-4), u_spot_light_color_intensity[i].rgb *
+                          u_spot_light_color_intensity[i].a, attenuation);
+    }
+
     frag_color = vec4(albedo.rgb * lighting, albedo.a);
 }
 )glsl";
@@ -218,6 +285,8 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
 
     last_draw_calls_ = 0;
     last_culled_ = 0;
+    last_point_lights_ = 0;
+    last_spot_lights_ = 0;
 
     const Camera3D* camera = find_active_camera(scene);
     if (camera == nullptr) {
@@ -259,6 +328,63 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     const Mat4 view_projection = camera->view_projection(viewport_width, viewport_height);
     const Vec3 camera_position = camera->eye();
 
+    // --- Gather lights ------------------------------------------------------
+    // Point and spot lights need their node's world position (and, for spots,
+    // the node's forward direction), so they are collected here where the node
+    // is still in hand. Brightness is intensity scaled by range, which is a
+    // cheap proxy for influence used only to pick which lights survive the cap.
+    struct PointLightEntry {
+        Vec3 position;
+        Vec3 color;
+        f32 intensity;
+        f32 range;
+        f32 brightness;
+    };
+    struct SpotLightEntry {
+        Vec3 position;
+        Vec3 direction; // Direction the light travels.
+        Vec3 color;
+        f32 intensity;
+        f32 range;
+        f32 cos_inner;
+        f32 cos_outer;
+        f32 brightness;
+    };
+    std::vector<PointLightEntry> point_lights;
+    std::vector<SpotLightEntry> spot_lights;
+
+    scene.for_each_node([&](Node& node) {
+        const Mat4 world = node.world_matrix();
+        if (const auto* light = node.get_component<PointLight3D>(); light != nullptr) {
+            point_lights.push_back(PointLightEntry{transform_point(world, Vec3{}), light->color, light->intensity,
+                                                   light->range, light->intensity * light->range});
+        }
+        if (const auto* light = node.get_component<SpotLight3D>(); light != nullptr) {
+            // The node's local -Z is the cone axis, matching Camera3D. A zero
+            // scale would collapse it, so normalise defensively.
+            const Vec3 forward = transform_direction(world, Vec3{0.0f, 0.0f, -1.0f}).normalized();
+            const f32 inner = radians(light->inner_cone_degrees);
+            const f32 outer = radians(light->outer_cone_degrees);
+            spot_lights.push_back(SpotLightEntry{transform_point(world, Vec3{}), forward, light->color,
+                                                 light->intensity, light->range, std::cos(inner), std::cos(outer),
+                                                 light->intensity * light->range});
+        }
+    });
+
+    const auto by_brightness = [](const auto& a, const auto& b) { return a.brightness > b.brightness; };
+    if (point_lights.size() > kMaxPointLights) {
+        std::nth_element(point_lights.begin(), point_lights.begin() + kMaxPointLights, point_lights.end(),
+                         by_brightness);
+        point_lights.resize(kMaxPointLights);
+    }
+    if (spot_lights.size() > kMaxSpotLights) {
+        std::nth_element(spot_lights.begin(), spot_lights.begin() + kMaxSpotLights, spot_lights.end(), by_brightness);
+        spot_lights.resize(kMaxSpotLights);
+    }
+
+    last_point_lights_ = static_cast<u32>(point_lights.size());
+    last_spot_lights_ = static_cast<u32>(spot_lights.size());
+
     // --- 3. Frustum culling -------------------------------------------------
     // Build the frustum once and reject instances whose world AABB lies wholly
     // outside it. This is conservative (a straddling box is kept), so culling
@@ -299,6 +425,37 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
         shader_->set_float("u_ambient", ambient);
         shader_->set_vec3("u_light_direction", light_direction);
         shader_->set_vec3("u_camera_position", camera_position);
+
+        // Pack and upload the bounded light arrays. Only the first
+        // point_count / spot_count elements are read by the shader, whose loop
+        // is bounded by the count uniforms.
+        const u32 point_count = static_cast<u32>(point_lights.size());
+        for (u32 i = 0; i < point_count; ++i) {
+            const PointLightEntry& entry = point_lights[i];
+            point_light_data_[i] = Vec4{entry.position, entry.range};
+            point_color_data_[i] = Vec4{entry.color, entry.intensity};
+        }
+        shader_->set_int("u_point_light_count", static_cast<i32>(point_count));
+        shader_->set_vec4_array("u_point_light_position_range", point_light_data_.data(), point_count);
+        shader_->set_vec4_array("u_point_light_color_intensity", point_color_data_.data(), point_count);
+
+        const u32 spot_count = static_cast<u32>(spot_lights.size());
+        for (u32 i = 0; i < spot_count; ++i) {
+            const SpotLightEntry& entry = spot_lights[i];
+            // The position/direction arrays are uploaded as one 16-element
+            // block: [0, 8) positions + ranges, [8, 16) directions.
+            spot_light_data_[i] = Vec4{entry.position, entry.range};
+            spot_light_data_[i + kMaxSpotLights] = Vec4{entry.direction, 0.0f};
+            spot_color_data_[i] = Vec4{entry.color, entry.intensity};
+            spot_cone_data_[i] = Vec4{entry.cos_inner, entry.cos_outer, 0.0f, 0.0f};
+        }
+        shader_->set_int("u_spot_light_count", static_cast<i32>(spot_count));
+        // The direction half of the block must be uploaded even when only the
+        // first few entries are used, so always send the full 2*max block; the
+        // shader reads it only for i < spot_count.
+        shader_->set_vec4_array("u_spot_light_data", spot_light_data_.data(), spot_count == 0 ? 0 : kMaxSpotLights * 2);
+        shader_->set_vec4_array("u_spot_light_color_intensity", spot_color_data_.data(), spot_count);
+        shader_->set_vec4_array("u_spot_light_cone", spot_cone_data_.data(), spot_count);
     }
 
     // --- 5. Draw ------------------------------------------------------------

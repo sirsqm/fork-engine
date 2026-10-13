@@ -8,6 +8,7 @@
 #include "fe/mesh/Mesh.h"
 #include "fe/rhi/Device.h"
 
+#include <array>
 #include <unordered_map>
 #include <vector>
 
@@ -18,6 +19,8 @@ class Node;
 class Camera3D;
 class MeshRenderer3D;
 class DirectionalLight3D;
+class PointLight3D;
+class SpotLight3D;
 
 namespace renderer3d {
 
@@ -83,6 +86,11 @@ public:
     // both are reported so a test can assert culling happened without guessing.
     [[nodiscard]] u32 last_culled() const noexcept { return last_culled_; }
 
+    // The number of point/spot lights forwarded to the shader in the last
+    // frame, after the per-frame cap. Bounded by kMaxPointLights/kMaxSpotLights.
+    [[nodiscard]] u32 last_point_lights() const noexcept { return last_point_lights_; }
+    [[nodiscard]] u32 last_spot_lights() const noexcept { return last_spot_lights_; }
+
     // Selects the camera that should drive rendering for `scene`: the first
     // camera with `primary` set, or the first camera found if none is primary,
     // or nullptr if the scene has no 3D camera. Mirrors
@@ -90,9 +98,18 @@ public:
     // the clear colour.
     [[nodiscard]] static const Camera3D* find_active_camera(const Scene& scene);
 
-    // The first directional light, or nullptr. With one light type there is
-    // nothing to choose between; this is the single lookup the renderer needs.
+    // The first directional light, or nullptr. A scene may have more, but the
+    // first is used; a directional light is global, so one is the common case.
     [[nodiscard]] static const DirectionalLight3D* find_directional_light(const Scene& scene);
+
+    // The per-frame light budget. Point and spot lights are forwarded to the
+    // shader in fixed-size arrays, so a scene with more lights than this renders
+    // with the `kMaxPointLights`/`kMaxSpotLights` brightest (by intensity scaled
+    // by range). The cap exists so the shader's loop is bounded and the uniform
+    // block has a fixed size; a clustered or tiled light path would lift it
+    // without changing the component API.
+    static constexpr u32 kMaxPointLights = 8;
+    static constexpr u32 kMaxSpotLights = 8;
 
 private:
     struct GpuMesh {
@@ -119,6 +136,22 @@ private:
 
     u32 last_draw_calls_ = 0;
     u32 last_culled_ = 0;
+    u32 last_point_lights_ = 0;
+    u32 last_spot_lights_ = 0;
+
+    // Reused across frames to avoid per-frame allocation. Each holds one vec4
+    // per light in a fixed-size array, packed as the shader expects:
+    //   point_light_data_  [i] = position.xyz, range
+    //   point_color_data_  [i] = color.rgb,    intensity
+    //   spot_light_data_   [i] = position.xyz, range       (i in [0, 8))
+    //   spot_light_data_   [i] = direction.xyz, unused     (i in [8, 16))
+    //   spot_color_data_   [i] = color.rgb,    intensity
+    //   spot_cone_data_    [i] = cos(inner),   cos(outer), 0, 0
+    std::array<Vec4, kMaxPointLights> point_light_data_{};
+    std::array<Vec4, kMaxPointLights> point_color_data_{};
+    std::array<Vec4, kMaxSpotLights * 2> spot_light_data_{};
+    std::array<Vec4, kMaxSpotLights> spot_color_data_{};
+    std::array<Vec4, kMaxSpotLights> spot_cone_data_{};
 };
 
 } // namespace renderer3d

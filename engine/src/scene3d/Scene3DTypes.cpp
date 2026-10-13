@@ -11,6 +11,8 @@
 #include "fe/scene3d/Camera3D.h"
 #include "fe/scene3d/DirectionalLight3D.h"
 #include "fe/scene3d/MeshRenderer3D.h"
+#include "fe/scene3d/PointLight3D.h"
+#include "fe/scene3d/SpotLight3D.h"
 
 #include <memory>
 
@@ -94,6 +96,43 @@ void register_directional_light3d(Registry& registry) {
     registry.register_type(std::move(desc));
 }
 
+void register_point_light3d(Registry& registry) {
+    PointLight3D defaults;
+
+    TypeDesc desc;
+    desc.name = PointLight3D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<PointLight3D>()); };
+
+    desc.properties.push_back(
+        make_vector_group<PointLight3D, Vec3>("color", &PointLight3D::color, "Vec3", {"r", "g", "b"}));
+    desc.properties.push_back(
+        make_scalar<PointLight3D, f32>("intensity", &PointLight3D::intensity, ValueKind::Float, &defaults));
+    desc.properties.push_back(
+        make_scalar<PointLight3D, f32>("range", &PointLight3D::range, ValueKind::Float, &defaults));
+
+    registry.register_type(std::move(desc));
+}
+
+void register_spot_light3d(Registry& registry) {
+    SpotLight3D defaults;
+
+    TypeDesc desc;
+    desc.name = SpotLight3D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<SpotLight3D>()); };
+
+    desc.properties.push_back(
+        make_vector_group<SpotLight3D, Vec3>("color", &SpotLight3D::color, "Vec3", {"r", "g", "b"}));
+    desc.properties.push_back(
+        make_scalar<SpotLight3D, f32>("intensity", &SpotLight3D::intensity, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<SpotLight3D, f32>("range", &SpotLight3D::range, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<SpotLight3D, f32>("inner_cone_degrees", &SpotLight3D::inner_cone_degrees,
+                                                            ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<SpotLight3D, f32>("outer_cone_degrees", &SpotLight3D::outer_cone_degrees,
+                                                            ValueKind::Float, &defaults));
+
+    registry.register_type(std::move(desc));
+}
+
 } // namespace
 
 void register_scene3d_types() {
@@ -101,6 +140,8 @@ void register_scene3d_types() {
     register_camera3d(registry);
     register_mesh_renderer3d(registry);
     register_directional_light3d(registry);
+    register_point_light3d(registry);
+    register_spot_light3d(registry);
 }
 
 } // namespace fe::reflect
