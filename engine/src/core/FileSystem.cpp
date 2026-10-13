@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/core/FileSystem.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -185,6 +186,35 @@ std::string normalize(std::string_view path) {
         result.push_back(c);
     }
     return result;
+}
+
+std::vector<std::string> list_files_recursive(std::string_view directory) {
+    std::vector<std::string> files;
+
+    const stdfs::path root = to_native(directory);
+    std::error_code ec;
+    if (!stdfs::is_directory(root, ec)) {
+        return files;
+    }
+
+    for (stdfs::recursive_directory_iterator it(root, ec), end; it != end; it.increment(ec)) {
+        if (ec) {
+            break;
+        }
+        if (!it->is_regular_file(ec)) {
+            continue;
+        }
+        // Relative to the scan root, so callers get stable asset-tree paths.
+        const stdfs::path relative = stdfs::relative(it->path(), root, ec);
+        if (ec) {
+            continue;
+        }
+        files.push_back(to_utf8(relative));
+    }
+
+    // Deterministic order, so a rebuild from disk produces the same index.
+    std::sort(files.begin(), files.end());
+    return files;
 }
 
 } // namespace fe::fs
