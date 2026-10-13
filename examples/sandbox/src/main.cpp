@@ -309,9 +309,10 @@ private:
 
     fe::Camera2D* camera_ = nullptr;
     fe::Node* crate_ = nullptr;
-    // Owned by the sandbox; declared before the system that borrows it so the
-    // system is destroyed first. The system itself is owned by the schedule;
-    // audio_report_ is a borrowed pointer to it for reporting.
+    // The device is owned by the sandbox; the system (owned by the schedule)
+    // only borrows it, and neither is touched after the frame loop ends, so the
+    // device being destroyed first is safe. audio_report_ is a borrowed pointer
+    // to the system, used only from on_stop().
     std::unique_ptr<fe::audio::AudioDevice> audio_device_;
     fe::audio::AudioSystem* audio_report_ = nullptr;
     std::string scene_to_load_;
