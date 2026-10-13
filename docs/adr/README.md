@@ -38,6 +38,7 @@ rather than editing it.
 | [0027](0027-asset-import-settings.md) | Per-asset import settings stored in the sidecar | Accepted |
 | [0028](0028-editor-hint-metadata.md) | Editor hint metadata: typed hints on a reflected property | Accepted |
 | [0029](0029-import-cache.md) | A content-addressed import cache | Accepted |
+| [0034](0034-audio-attenuation-buses.md) | Audio attenuation and mixing buses | Accepted |
 
 ## Format
 
