@@ -14,7 +14,7 @@ namespace fe {
 
 // Forward declaration: Profiler::frame_report() returns one by value, and the
 // full definition (which needs Profiler's capacities) follows the class.
-class FrameReport;
+struct FrameReport;
 
 // A frame profiler: named CPU scopes and integer counters, recorded per frame
 // into a fixed ring buffer.
