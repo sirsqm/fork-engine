@@ -167,6 +167,47 @@ the shape -- gather the components you process into a flat array, advance them,
 hand the result to the subsystem that consumes it -- without the renderer
 knowing animation exists.
 
+### Profiling and observability
+
+The engine measures its own frame so performance work is grounded in numbers
+rather than guesses ([ADR-0017](adr/0017-performance-strategy.md)). The
+instrument is `fe::Profiler` in `core`: a fixed ring of frame samples holding
+named CPU scopes and integer counters, plus an RAII `ProfileScope`
+([ADR-0022](adr/0022-profiler-and-frame-timing.md),
+[ADR-0024](adr/0024-profiler-instrumentation.md)).
+
+Instrumentation is two macros:
+
+```cpp
+FE_PROFILE_SCOPE("physics/solve");  // times the enclosing block
+FE_PROFILE_FUNCTION();              // times the enclosing function
+```
+
+Both are RAII, so the sample closes on every exit path. `FE_PROFILING` (default
+1) gates them; when it is 0 they expand to nothing, so a shipping build pays
+nothing and carries no name strings. The cost when on is a thread-local read and
+a branch when idle, and one `now()` pair plus an interned-name lookup when a
+frame is in progress -- no allocation, no lock.
+
+The runtime feeds the profiler without any cooperation from gameplay code.
+`Application` installs its profiler as the thread's current one and brackets
+each frame with `frame`, `frame/update` (the `on_update` hook plus the system
+run), and `frame/render`. `SceneSchedule` times each system as `system/<name>`.
+A frame's cost therefore breaks down by phase and by system by default.
+
+A caller reads the numbers as a **snapshot**, never a live pointer into the
+moving ring: `Profiler::frame_report(offset)` and
+`Application::last_frame_report()` return a `FrameReport` by value -- total,
+update, render, per-name totals (sorted by cost), counters, and drop counts,
+with owned name strings. `FrameReport::summary()` is a stable single line for
+logs and CI; `to_string()` adds the per-scope detail. This is the read-only
+surface the editor's future profiler panel renders; the editor lane consumes it
+and the engine never includes an editor header.
+
+The current profiler is thread-local and a profiler is recorded from one thread;
+a worker thread records on its own profiler and cannot corrupt the main thread's
+frame. Cross-thread aggregation waits for the `jobs` module (M9).
+
 ### Physics as a system
 
 `physics2d` is the first system that *simulates* the scene rather than reading
