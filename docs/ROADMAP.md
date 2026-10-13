@@ -18,6 +18,31 @@ project, live, no manual merge). Their milestones are **M9**, **M8**, and
 [0018](adr/0018-multi-platform-shipping.md), and
 [0019](adr/0019-collaborative-editing.md).
 
+## Near-term priorities
+
+The order the next work is actually taken in, chosen so that a small number of
+things get *finished* rather than many get started. This is the roadmap's
+front line; the milestones below hold the detail.
+
+1. **A vertical slice** — one small game built end to end in the engine (M2.5).
+   Everything else is secondary to having something real that exercises the whole
+   stack together.
+2. **Honest scope** — the "ship anywhere" claim is scoped to desktop for now, in
+   [ADR-0032](adr/0032-near-term-platform-scope.md), so the README does not
+   promise more than the engine delivers.
+3. **Scripting** — the language-agnostic seam plus C++ native modules as the
+   primary language (M7). This is what turns the engine into something people can
+   make games with.
+4. **Guard the performance claims** — the benchmark as a CI regression gate
+   (M9) and sanitizer builds (ASan/UBSan), while the codebase is still small
+   enough to keep them cheaply green.
+5. **Content pipeline depth** — glTF instead of only OBJ, and skeletal animation
+   (M4, M6), once a game needs real 3D content.
+6. **Editor polish, more platforms, collaborative editing** — after the above.
+
+The intent: finish the small things. The engines that last are the ones whose
+authors ruthlessly complete them.
+
 ## M1 — Foundation (done)
 
 The smallest useful engine: something that builds, runs, renders, and is tested.
@@ -67,6 +92,28 @@ needed a concrete mechanism before gameplay could grow. See
 - [x] The runtime drives the schedule once per frame, after `on_update` and before rendering
 - [x] First concrete system: sprite-sheet animation (`SpriteAnimator` + `SpriteAnimationSystem`), reflected so animators serialize and are inspector-editable
 
+## M2.5 — A vertical slice: one small game, end to end
+
+The single highest-value next step, and deliberately inserted before the later
+milestones. Infrastructure that has only ever passed its own unit tests has not
+been proven to work *together*; a small finished game is what exercises the whole
+engine in one artifact and exposes the missing glue. This is the project's own
+guiding rule — "a few genuinely working systems beat a long list of half-finished
+features" — applied at the project level, and it is the thing that attracts
+contributors, because people contribute around something finished.
+
+- [ ] Build one small, complete game entirely in the engine — a breakout,
+      pong, or tiny platformer — and ship it in `examples/` (or its own repo)
+- [ ] Make it the integration test: it uses the scene graph, resources, physics,
+      audio, serialization, and the editor's authoring path together
+- [ ] Fix what it exposes; every gap it finds becomes a focused issue, not a new
+      subsystem
+- [ ] Write a short "how this game was built" walkthrough, which doubles as the
+      first real tutorial and the contributor on-ramp
+
+*Why here:* before more engine breadth. One shipped game teaches more about what
+is missing than ten roadmap items, and it is the precondition for a community.
+
 ## M3 — Reflection and a real asset pipeline
 
 - [x] Property inspector integration with editor hints (Range, Color, Resource) — typed hints on `Property` (`RangeHint`/`ColorHint`/`ResourceHint`) drive a bounded slider, a colour picker, and an asset drop target; resource edits are undoable via `SetResourceCommand` ([ADR-0028](adr/0028-editor-hint-metadata.md))
@@ -113,9 +160,18 @@ needed a concrete mechanism before gameplay could grow. See
 - [~] 2D island detection and body sleeping: bodies group into islands over the
       contact-and-joint graph and a settled island stops being solved — see
       [ADR-0026](adr/0026-physics2d-islands-sleeping.md)
-- [ ] 2D physics refinements: collider offsets, oriented-box colliders,
+- [x] 2D physics refinements: collider offsets, oriented-box colliders,
       continuous collision detection
-- [ ] 3D physics
+- [x] 3D physics (first cut): box and sphere colliders, dynamic and static
+      bodies, a linear sequential-impulse solver (gravity, restitution,
+      friction, damping), a uniform-grid broad phase, distance joints, scene
+      queries, and contact events (`Collider3D`, `RigidBody3D`,
+      `DistanceJoint3D`, `Physics3DSystem`) — a hand-written core kept behind a
+      component-and-query boundary so a third-party solver can replace it later;
+      see [ADR-0031](adr/0031-physics3d-and-backend-seam.md)
+- [ ] 3D physics refinements: angular dynamics (torque, inertia, quaternion
+      rotation), more joint types, and islands / sleeping — mirroring the 2D
+      cuts; deferred behind the backend seam rather than chased to parity
 - [ ] Integration with the scene and the editor
 - [ ] Debug drawing
 
@@ -134,10 +190,29 @@ needed a concrete mechanism before gameplay could grow. See
 
 ## M7 — Scripting
 
-- [ ] Choose and document the language and embedding strategy (ADR first)
-- [ ] Reflection-backed bindings
+Direction (decided, ADR to follow): **C++ is the primary language for now**, via
+native gameplay modules that build against the engine and hot-reload, and the
+scripting layer is built as a **language-agnostic seam** so another language can
+be added later without the engine core naming it. A purpose-built engine
+scripting language (a GDScript-style option) is a *possible* future, deliberately
+**not started** — it is a multi-year commitment and only worth it if it is
+dramatically better for the engine's use case than embedding a proven language,
+not merely different. The seam is the cheap, reversible decision; the language
+is the expensive one, and it waits.
+
+- [ ] Choose and document the scripting strategy (ADR first): C++ native modules
+      as the primary path, the seam's shape, and the criteria under which an
+      embedded language or a custom language would be added
+- [ ] A language-agnostic scripting seam: the engine core talks to an interface
+      (`ScriptLanguage`/`ScriptInstance`-style), never to a concrete language
+- [ ] C++ native gameplay modules: compile against the engine, load, and
+      hot-reload without restarting the editor
+- [ ] Reflection-backed bindings, so a script's exposed properties flow through
+      the existing reflection and serialization path
 - [ ] Editor integration (attach, inspect, hot reload)
 - [ ] Debugging support
+- [ ] *(Deferred)* An embedded language (Lua/Wren) or a custom engine language,
+      only once the seam is proven and the criteria in the ADR are met
 
 ## M8 — Ship anywhere (cross-platform targets)
 
@@ -149,8 +224,12 @@ use, not merely that the editor runs on several OSes. Plan and trade-offs:
       input incl. touch and gamepad, filesystem, threads, time, dynamic
       libraries, lifecycle) and add a **null/headless** backend for CI and
       servers
-- [ ] Asset packaging: a pack format and a loader scheme so the runtime reads
-      from a pack as transparently as from disk
+- [x] Asset packaging: a versioned pack format (`PackFile`), a writer that turns
+      a project's asset tree and startup scene into one file, and a `PackSource`
+      the runtime mounts so the loaders and the scene reader read from a pack as
+      transparently as from disk ([ADR-0030](adr/0030-asset-pack-format.md))
+- [ ] `fork_pack` tooling polish: reachability (pack only what the startup scene
+      references), compression, and streaming a large pack
 - [ ] Export templates: a prebuilt runtime per desktop target and a `fork
       export` path that assembles a runnable build from a project
 - [ ] Desktop parity: macOS and Windows backends brought to parity with Linux
@@ -213,5 +292,9 @@ and trade-offs: [`STRATEGY.md`](STRATEGY.md),
 
 - Keep the build reproducible and warning-clean.
 - Keep the tests green; every fix gets a test that would have caught it.
+- Run the suite under AddressSanitizer and UndefinedBehaviorSanitizer while the
+  codebase is small enough to keep them cheaply green (`-DFE_ENABLE_ASAN=ON`).
+- Keep the benchmark a regression gate, not just a dev tool: CI records the
+  numbers and fails on a large regression.
 - Keep the architecture documentation and ADRs current.
 - Review dependency licenses for compatibility with MIT.

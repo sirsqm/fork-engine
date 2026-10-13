@@ -11,7 +11,9 @@
 #   core  <-  serialization  <-  scene, resources, reflect
 #   core, scene, resources  <-  systems
 #   core, scene, systems, reflect  <-  physics2d
+#   core, scene, systems, reflect  <-  physics3d
 #   core, scene, systems, resources  <-  audio
+#   core, resources  <-  pack
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 
@@ -47,6 +49,12 @@ set(FE_ENGINE_SOURCES
     src/physics2d/Physics2DQueries.cpp
     src/physics2d/Physics2DSystem.cpp
     src/physics2d/PhysicsTypes.cpp
+    src/physics3d/BroadPhase3D.cpp
+    src/physics3d/Geometry3D.cpp
+    src/physics3d/JointSolver3D.cpp
+    src/physics3d/Physics3DQueries.cpp
+    src/physics3d/Physics3DSystem.cpp
+    src/physics3d/Physics3DTypes.cpp
     src/mesh/Mesh.cpp
     src/mesh/ObjLoader.cpp
     src/scene3d/Camera3D.cpp
@@ -58,6 +66,9 @@ set(FE_ENGINE_SOURCES
     src/audio/AudioTypes.cpp
     src/audio/AudioBackend.cpp
     src/audio/MiniAudioDevice.cpp
+    src/pack/PackFile.cpp
+    src/pack/PackWriter.cpp
+    src/pack/PackSource.cpp
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/renderer2d/Renderer2D.cpp

@@ -21,11 +21,13 @@ add_executable(fork_engine_tests
     src/test_reflect.cpp
     src/test_systems.cpp
     src/test_physics2d.cpp
+    src/test_physics3d.cpp
     src/test_broadphase.cpp
     src/test_sleeping.cpp
     src/test_mesh.cpp
     src/test_scene3d.cpp
     src/test_audio.cpp
+    src/test_pack.cpp
     src/test_resource_manager.cpp
     src/test_asset_database.cpp
     src/test_import_settings.cpp

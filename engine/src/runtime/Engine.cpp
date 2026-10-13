@@ -9,6 +9,7 @@
 #include "fe/core/Log.h"
 #include "fe/mesh/ObjLoader.h"
 #include "fe/physics2d/PhysicsTypes.h"
+#include "fe/physics3d/Physics3DTypes.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/renderer3d/Renderer3D.h"
@@ -54,6 +55,7 @@ Error Engine::initialize(const Config& config) {
     // inspector, and any scene loaded later. Idempotent.
     reflect::register_builtin_types();
     reflect::register_physics_types();
+    reflect::register_physics3d_types();
     reflect::register_scene3d_types();
     reflect::register_audio_types();
 

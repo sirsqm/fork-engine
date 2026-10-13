@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #include "fe/mesh/ObjLoader.h"
 
-#include "fe/core/FileSystem.h"
 #include "fe/mesh/Mesh.h"
 
 #include <charconv>
@@ -73,7 +72,7 @@ bool ObjLoader::supports(std::string_view extension) const noexcept {
 }
 
 Result<std::shared_ptr<Resource>> ObjLoader::load(std::string_view path) {
-    auto text = fs::read_text_file(path);
+    auto text = read_text(path);
     if (!text) {
         return text.error();
     }

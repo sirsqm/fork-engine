@@ -8,6 +8,7 @@
 #include "fe/resources/ImportCache.h"
 #include "fe/resources/ImportSettings.h"
 #include "fe/resources/Resource.h"
+#include "fe/resources/ResourceSource.h"
 
 #include <memory>
 #include <string>
@@ -30,7 +31,12 @@ namespace fe {
 // "reference or reload" behaviour across scene reloads and asset reimports
 // without a manual release call, and avoids the classic bug where the manager
 // pins every asset for the lifetime of the process.
-class ResourceManager {
+//
+// The manager is itself the default ResourceSource: it reads asset bytes from
+// the filesystem. Mounting another source (`mount`) makes every load read from
+// it instead, which is how a shipped build reads from a pack
+// (docs/adr/0030-asset-pack-format.md) without any loader knowing.
+class ResourceManager final : public ResourceSource {
 public:
     ResourceManager() = default;
     ~ResourceManager() = default;
@@ -41,6 +47,22 @@ public:
     // Registers a loader. The manager takes ownership. Loaders are consulted in
     // registration order; register the most specific first.
     void register_loader(std::unique_ptr<ResourceLoader> loader);
+
+    // Installs a source to read asset bytes from, replacing the filesystem. The
+    // source is consulted by read_binary()/read_text()/exists() below, so the
+    // loaders that read through them serve a mounted pack transparently. A null
+    // source restores the filesystem default. GUID references resolve through
+    // the source when it knows the id, and through the asset database
+    // otherwise, so a pack is self-describing.
+    void mount(std::shared_ptr<ResourceSource> source);
+    [[nodiscard]] const std::shared_ptr<ResourceSource>& source() const noexcept { return source_; }
+
+    // ResourceSource: the filesystem by default, the mounted source when one is
+    // installed. These are what a loader calls to read its input.
+    [[nodiscard]] Result<std::vector<u8>> read_binary(std::string_view path) const override;
+    [[nodiscard]] Result<std::string> read_text(std::string_view path) const override;
+    [[nodiscard]] bool exists(std::string_view path) const override;
+    [[nodiscard]] const AssetLocation* resolve_asset(const AssetId& id) const override;
 
     // Loads a resource, or returns the already-cached instance.
     //
@@ -123,6 +145,9 @@ private:
     std::unordered_map<std::string, CacheEntry> cache_;
     AssetDatabase assets_;
     ImportCache import_cache_;
+    // The mounted byte source, or null to read from the filesystem. Set by
+    // mount(); consulted by read_binary()/read_text()/exists()/resolve_asset().
+    std::shared_ptr<ResourceSource> source_;
     // The settings for the load currently running, or nullptr. Set and cleared
     // around each loader call in load_file(); see current_import_settings().
     const ImportSettings* current_settings_ = nullptr;

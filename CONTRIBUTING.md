@@ -8,6 +8,12 @@ make the foundation solid: bug fixes, tests, documentation, and small, complete
 improvements to existing systems. Please open an issue before starting a large
 feature so we can agree on the design first.
 
+Development happens in the open: work lands on `main` through reviewable pull
+requests, architectural decisions are recorded as ADRs in `docs/adr/`, and the
+roadmap's [near-term priorities](docs/ROADMAP.md#near-term-priorities) say what
+is being worked on next. The maintainer decides direction, ADRs record the
+reasoning, and anyone can propose a change.
+
 ## Ways to contribute
 
 - **Report a bug.** Open an issue with a minimal reproduction, what you expected,
@@ -17,6 +23,9 @@ feature so we can agree on the design first.
 - **Improve the docs.** Architecture notes, examples, and clarifications are all
   welcome.
 - **Add tests.** Coverage of existing behaviour is always useful.
+- **Build a game in the engine.** The single most useful contribution right now
+  is a small, complete game built end to end (roadmap M2.5) — it proves the
+  systems work together and exposes the gaps that matter.
 
 Three capabilities shape where the project is going — performance, shipping to
 every platform players use, and collaborative editing — and are planned in
