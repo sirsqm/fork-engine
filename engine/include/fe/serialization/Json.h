@@ -21,14 +21,18 @@
 
 namespace fe {
 
-inline void to_json(nlohmann::json& j, const Vec2& v) { j = nlohmann::json::array({v.x, v.y}); }
+inline void to_json(nlohmann::json& j, const Vec2& v) {
+    j = nlohmann::json::array({v.x, v.y});
+}
 
 inline void from_json(const nlohmann::json& j, Vec2& v) {
     v.x = j.at(0).get<f32>();
     v.y = j.at(1).get<f32>();
 }
 
-inline void to_json(nlohmann::json& j, const Vec3& v) { j = nlohmann::json::array({v.x, v.y, v.z}); }
+inline void to_json(nlohmann::json& j, const Vec3& v) {
+    j = nlohmann::json::array({v.x, v.y, v.z});
+}
 
 inline void from_json(const nlohmann::json& j, Vec3& v) {
     v.x = j.at(0).get<f32>();
@@ -36,7 +40,9 @@ inline void from_json(const nlohmann::json& j, Vec3& v) {
     v.z = j.at(2).get<f32>();
 }
 
-inline void to_json(nlohmann::json& j, const Vec4& v) { j = nlohmann::json::array({v.x, v.y, v.z, v.w}); }
+inline void to_json(nlohmann::json& j, const Vec4& v) {
+    j = nlohmann::json::array({v.x, v.y, v.z, v.w});
+}
 
 inline void from_json(const nlohmann::json& j, Vec4& v) {
     v.x = j.at(0).get<f32>();
@@ -57,7 +63,9 @@ inline void from_json(const nlohmann::json& j, Transform& t) {
     t.scale = j.value("scale", Vec3{1.0f, 1.0f, 1.0f});
 }
 
-inline void to_json(nlohmann::json& j, const Uuid& id) { j = id.to_string(); }
+inline void to_json(nlohmann::json& j, const Uuid& id) {
+    j = id.to_string();
+}
 
 inline void from_json(const nlohmann::json& j, Uuid& id) {
     const std::string text = j.get<std::string>();

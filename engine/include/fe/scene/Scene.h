@@ -38,7 +38,8 @@ public:
     // --- Node creation -----------------------------------------------------
     // Creates a root node of concrete type T and returns a borrowed pointer.
     // Ownership stays with the scene.
-    template <typename T, typename... Args> T* create_node(Args&&... args) {
+    template <typename T, typename... Args>
+    T* create_node(Args&&... args) {
         static_assert(std::is_base_of_v<Node, T>, "T must derive from fe::Node");
         auto node = std::unique_ptr<T>(new T(std::forward<Args>(args)...));
         T* raw = node.get();
@@ -65,7 +66,8 @@ public:
 
     // --- Traversal ---------------------------------------------------------
     // Visits every node depth-first (pre-order). The callback receives Node&.
-    template <typename Fn> void for_each_node(Fn&& fn) const {
+    template <typename Fn>
+    void for_each_node(Fn&& fn) const {
         for (const auto& root : roots_) {
             visit_recursive(*root, fn);
         }
@@ -81,7 +83,8 @@ private:
     void register_node(Node& node);
     void unregister_node(Node& node);
 
-    template <typename Fn> static void visit_recursive(Node& node, Fn& fn) {
+    template <typename Fn>
+    static void visit_recursive(Node& node, Fn& fn) {
         fn(node);
         for (const auto& child : node.children()) {
             visit_recursive(*child, fn);

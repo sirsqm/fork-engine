@@ -22,7 +22,9 @@ constexpr f32 kMaxDeltaTime = 0.25f;
 
 } // namespace
 
-Engine::~Engine() { shutdown(); }
+Engine::~Engine() {
+    shutdown();
+}
 
 Error Engine::initialize(const Config& config) {
     if (initialized_) {

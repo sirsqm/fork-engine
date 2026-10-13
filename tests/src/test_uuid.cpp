@@ -37,7 +37,7 @@ TEST_CASE("parse rejects malformed input without throwing") {
     Uuid parsed;
     CHECK_FALSE(Uuid::try_parse("", parsed));
     CHECK_FALSE(Uuid::try_parse("not-a-uuid", parsed));
-    CHECK_FALSE(Uuid::try_parse("00000000-0000-0000-0000-00000000000", parsed)); // one short
+    CHECK_FALSE(Uuid::try_parse("00000000-0000-0000-0000-00000000000", parsed));  // one short
     CHECK_FALSE(Uuid::try_parse("gggggggg-0000-0000-0000-000000000000", parsed)); // bad hex
 }
 

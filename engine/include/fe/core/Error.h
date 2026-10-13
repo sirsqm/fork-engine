@@ -44,7 +44,8 @@ private:
 //     auto r = parse("42");
 //     if (!r) { FE_LOG_ERROR("%s", r.error().message().c_str()); }
 //     else    { use(r.value()); }
-template <typename T> class Result {
+template <typename T>
+class Result {
 public:
     Result(T value) : value_(std::move(value)), error_() {}
     Result(Error error) : value_(), error_(std::move(error)) {}
@@ -62,7 +63,8 @@ private:
 };
 
 // Specialisation for functions that either succeed or fail with no value.
-template <> class Result<void> {
+template <>
+class Result<void> {
 public:
     Result() = default;
     Result(Error error) : error_(std::move(error)) {}

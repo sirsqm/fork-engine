@@ -20,8 +20,7 @@ Mat4 Camera2D::view_projection(u32 viewport_width, u32 viewport_height) const no
     const f32 half_height = static_cast<f32>(viewport_height) * 0.5f / zoom;
 
     const Mat4 view = Mat4::translation(Vec3{-centre.x, -centre.y, 0.0f});
-    const Mat4 projection =
-        Mat4::orthographic(-half_width, half_width, -half_height, half_height, -1.0f, 1.0f);
+    const Mat4 projection = Mat4::orthographic(-half_width, half_width, -half_height, half_height, -1.0f, 1.0f);
     return projection * view;
 }
 

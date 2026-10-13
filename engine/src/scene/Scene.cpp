@@ -64,7 +64,9 @@ void Scene::clear() {
     index_.clear();
 }
 
-void Scene::register_node(Node& node) { index_[node.id()] = &node; }
+void Scene::register_node(Node& node) {
+    index_[node.id()] = &node;
+}
 
 void Scene::unregister_node(Node& node) {
     const auto it = index_.find(node.id());

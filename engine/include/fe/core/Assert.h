@@ -42,11 +42,11 @@ void set_assert_handler(AssertHandler handler) noexcept;
 
 } // namespace fe
 
-#define FE_ASSERT_IMPL(expr, msg)                                                                  \
-    do {                                                                                           \
-        if (!(expr)) {                                                                             \
-            ::fe::assert_fail(#expr, __FILE__, __LINE__, msg);                                     \
-        }                                                                                          \
+#define FE_ASSERT_IMPL(expr, msg)                                                                                      \
+    do {                                                                                                               \
+        if (!(expr)) {                                                                                                 \
+            ::fe::assert_fail(#expr, __FILE__, __LINE__, msg);                                                         \
+        }                                                                                                              \
     } while (false)
 
 #if FE_ASSERT_ENABLED

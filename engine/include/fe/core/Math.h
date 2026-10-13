@@ -24,8 +24,12 @@ namespace fe {
 
 inline constexpr f32 kPi = 3.14159265358979323846f;
 
-[[nodiscard]] inline constexpr f32 radians(f32 degrees) noexcept { return degrees * (kPi / 180.0f); }
-[[nodiscard]] inline constexpr f32 degrees(f32 radians_value) noexcept { return radians_value * (180.0f / kPi); }
+[[nodiscard]] inline constexpr f32 radians(f32 degrees) noexcept {
+    return degrees * (kPi / 180.0f);
+}
+[[nodiscard]] inline constexpr f32 degrees(f32 radians_value) noexcept {
+    return radians_value * (180.0f / kPi);
+}
 
 // ---------------------------------------------------------------------------
 // Vec2
@@ -251,7 +255,8 @@ struct Mat4 {
 }
 
 // Composes a 2D transform as translation * rotation * scale.
-[[nodiscard]] inline Mat4 make_transform_2d(const Vec2& position, f32 rotation_radians, const Vec2& scale_value) noexcept {
+[[nodiscard]] inline Mat4 make_transform_2d(const Vec2& position, f32 rotation_radians,
+                                            const Vec2& scale_value) noexcept {
     return Mat4::translation(Vec3{position.x, position.y, 0.0f}) * Mat4::rotation_z(rotation_radians) *
            Mat4::scale(Vec3{scale_value.x, scale_value.y, 1.0f});
 }

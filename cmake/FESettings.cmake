@@ -13,9 +13,15 @@ if(MSVC)
     NOMINMAX
     WIN32_LEAN_AND_MEAN
   )
-else()
-  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
+# NOTE: warning flags are deliberately NOT set here with add_compile_options().
+# That form is directory-scoped but inherited by every subdirectory below this
+# one, including FetchContent dependencies (GLFW, nlohmann/json, doctest). The
+# dependency policy promises that third-party code is never given our flags, so
+# warnings are applied per-target instead, through the fe_warnings interface
+# target in FEWarnings.cmake. FESettings.cmake keeps only the flags that are
+# safe (and necessary) to apply everywhere.
 
 # Symbol visibility: modules are linked statically for now, but the macro is
 # already in place so a future shared-library build is a configuration change,

@@ -7,6 +7,7 @@
 #     hand-rolled subsystem when it provides substantial value.
 #   * Every dependency must be pinned to an immutable tag or commit.
 #   * Nothing reaches the engine through a transitive, unpinned fetch.
+#   * Third-party code is never built with our warning flags; see FEWarnings.
 #
 # `FE_USE_SYSTEM_DEPS=ON` makes the build use system-installed packages when
 # available, which is what distro packagers and CI caches want. The default is
@@ -16,7 +17,9 @@ include(FetchContent)
 
 set(FE_GLFW_TAG "3.4" CACHE STRING "Pinned GLFW release tag")
 set(FE_JSON_TAG "v3.11.3" CACHE STRING "Pinned nlohmann/json release tag")
-set(FE_DOCTEST_TAG "v2.4.11" CACHE STRING "Pinned doctest release tag")
+# doctest 2.4.12 raised its `cmake_minimum_required` to 3.5, which CMake 4.x
+# requires (it dropped compatibility with < 3.5). Do not downgrade below 2.4.12.
+set(FE_DOCTEST_TAG "v2.4.12" CACHE STRING "Pinned doctest release tag")
 
 # ---------------------------------------------------------------------------
 # glad - OpenGL function loader (vendored, generated once, committed).
@@ -25,7 +28,9 @@ set(FE_DOCTEST_TAG "v2.4.11" CACHE STRING "Pinned doctest release tag")
 # or network access. Regeneration instructions live in third_party/glad/README.md.
 add_library(glad_gl_core_33 STATIC "${PROJECT_SOURCE_DIR}/third_party/glad/src/gl.c")
 add_library(FE::glad ALIAS glad_gl_core_33)
-target_include_directories(glad_gl_core_33 PUBLIC "${PROJECT_SOURCE_DIR}/third_party/glad/include")
+# SYSTEM so the generated loader headers do not warn inside our translation
+# units (their style is not ours to fix).
+target_include_directories(glad_gl_core_33 SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/glad/include")
 target_link_libraries(glad_gl_core_33 PUBLIC ${CMAKE_DL_LIBS})
 # Vendored C code: silence warnings we do not own.
 if(NOT MSVC)
@@ -80,12 +85,20 @@ if(NOT FE_JSON_TARGET)
   set(FE_JSON_TARGET nlohmann_json::nlohmann_json)
 endif()
 
+# Third-party code is never given our warning flags (FEWarnings), and its
+# headers are marked SYSTEM so that including them from our translation units
+# never produces diagnostics we cannot fix.
+fe_mark_system(${FE_JSON_TARGET})
+fe_mark_system(glfw)
+
 # ---------------------------------------------------------------------------
 # stb_image - image decoding (single-header, public domain).
 # ---------------------------------------------------------------------------
 add_library(fe_stb INTERFACE)
 add_library(FE::stb ALIAS fe_stb)
-target_include_directories(fe_stb INTERFACE "${PROJECT_SOURCE_DIR}/third_party/stb")
+# SYSTEM so stb_image.h (public-domain, single header, old-style casts) does not
+# produce -Wold-style-cast and friends inside our translation units.
+target_include_directories(fe_stb SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/third_party/stb")
 target_compile_definitions(fe_stb INTERFACE STBI_NO_STDIO=0)
 
 # ---------------------------------------------------------------------------

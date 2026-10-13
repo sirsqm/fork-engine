@@ -167,8 +167,8 @@ public:
     void upload(const TextureDesc& desc) {
         glBindTexture(GL_TEXTURE_2D, handle_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width_), static_cast<GLsizei>(height_), 0, GL_RGBA,
-                     GL_UNSIGNED_BYTE, desc.pixels);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width_), static_cast<GLsizei>(height_), 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, desc.pixels);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, to_gl_filter(desc.min_filter));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, to_gl_filter(desc.mag_filter));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, to_gl_wrap(desc.wrap_u));
@@ -268,7 +268,8 @@ public:
             return Error("create_vertex_buffer: capacity and stride must be non-zero");
         }
         const u32 vertex_count = capacity_bytes / layout.stride;
-        auto buffer = std::make_shared<OpenGLBuffer>(Buffer::Kind::Vertex, GL_ARRAY_BUFFER, vertex_count, layout.stride);
+        auto buffer =
+            std::make_shared<OpenGLBuffer>(Buffer::Kind::Vertex, GL_ARRAY_BUFFER, vertex_count, layout.stride);
         // Remember the layout so bind_vertex_buffer can configure attributes.
         layouts_.emplace(buffer->handle(), layout);
         return std::static_pointer_cast<Buffer>(buffer);
@@ -278,8 +279,8 @@ public:
         if (capacity_indices == 0) {
             return Error("create_index_buffer: capacity must be non-zero");
         }
-        auto buffer = std::make_shared<OpenGLBuffer>(Buffer::Kind::Index, GL_ELEMENT_ARRAY_BUFFER, capacity_indices,
-                                                     sizeof(u32));
+        auto buffer =
+            std::make_shared<OpenGLBuffer>(Buffer::Kind::Index, GL_ELEMENT_ARRAY_BUFFER, capacity_indices, sizeof(u32));
         return std::static_pointer_cast<Buffer>(buffer);
     }
 
@@ -408,7 +409,9 @@ namespace {
 // during create_opengl_device(), where the window is known.
 Window* g_loading_window = nullptr;
 
-void* load_gl_proc(const char* name) { return g_loading_window->get_proc_address(name); }
+void* load_gl_proc(const char* name) {
+    return g_loading_window->get_proc_address(name);
+}
 
 } // namespace
 

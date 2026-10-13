@@ -18,7 +18,9 @@ namespace {
 
 } // namespace
 
-bool ImageLoader::supports(std::string_view extension) const noexcept { return is_supported(extension); }
+bool ImageLoader::supports(std::string_view extension) const noexcept {
+    return is_supported(extension);
+}
 
 Result<std::shared_ptr<Resource>> ImageLoader::load(std::string_view path) {
     auto bytes = fs::read_binary_file(path);
@@ -40,8 +42,8 @@ Result<std::shared_ptr<Resource>> ImageLoader::load(std::string_view path) {
                                              &source_channels, 4);
     if (decoded == nullptr) {
         const char* reason = stbi_failure_reason();
-        return Error("could not decode image '" + std::string(path) + "': " +
-                     (reason != nullptr ? reason : "unknown error"));
+        return Error("could not decode image '" + std::string(path) +
+                     "': " + (reason != nullptr ? reason : "unknown error"));
     }
 
     const auto pixel_count = static_cast<usize>(width) * static_cast<usize>(height) * 4U;
