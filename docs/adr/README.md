@@ -22,6 +22,7 @@ rather than editing it.
 | [0012](0012-forward-lighting-model.md) | A forward lighting model with a bounded light budget | Accepted |
 | [0013](0013-physics2d-queries-events-angular.md) | Physics queries, contact events, and angular dynamics | Accepted |
 | [0014](0014-directional-shadow-mapping.md) | Directional shadow mapping | Accepted |
+| [0016](0016-audio-module.md) | Audio as a module with a device seam and a pure mixer | Accepted |
 
 ## Format
 

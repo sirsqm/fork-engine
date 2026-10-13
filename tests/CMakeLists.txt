@@ -21,6 +21,7 @@ add_executable(fork_engine_tests
     src/test_physics2d.cpp
     src/test_mesh.cpp
     src/test_scene3d.cpp
+    src/test_audio.cpp
     src/test_resource_manager.cpp
     src/test_version.cpp
 )
