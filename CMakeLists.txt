@@ -65,11 +65,11 @@ add_subdirectory(engine)
 
 if(FE_BUILD_EXAMPLES)
   add_subdirectory(examples/sandbox)
+  add_subdirectory(examples/breakout)
 endif()
 
 # The packaging tools are part of the shipping path, not the editor, so they are
-# built with the engine (the sandbox is the only example program, so this rides
-# on the same switch).
+# built with the engine (the examples ride on the same switch).
 if(FE_BUILD_EXAMPLES)
   add_subdirectory(tools/pack)
 endif()

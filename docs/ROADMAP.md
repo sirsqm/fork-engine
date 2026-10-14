@@ -94,6 +94,10 @@ needed a concrete mechanism before gameplay could grow. See
 
 ## M2.5 — A vertical slice: one small game, end to end
 
+**In progress.** The first complete game (`examples/breakout`) ships and is the
+integration test; remaining work is the editor's authoring path over that same
+game and tutorial polish.
+
 The single highest-value next step, and deliberately inserted before the later
 milestones. Infrastructure that has only ever passed its own unit tests has not
 been proven to work *together*; a small finished game is what exercises the whole
@@ -102,14 +106,20 @@ guiding rule — "a few genuinely working systems beat a long list of half-finis
 features" — applied at the project level, and it is the thing that attracts
 contributors, because people contribute around something finished.
 
-- [ ] Build one small, complete game entirely in the engine — a breakout,
-      pong, or tiny platformer — and ship it in `examples/` (or its own repo)
-- [ ] Make it the integration test: it uses the scene graph, resources, physics,
-      audio, serialization, and the editor's authoring path together
-- [ ] Fix what it exposes; every gap it finds becomes a focused issue, not a new
-      subsystem
-- [ ] Write a short "how this game was built" walkthrough, which doubles as the
-      first real tutorial and the contributor on-ramp
+- [x] Build one small, complete game entirely in the engine — a breakout,
+      pong, or tiny platformer — and ship it in `examples/` (or its own repo):
+      `examples/breakout`, built from the public API, playable and headless
+- [x] Make it the integration test: it uses the scene graph, resources, physics,
+      audio, serialization, and the systems layer together (the editor's
+      authoring path is exercised separately); its rules and systems are compiled
+      into `fork_engine_tests` from the example's own sources, so the tests prove
+      the shipped game, not a copy
+- [x] Fix what it exposes; every gap it finds becomes a focused issue, not a new
+      subsystem — the slice added an input channel to `FrameContext` and a
+      cumulative mixer peak, and nothing else
+- [x] Write a short "how this game was built" walkthrough, which doubles as the
+      first real tutorial and the contributor on-ramp:
+      `examples/breakout/README.md`
 
 *Why here:* before more engine breadth. One shipped game teaches more about what
 is missing than ten roadmap items, and it is the precondition for a community.

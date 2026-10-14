@@ -76,6 +76,12 @@ void AudioSystem::clear_buses() {
     buses_.clear();
 }
 
+void AudioSystem::reset_statistics() noexcept {
+    mixed_frames_ = 0;
+    last_peak_ = 0.0f;
+    peak_max_ = 0.0f;
+}
+
 void AudioSystem::update(const FrameContext& context, Scene& scene) {
     // Reconcile: keep an entry for each source still in the scene, adopting the
     // voice it had last frame; add an entry for a source seen for the first
@@ -135,6 +141,19 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
             entry.voice.playing = false;
         }
 
+        // An explicit play() restarts the source from the top and clears the
+        // transient request. This is how a gameplay system fires a one-shot cue
+        // again (a brick breaking) after the first shot already ended: the voice
+        // is rewound and marked unfinished, so it audibly replays.
+        if (source->play_requested) {
+            source->play_requested = false;
+            if (entry.voice.clip != nullptr) {
+                entry.voice.position = 0.0;
+                entry.voice.finished = false;
+                entry.voice.playing = true;
+            }
+        }
+
         entries_.push_back(std::move(entry));
     });
 
@@ -159,6 +178,7 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         mix_buffer_.resize(static_cast<usize>(frames) * channels_);
         last_peak_ =
             mix_voices(voices.data(), voices.size(), mix_buffer_.data(), frames, channels_, sample_rate(), params);
+        peak_max_ = std::max(peak_max_, last_peak_);
         mixed_frames_ += frames;
 
         if (device_ != nullptr && device_->is_playing()) {
