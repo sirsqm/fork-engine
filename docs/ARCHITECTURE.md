@@ -100,6 +100,11 @@ change and requires an ADR.
   lets the editor hold a scene without pulling in the runtime.
 - **`platform` hides the windowing library.** GLFW appears in public headers
   only as a forward-declared handle (`GLFWwindow*`), never as a header include.
+  The backend is chosen on `WindowDesc` (`WindowBackend::GLFW` or
+  `WindowBackend::Null`), so a second backend is a case in the one factory, not
+  a change above the module. The null backend (no window, no context) is what
+  lets the engine run with no display; see
+  [ADR-0041](adr/0041-platform-contract-and-null-backend.md).
 
 ## 3. The composition model
 
@@ -508,11 +513,21 @@ happens in reverse.
 what lets the editor embed an `Engine` and drive frames itself for
 play-in-editor, without inheriting the standalone loop or forking the runtime.
 
+Creation is conditional on there being a surface. A headless engine
+(`WindowDesc::backend = WindowBackend::Null`) has no graphics context, so
+`Engine::initialize` creates the window, the resource manager, the loaders and
+the audio system, but **skips the device and both renderers**. `has_graphics()`
+reports which path was taken; everything that renders checks it and does nothing
+when it is false, so a null window is never asked to draw. The rest of the loop —
+the clock, input edges, the systems schedule — runs unchanged. See
+[ADR-0041](adr/0041-platform-contract-and-null-backend.md).
+
 Because scene components can own GPU-backed resources (a `Sprite2D` holds a
 `Texture2D`), `Application` releases the scene **before** shutting the engine
 down. Releasing a texture after the GL context is destroyed is undefined
 behaviour; the ordering rule is enforced in `Application::run()` and documented
-at the call site.
+at the call site. A headless run has no GPU-backed resources to release, so the
+same ordering is simply harmless there.
 
 ## 7. Resources
 
@@ -793,11 +808,22 @@ game built here reaches every platform its players use — see
 - **The contract is complete.** Beyond window and input, it covers touch and
   gamepad input, threads, time, dynamic libraries, and application lifecycle
   (suspend, resume, resize, orientation). A target is a new backend, not a
-  scattering of `#ifdef`s.
-- **A null backend exists.** A headless implementation of the whole contract —
-  no window, no-op input, an in-memory filesystem view — for CI, dedicated
-  servers, and deterministic tests. It is the proof that nothing leaks past the
-  abstraction, and it builds and passes the suite on any machine.
+  scattering of `#ifdef`s. [ADR-0041](adr/0041-platform-contract-and-null-backend.md)
+  audits the contract and records, concern by concern, what is implemented and
+  where it lives; the deferred rows (touch/gamepad, dynamic libraries,
+  suspend/resume) are named there so they are planned rather than forgotten.
+  Touch and gamepad attach to the existing `InputState` seam — a backend
+  translates native events into `on_key`-style calls — so they need no new
+  interface.
+- **A null backend exists.** A headless implementation of the window and input
+  part of the contract — no OS window, no graphics context, no-op events — for
+  CI, dedicated servers, and deterministic tests. It is selected with
+  `WindowDesc::backend = WindowBackend::Null` and is the proof that nothing
+  leaks past the abstraction: the engine's frame loop, the systems schedule, and
+  the tests run on a machine with no display. The `fork_headless` example is the
+  executable form of that claim. A no-op RHI device (so the render extraction
+  itself can run headless) is the recorded next step, not part of this one. See
+  [ADR-0041](adr/0041-platform-contract-and-null-backend.md).
 - **Assets ship in a pack.** Browsers and mobile do not give a game a normal
   filesystem, so the runtime reads assets from a pack through the same resource
   paths it uses on disk. The resource system never assumes loose files. The

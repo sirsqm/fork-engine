@@ -433,7 +433,10 @@ int main(int argc, char** argv) {
     config.cache_root = options.cache_root;
     if (options.headless) {
         // Keep the window hidden but still request a real GL context, so the
-        // render path is identical to an interactive run.
+        // render path is identical to an interactive run. This smoke test needs
+        // a display (CI wraps it in xvfb-run). For a run with *no* display and no
+        // GL context, see the fork_headless example and
+        // docs/adr/0041-platform-contract-and-null-backend.md.
         config.window.visible = false;
         config.window.vsync = false;
     }
