@@ -91,7 +91,14 @@ every existing caller. A field keeps the two intents distinct and greppable.
 - **The engine can render into a null device from a test directly**, without an
   `Engine`: `rhi::create_null_device()` then
   `Renderer2D::initialize(device)` and `render(device, scene, w, h)`. That is how
-  the unit tests prove submission.
+  the unit tests prove submission, and the same shape works for `Renderer3D`.
+- **Both render paths are covered.** The tests drive `Renderer2D` (extraction,
+  batching, one draw call for shared-texture sprites) and `Renderer3D` -- whose
+  shadow pass binds the render target the null device created, clears it, draws
+  the caster, and restores the previous target. That bind/restore sequence is
+  the deepest part of the render path, and it is why the null device must return
+  a usable render target rather than `nullptr`. `fork_headless --render` runs
+  both renderers in one process and prints both counters.
 - **The interactive path is unchanged.** A real window still selects the OpenGL
   backend through `rhi::create_device`; the new factory is a second branch on the
   same seam, not a change to the first.
