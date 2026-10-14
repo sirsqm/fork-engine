@@ -20,8 +20,10 @@ namespace fe::physics3d {
 //
 // The shape is centred on the node's world position. There is deliberately no
 // local offset yet, for the same reason as 2D: an offset would have to be
-// transformed by the node's rotation to stay correct, and the solver does not
-// track an orientation yet (ADR-0031).
+// transformed by the node's rotation to stay correct, and while the solver now
+// integrates a body's orientation (ADR-0043) the collider shape itself is still
+// axis-aligned, so an offset would be misleading. Offsets and oriented shapes are
+// later work.
 class Collider3D final : public Component {
 public:
     static constexpr const char* kTypeName = "Collider3D";
@@ -57,6 +59,35 @@ public:
     // The bounding box of the shape at `center`, for the broad phase.
     [[nodiscard]] Aabb3D bounds(const Vec3& center) const noexcept {
         return shape == ShapeType3D::Box ? box(center) : bounds_of(sphere(center));
+    }
+
+    // The moment of inertia about the shape's centre for a body of `mass`. This
+    // is what lets a rigid body derive a sensible rotational inertia from its
+    // shape without the author computing one, mirroring
+    // `Collider2D::inertia_about_center`:
+    //
+    //   * solid sphere: (2/5) m r^2
+    //   * solid box:    (1/18) m (w^2 + h^2 + d^2), the mean of the box's three
+    //     principal moments, so a cube reports the exact (1/6) m w^2 about any
+    //     axis and a non-cube reports the average of its three axes
+    //
+    // The solver carries a single scalar moment, an isotropic approximation of
+    // the inertia tensor, exactly as the 2D solver does with its one in-plane
+    // axis. A body with non-uniform extents therefore spins the same about every
+    // axis; a full diagonal inertia tensor is later work. A non-positive mass
+    // yields zero, matching an immovable body; the solver treats zero as
+    // "infinite inertia".
+    [[nodiscard]] f32 inertia_about_center(f32 mass) const noexcept {
+        if (mass <= 0.0f) {
+            return 0.0f;
+        }
+        if (shape == ShapeType3D::Sphere) {
+            return 0.4f * mass * radius * radius;
+        }
+        const f32 width = 2.0f * half_extent.x;
+        const f32 height = 2.0f * half_extent.y;
+        const f32 depth = 2.0f * half_extent.z;
+        return mass * (width * width + height * height + depth * depth) / 18.0f;
     }
 };
 
