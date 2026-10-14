@@ -50,6 +50,7 @@ core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
 core  <-  jobs  <-  systems
 core, scene, resources  <-  systems
+core, scene, systems  <-  script
 core, scene, systems, reflect  <-  physics2d
 core, scene, systems, reflect  <-  physics3d
 core, scene, resources  <-  mesh
@@ -71,6 +72,7 @@ core  <-  net                     (planned: collaborative editing)
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
+| `script` | The language-agnostic gameplay seam: `Script`, `ScriptHost` (per-node instances keyed by stable node id), `ScriptRegistry`, and the `ScriptSystem` bridge. Header-only | core, scene, systems |
 | `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
 | `physics3d` | 3D collision shapes (box, sphere), a rigid-body simulation system (linear and angular: gravity, restitution, friction, damping, torque, inertia) with a uniform-grid broad phase, joints, queries, and contact events | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
@@ -787,14 +789,65 @@ makes undo/redo more robust, so they earn their keep before any server exists.
 The `net` module is where the transport lives; nothing above it knows whether
 the peer is in-process or remote.
 
-## 9. Scripting (planned)
+## 9. Scripting
 
-Scripting will be integrated through reflection and the component system:
-scripts implement behaviour, access engine objects and components, respond to
-events, and expose configurable properties to the inspector. The language and
-embedding strategy have not been chosen; the decision and its trade-offs will be
-recorded in an ADR before any integration code is written. Native C++ extensions
-and custom components are the supported path today.
+Gameplay behaviour attaches to a node as a `Script`, owned and driven by a
+`ScriptHost`, behind a seam that never names a concrete language. C++ is the
+first language, built directly against the engine; the seam exists so a second
+language can be added later without the engine core naming it. See
+[ADR-0044](adr/0044-scripting-seam.md).
+
+**`Script` is a sibling of `System`, not a `Component`.** The distinction is the
+point:
+
+- A `System` ([ADR-0008](adr/0008-systems-and-frame-schedule.md)) is
+  engine-shipped, data-oriented behaviour that owns its own traversal of the
+  scene. Animation, physics, and audio are systems. It is deliberately not a
+  per-node callback.
+- A `Script` is game-specific behaviour attached to one node. It is how a game
+  adds "this door opens when the player has the key" without editing the engine.
+  It is per-node (so the editor can attach it), but it is *driven* by a system,
+  so execution still belongs to the schedule.
+
+A script is not reflection-serialized and not a component: components are engine
+data ([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md),
+[ADR-0005](adr/0005-reflection-and-serialization.md)); scripts are game code.
+Keeping them separate is what stops the per-node `update()` model ADR-0002
+rejected from returning through the component system.
+
+The module is `script` (header-only, `engine/include/fe/script/`) and depends
+only on `core`, `scene`, and `systems`:
+
+- **`Script`** — a per-node unit of behaviour: `attach(Node&)`,
+  `detach(Node&)`, `update(const FrameContext&)`, a `name()`, and an `enabled`
+  flag. It reads the frame's context the way a system does, so it is testable
+  headlessly.
+- **`ScriptHost`** — owns the live instances, keyed by the node's stable `Uuid`
+  — the same identity the serializer persists and the collaboration work
+  ([ADR-0019](adr/0019-collaborative-editing.md), M10) is built on. One script
+  per node; attaching replaces the previous one. The host is the boundary where
+  a failing script is contained: an error returned from `update()`, or an
+  exception thrown from it, is logged with the node's id and the script's name,
+  the script is disabled, and the rest keep running and the frame keeps going
+  ([ADR-0003](adr/0003-error-handling.md)).
+- **`ScriptRegistry`** — maps a behaviour name to a factory, so a script can be
+  created by name. This is what the editor and a future loader need; it mirrors
+  the shape of `reflect::Registry` ([ADR-0006](adr/0006-component-reflection.md))
+  but is a value the caller owns, not a process global.
+- **`ScriptSystem`** — an ordinary `System` that drives a `ScriptHost` from the
+  `SceneSchedule`. This is the whole bridge to the frame loop: scripts run in
+  the sandbox, in play-in-editor, and in a headless test through the identical
+  path, with no new execution model and no editor or RHI dependency.
+
+A script's `update()` must not attach or detach scripts; those are structural
+changes made between frames.
+
+**Not in this cut** (named so they are planned, not forgotten): hot reload of
+C++ gameplay modules, reflection-backed bindings that expose a script's
+properties to the inspector and serializer, and editor integration and
+debugging. These are the remaining M7 rows; the seam they attach to is the one
+above and does not change to accommodate them.
+
 
 ## 10. Platform layer
 
@@ -891,7 +944,11 @@ Every milestone must build and pass its tests before the next one begins.
   settings (the editor shell, hierarchy, inspector, 2D viewport,
   play-in-editor, and undo/redo exist; see section 8).
 - Tilemaps, particles, animation clips and state machines.
-- Scripting.
+- The scripting seam and the C++ path exist (section 9,
+  [ADR-0044](adr/0044-scripting-seam.md)); what is not here yet is hot reload of
+  C++ gameplay modules, reflection-backed script bindings, editor integration,
+  debugging, and any embedded or custom language. These are the remaining M7
+  rows, and none of them changes the seam.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`
   module and parallel extraction are planned in M9.
