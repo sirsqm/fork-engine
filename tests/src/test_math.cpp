@@ -146,3 +146,99 @@ TEST_CASE("inverting a singular matrix returns identity rather than NaN") {
     CHECK(inv.at(0, 0) == doctest::Approx(1.0f));
     CHECK(inv.at(0, 1) == doctest::Approx(0.0f));
 }
+
+// ---------------------------------------------------------------------------
+// Quat
+// ---------------------------------------------------------------------------
+
+TEST_CASE("quat identity leaves a point unchanged") {
+    const Mat4 m = Quat::identity().to_matrix();
+    for (usize row = 0; row < 4; ++row) {
+        for (usize col = 0; col < 4; ++col) {
+            CHECK(m.at(row, col) == doctest::Approx(row == col ? 1.0f : 0.0f));
+        }
+    }
+}
+
+TEST_CASE("a quaternion about an axis matches the matrix rotation") {
+    // The quaternion and the matrix must describe the same rotation, or the
+    // solver's orientation and the renderer's would disagree.
+    const f32 angle = radians(35.0f);
+    const struct {
+        Vec3 axis;
+        Mat4 (*matrix)(f32);
+    } cases[] = {
+        {Vec3{1.0f, 0.0f, 0.0f}, &Mat4::rotation_x},
+        {Vec3{0.0f, 1.0f, 0.0f}, &Mat4::rotation_y},
+        {Vec3{0.0f, 0.0f, 1.0f}, &Mat4::rotation_z},
+    };
+
+    for (const auto& test : cases) {
+        const Mat4 expected = test.matrix(angle);
+        const Mat4 actual = Quat::from_axis_angle(test.axis, angle).to_matrix();
+        for (usize row = 0; row < 4; ++row) {
+            for (usize col = 0; col < 4; ++col) {
+                CHECK(actual.at(row, col) == doctest::Approx(expected.at(row, col)).epsilon(1e-5));
+            }
+        }
+    }
+}
+
+TEST_CASE("quat multiplication composes rotations like the matrices") {
+    // (a * b) applies b first, then a, so the product must match Rz * Rx.
+    const Quat q = Quat::from_axis_angle(Vec3{0.0f, 0.0f, 1.0f}, radians(90.0f)) *
+                   Quat::from_axis_angle(Vec3{1.0f, 0.0f, 0.0f}, radians(90.0f));
+    const Mat4 expected = Mat4::rotation_z(radians(90.0f)) * Mat4::rotation_x(radians(90.0f));
+    const Mat4 actual = q.to_matrix();
+    for (usize row = 0; row < 4; ++row) {
+        for (usize col = 0; col < 4; ++col) {
+            CHECK(actual.at(row, col) == doctest::Approx(expected.at(row, col)).epsilon(1e-5));
+        }
+    }
+}
+
+TEST_CASE("from_euler matches the euler matrix and round-trips through to_euler") {
+    const Vec3 euler{radians(30.0f), radians(-20.0f), radians(45.0f)};
+
+    const Quat q = Quat::from_euler(euler);
+    const Mat4 expected = Mat4::rotation_euler(euler);
+    const Mat4 actual = q.to_matrix();
+    for (usize row = 0; row < 4; ++row) {
+        for (usize col = 0; col < 4; ++col) {
+            CHECK(actual.at(row, col) == doctest::Approx(expected.at(row, col)).epsilon(1e-5));
+        }
+    }
+
+    const Vec3 back = q.to_euler();
+    CHECK(back.x == doctest::Approx(euler.x).epsilon(1e-4));
+    CHECK(back.y == doctest::Approx(euler.y).epsilon(1e-4));
+    CHECK(back.z == doctest::Approx(euler.z).epsilon(1e-4));
+}
+
+TEST_CASE("a quaternion times its conjugate is the identity") {
+    const Quat q = Quat::from_euler(Vec3{radians(10.0f), radians(20.0f), radians(30.0f)});
+    const Quat product = q * q.conjugate();
+    CHECK(product.x == doctest::Approx(0.0f).epsilon(1e-5));
+    CHECK(product.y == doctest::Approx(0.0f).epsilon(1e-5));
+    CHECK(product.z == doctest::Approx(0.0f).epsilon(1e-5));
+    CHECK(product.w == doctest::Approx(1.0f).epsilon(1e-5));
+}
+
+TEST_CASE("normalizing a quaternion yields unit length") {
+    const Quat q = Quat{1.0f, 2.0f, 3.0f, 4.0f}.normalized();
+    CHECK(q.length() == doctest::Approx(1.0f).epsilon(1e-5));
+}
+
+TEST_CASE("integrating an angular velocity rotates the quaternion") {
+    // Spinning at 2 rad/s about +Z for half a second is a 1 radian rotation.
+    // The integration is first-order, so it is applied in small steps exactly as
+    // the solver does; a single coarse step would under-rotate.
+    Quat q = Quat::identity();
+    for (int i = 0; i < 100; ++i) {
+        q = q.integrated(Vec3{0.0f, 0.0f, 2.0f}, 0.005f);
+    }
+    const Vec3 euler = q.to_euler();
+    CHECK(euler.z == doctest::Approx(1.0f).epsilon(1e-3));
+    CHECK(euler.x == doctest::Approx(0.0f).epsilon(1e-3));
+    CHECK(euler.y == doctest::Approx(0.0f).epsilon(1e-3));
+}

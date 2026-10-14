@@ -1,4 +1,4 @@
-# ADR-0043: Stable component identity
+# ADR-0045: Stable component identity
 
 - **Status:** Accepted
 - **Date:** 2026-10

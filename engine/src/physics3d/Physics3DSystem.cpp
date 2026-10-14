@@ -30,28 +30,53 @@ constexpr f32 kPenetrationSlop = 0.005f;
     return std::clamp(value, 0.0f, 1.0f);
 }
 
-// Reads a node's current joint state: its transform for position and its rigid
-// body for velocity and the inverse mass the joint shares its correction by. A
-// node with no rigid body is immovable, which is how a joint to static geometry
-// (or a bare pivot) moves only its other end.
+// The velocity a body at offset `r` from its centre contributes from an angular
+// velocity `w`: `w x r`, the standard rigid-body point-velocity term. This is
+// what couples a body's rotation into the relative velocity at a contact or a
+// joint anchor.
+[[nodiscard]] Vec3 angular_velocity_at(const Vec3& angular_velocity, const Vec3& r) noexcept {
+    return angular_velocity.cross(r);
+}
+
+// Reads a node's current joint state: its transform for position and rotation,
+// and its rigid body for velocity and the inverse mass and inertia the joint
+// shares its correction by. A node with no rigid body is immovable, which is how
+// a joint to static geometry (or a bare pivot) moves only its other end.
 [[nodiscard]] JointBody3D make_joint_body(const Node& node) noexcept {
     JointBody3D joint;
     joint.position = node.transform().position;
+    joint.orientation = Quat::from_euler(node.transform().rotation);
     const auto* body = node.get_component<RigidBody3D>();
     if (body == nullptr) {
         return joint;
     }
     joint.velocity = body->velocity;
+    joint.angular_velocity = body->angular_velocity;
     joint.inv_mass = body->inverse_mass();
+    if (joint.inv_mass > 0.0f && !body->fixed_rotation) {
+        // Author-set inertia wins; otherwise derive it from the collider's
+        // shape. A body with no collider falls back to the author's inertia, or
+        // to zero (a point mass, which cannot spin on its own).
+        f32 inertia = body->inertia;
+        if (inertia <= 0.0f) {
+            if (const auto* collider = node.get_component<Collider3D>(); collider != nullptr) {
+                inertia = collider->inertia_about_center(body->mass);
+            }
+        }
+        joint.inv_inertia = inertia > 0.0f ? 1.0f / inertia : 0.0f;
+    }
     return joint;
 }
 
-// Writes a solved joint state back to the node's transform and rigid body. Only
-// the position and velocity are written; this cut does not touch rotation.
+// Writes a solved joint state back to the node's transform and rigid body. The
+// orientation is written back as Euler angles, since that is what `Transform`
+// stores; the boundary conversion keeps `Transform`'s API unchanged.
 void store_joint_body(Node& node, const JointBody3D& joint) noexcept {
     node.transform().position = joint.position;
+    node.transform().rotation = joint.orientation.to_euler();
     if (auto* body = node.get_component<RigidBody3D>(); body != nullptr) {
         body->velocity = joint.velocity;
+        body->angular_velocity = joint.angular_velocity;
     }
 }
 
@@ -97,9 +122,25 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
         entry.node = &node;
         entry.position = node.transform().position;
         entry.velocity = body != nullptr ? body->velocity : Vec3{};
+        entry.orientation = Quat::from_euler(node.transform().rotation);
+        entry.angular_velocity = body != nullptr ? body->angular_velocity : Vec3{};
         entry.inv_mass = body != nullptr ? body->inverse_mass() : 0.0f;
         entry.restitution = collider != nullptr ? clamp_unit(collider->restitution) : 0.0f;
         entry.friction = collider != nullptr ? std::max(collider->friction, 0.0f) : 0.0f;
+        entry.fixed_rotation = body != nullptr && body->fixed_rotation;
+
+        // Rotational inertia. An author-set inertia on the body wins; otherwise
+        // derive it from the collider's shape. A dynamic body with no collider
+        // and no author inertia is a point mass, which has zero rotational
+        // inertia and cannot spin on its own.
+        entry.inv_inertia = 0.0f;
+        if (body != nullptr && entry.inv_mass > 0.0f && !entry.fixed_rotation) {
+            f32 inertia = body->inertia;
+            if (inertia <= 0.0f && collider != nullptr) {
+                inertia = collider->inertia_about_center(body->mass);
+            }
+            entry.inv_inertia = inertia > 0.0f ? 1.0f / inertia : 0.0f;
+        }
 
         bodies_.push_back(entry);
     });
@@ -123,8 +164,8 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
         return;
     }
 
-    // Integrate velocity: gravity, then linear damping. A body with no dynamic
-    // motion (infinite mass) skips all of it.
+    // Integrate velocity: gravity, torque, then linear and angular damping. A
+    // body with no dynamic motion (infinite mass) skips all of it.
     for (Body& entry : bodies_) {
         if (entry.inv_mass <= 0.0f) {
             continue;
@@ -132,20 +173,37 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
         if (entry.body->affected_by_gravity) {
             entry.velocity += gravity * delta_time;
         }
+        // Torque is the rotational counterpart of gravity: a constant angular
+        // acceleration of `torque * inverse_inertia`. A body with infinite
+        // inertia (fixed_rotation, or no shape-derived inertia) ignores it.
+        if (entry.inv_inertia > 0.0f) {
+            entry.angular_velocity += entry.body->torque * (entry.inv_inertia * delta_time);
+        }
         const f32 damping = clamp_unit(entry.body->linear_damping);
         if (damping > 0.0f) {
             // Frame-rate-independent decay: the velocity is multiplied by
             // (1 - damping) once per second, distributed across this frame.
             entry.velocity = entry.velocity * std::max(0.0f, 1.0f - damping * delta_time);
         }
+        const f32 angular_damping = clamp_unit(entry.body->angular_damping);
+        if (angular_damping > 0.0f) {
+            entry.angular_velocity = entry.angular_velocity * std::max(0.0f, 1.0f - angular_damping * delta_time);
+        }
     }
 
-    // Integrate position from the updated velocities.
+    // Integrate position from the updated velocities, and orientation from the
+    // angular velocity. The orientation is a quaternion integrated in place; a
+    // fixed-rotation body keeps its authored rotation regardless of its angular
+    // velocity (the angular state is still carried so a later contact can read
+    // it, but it never changes the transform).
     for (Body& entry : bodies_) {
         if (entry.inv_mass <= 0.0f) {
             continue;
         }
         entry.position += entry.velocity * delta_time;
+        if (!entry.fixed_rotation) {
+            entry.orientation = entry.orientation.integrated(entry.angular_velocity, delta_time);
+        }
     }
 
     // Broad phase: find the candidate overlapping pairs once, before the
@@ -232,12 +290,44 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
                 b.position += correction * b.inv_mass;
             }
 
-            // Relative velocity at the contact along the normal. `normal` points
-            // from A to B, so a separating pair has a positive projection and
-            // needs no impulse.
-            const Vec3 relative = b.velocity - a.velocity;
+            // The contact point, taken on A's surface along the normal (a
+            // single-point approximation, standard for box and sphere contacts).
+            // Angular impulses need the lever arm from each body centre to this
+            // point; a contact through a centre produces no torque, which is what
+            // keeps a body resting flat stable. The collider shape is
+            // axis-aligned, so the support distance is the extent along the
+            // normal with no orientation to account for.
+            const Vec3 support = a.collider->shape == ShapeType3D::Sphere
+                                     ? contact.normal * a.collider->radius
+                                     : Vec3{std::abs(contact.normal.x) * a.collider->half_extent.x,
+                                            std::abs(contact.normal.y) * a.collider->half_extent.y,
+                                            std::abs(contact.normal.z) * a.collider->half_extent.z};
+            const f32 support_distance = support.dot(contact.normal);
+            const Vec3 contact_point = a.position + contact.normal * (support_distance - contact.penetration * 0.5f);
+
+            // Lever arms from each body centre to the contact point. The body's
+            // centre of mass is the node origin.
+            const Vec3 ra = contact_point - a.position;
+            const Vec3 rb = contact_point - b.position;
+
+            // Relative velocity at the contact, including the contribution of
+            // each body's rotation. `normal` points from A to B, so a separating
+            // pair has a positive projection and needs no impulse.
+            const Vec3 relative = (b.velocity + angular_velocity_at(b.angular_velocity, rb)) -
+                                  (a.velocity + angular_velocity_at(a.angular_velocity, ra));
             const f32 normal_speed = relative.dot(contact.normal);
             if (normal_speed >= 0.0f) {
+                continue;
+            }
+
+            // Effective mass along the normal, including the angular terms
+            // (r x n)^2 * inv_inertia. This is what couples rotation into the
+            // linear response.
+            const Vec3 ra_cross_n = ra.cross(contact.normal);
+            const Vec3 rb_cross_n = rb.cross(contact.normal);
+            const f32 effective_mass = inv_mass_sum + a.inv_inertia * ra_cross_n.length_squared() +
+                                       b.inv_inertia * rb_cross_n.length_squared();
+            if (effective_mass <= 0.0f) {
                 continue;
             }
 
@@ -245,41 +335,58 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
             // conventional choice and keeps a bouncy ball bouncy against a dead
             // floor.
             const f32 restitution = std::max(a.restitution, b.restitution);
-            const f32 impulse_magnitude = -(1.0f + restitution) * normal_speed / inv_mass_sum;
+            const f32 impulse_magnitude = -(1.0f + restitution) * normal_speed / effective_mass;
             const Vec3 impulse = contact.normal * impulse_magnitude;
 
             a.velocity -= impulse * a.inv_mass;
             b.velocity += impulse * b.inv_mass;
+            // Angular response: the impulse at a lever arm produces torque.
+            a.angular_velocity -= ra.cross(impulse) * a.inv_inertia;
+            b.angular_velocity += rb.cross(impulse) * b.inv_inertia;
 
             // Friction: an impulse opposing the tangential relative motion,
-            // capped by the Coulomb cone. Linear-only, so it slows sliding
-            // without spinning either body.
+            // capped by the Coulomb cone. With angular dynamics it also spins the
+            // bodies, which is what makes a box tumble and a ball roll rather
+            // than slide.
             const Vec3 tangent_raw = relative - contact.normal * normal_speed;
             const f32 tangent_length = tangent_raw.length();
             if (tangent_length > 0.0f) {
                 const Vec3 tangent = tangent_raw / tangent_length;
-                f32 friction_impulse = -relative.dot(tangent) / inv_mass_sum;
-                const f32 max_friction = std::max(a.friction, b.friction) * impulse_magnitude;
-                friction_impulse = std::clamp(friction_impulse, -max_friction, max_friction);
-                const Vec3 friction = tangent * friction_impulse;
-                a.velocity -= friction * a.inv_mass;
-                b.velocity += friction * b.inv_mass;
+                const Vec3 ra_cross_t = ra.cross(tangent);
+                const Vec3 rb_cross_t = rb.cross(tangent);
+                const f32 tangent_mass = inv_mass_sum + a.inv_inertia * ra_cross_t.length_squared() +
+                                         b.inv_inertia * rb_cross_t.length_squared();
+                if (tangent_mass > 0.0f) {
+                    f32 friction_impulse = -relative.dot(tangent) / tangent_mass;
+                    const f32 max_friction = std::max(a.friction, b.friction) * impulse_magnitude;
+                    friction_impulse = std::clamp(friction_impulse, -max_friction, max_friction);
+                    const Vec3 friction = tangent * friction_impulse;
+                    a.velocity -= friction * a.inv_mass;
+                    b.velocity += friction * b.inv_mass;
+                    a.angular_velocity -= ra.cross(friction) * a.inv_inertia;
+                    b.angular_velocity += rb.cross(friction) * b.inv_inertia;
+                }
             }
         }
     }
 
-    // Write back. The transform owns the node's position; the rigid body owns its
-    // velocity. Writing both here is what keeps the two in sync, exactly as the
-    // animation system writes UVs back onto the sprite. Rotation is not touched:
-    // this cut is linear only.
+    // Write back. The transform owns the node's position and rotation; the rigid
+    // body owns its velocities. Writing all of them here is what keeps the two in
+    // sync, exactly as the animation system writes UVs back onto the sprite. The
+    // orientation is written as Euler angles, the boundary conversion that keeps
+    // Transform's API unchanged.
     for (Body& entry : bodies_) {
         if (entry.inv_mass <= 0.0f) {
             continue;
         }
         entry.body->velocity = entry.velocity;
+        entry.body->angular_velocity = entry.angular_velocity;
         Node* node = entry.node;
         if (node != nullptr) {
             node->transform().position = entry.position;
+            if (!entry.fixed_rotation) {
+                node->transform().rotation = entry.orientation.to_euler();
+            }
         }
     }
 

@@ -78,7 +78,7 @@ public:
     // Finds a component anywhere in the scene by its stable id, or nullptr.
     //
     // This is the counterpart of find_node() for the component identity added in
-    // version 3 of the scene format (ADR-0043). It walks the tree rather than
+    // version 3 of the scene format (ADR-0045). It walks the tree rather than
     // keeping a second index: a component is created and destroyed far more
     // often than a node, and an index over it would have to be updated from
     // Node::attach_component/detach_component on every edit. The walk is the
