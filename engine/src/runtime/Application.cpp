@@ -74,12 +74,17 @@ int Application::run() {
 
         {
             const ProfileScope render_scope("frame/render");
-            render_frame();
+            // A headless engine has no device or renderer, so there is nothing to
+            // draw. The frame still advances the clock, the input edges and the
+            // systems; only the presentation is skipped, and it is skipped
+            // explicitly here rather than by a no-op device pretending to render.
+            if (engine_.has_graphics()) {
+                render_frame();
+                // Presents the back buffer. The frame was fully rendered, so the
+                // pipeline is exercised.
+                engine_.device().end_frame();
+            }
         }
-
-        // Presents the back buffer (or, headless, simply ends the frame). The
-        // frame was fully rendered either way, so the pipeline is exercised.
-        engine_.device().end_frame();
 
         if (recording) {
             if (Result<void> ended = profiler_.end_frame(); !ended) {

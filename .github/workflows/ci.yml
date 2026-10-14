@@ -83,6 +83,14 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_sandbox --headless 30
 
+      # Deliberately *not* wrapped in xvfb-run: this is the proof that the null
+      # platform backend runs the engine with no display and no GL context
+      # (ADR-0041). If it ever needs a virtual display again, the abstraction has
+      # sprung a leak.
+      - name: Run the headless example with no display (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: ./build/bin/fork_headless 10
+
       - name: Run the editor headless over the demo project (Linux smoke test)
         if: runner.os == 'Linux'
         run: |

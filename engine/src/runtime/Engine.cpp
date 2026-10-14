@@ -65,16 +65,25 @@ Error Engine::initialize(const Config& config) {
         return window.error();
     }
     window_ = std::move(window.value());
-    FE_LOG_INFO("window created (%ux%u, backend %s)", window_->width(), window_->height(), Window::backend_name());
+    FE_LOG_INFO("window created (%ux%u, backend %s)", window_->width(), window_->height(), window_->backend_name());
 
-    auto device = rhi::create_device(*window_);
-    if (!device) {
-        // Release the window before reporting, so a failed start leaves no
-        // half-initialised state behind.
-        window_.reset();
-        return device.error();
+    // A null window has no graphics context, so there is no device to create.
+    // Everything above the platform layer that renders checks has_graphics();
+    // the rest of the engine (systems, resources, audio, the frame loop) runs
+    // unchanged. See docs/adr/0041-platform-contract-and-null-backend.md.
+    has_graphics_ = window_->has_context();
+    if (has_graphics_) {
+        auto device = rhi::create_device(*window_);
+        if (!device) {
+            // Release the window before reporting, so a failed start leaves no
+            // half-initialised state behind.
+            window_.reset();
+            return device.error();
+        }
+        device_ = std::move(device.value());
+    } else {
+        FE_LOG_INFO("headless run: no graphics context, device and renderers are skipped");
     }
-    device_ = std::move(device.value());
 
     resources_ = std::make_unique<ResourceManager>();
     // Opt into the import cache only when a root is configured. The cache is
@@ -85,23 +94,30 @@ Error Engine::initialize(const Config& config) {
         FE_LOG_INFO("import cache root '%s'", resources_->import_cache().root().c_str());
     }
     resources_->register_loader(std::make_unique<ImageLoader>(&resources_->import_cache()));
-    resources_->register_loader(std::make_unique<Texture2DLoader>(*device_, *resources_));
+    if (has_graphics_) {
+        // The GPU texture loader needs a device to upload through. Headless runs
+        // register only the CPU image loader, so an asset can still be decoded
+        // and inspected with no context (see the null RHI device in ADR-0041).
+        resources_->register_loader(std::make_unique<Texture2DLoader>(*device_, *resources_));
+    }
     resources_->register_loader(std::make_unique<ObjLoader>());
     resources_->register_loader(std::make_unique<GltfLoader>());
 
-    renderer_2d_ = std::make_unique<renderer2d::Renderer2D>();
-    if (Error error = renderer_2d_->initialize(*device_); error) {
-        device_.reset();
-        window_.reset();
-        return error;
-    }
+    if (has_graphics_) {
+        renderer_2d_ = std::make_unique<renderer2d::Renderer2D>();
+        if (Error error = renderer_2d_->initialize(*device_); error) {
+            device_.reset();
+            window_.reset();
+            return error;
+        }
 
-    renderer_3d_ = std::make_unique<renderer3d::Renderer3D>();
-    if (Error error = renderer_3d_->initialize(*device_); error) {
-        renderer_2d_.reset();
-        device_.reset();
-        window_.reset();
-        return error;
+        renderer_3d_ = std::make_unique<renderer3d::Renderer3D>();
+        if (Error error = renderer_3d_->initialize(*device_); error) {
+            renderer_2d_.reset();
+            device_.reset();
+            window_.reset();
+            return error;
+        }
     }
 
     // Register the decoded-audio loader so "wav:path.wav" resolves to an
