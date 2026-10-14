@@ -67,11 +67,17 @@ Error Engine::initialize(const Config& config) {
     window_ = std::move(window.value());
     FE_LOG_INFO("window created (%ux%u, backend %s)", window_->width(), window_->height(), window_->backend_name());
 
-    // A null window has no graphics context, so there is no device to create.
-    // Everything above the platform layer that renders checks has_graphics();
-    // the rest of the engine (systems, resources, audio, the frame loop) runs
-    // unchanged. See docs/adr/0041-platform-contract-and-null-backend.md.
+    // A null window has no graphics context. Two honest outcomes: a plain
+    // headless run skips the graphics stack entirely, and a headless run that
+    // asked to render builds a null RHI device so the render path still
+    // executes. Nothing above the platform layer that renders branches on which
+    // of the two it is; it checks has_graphics()/headless_render(). See
+    // docs/adr/0041-platform-contract-and-null-backend.md and
+    // docs/adr/0042-null-rhi-device.md.
     has_graphics_ = window_->has_context();
+    headless_render_ = !has_graphics_ && config.headless_render;
+    const bool wants_device = has_graphics_ || headless_render_;
+
     if (has_graphics_) {
         auto device = rhi::create_device(*window_);
         if (!device) {
@@ -81,6 +87,14 @@ Error Engine::initialize(const Config& config) {
             return device.error();
         }
         device_ = std::move(device.value());
+    } else if (headless_render_) {
+        auto device = rhi::create_null_device();
+        if (!device) {
+            window_.reset();
+            return device.error();
+        }
+        device_ = std::move(device.value());
+        FE_LOG_INFO("headless render: null RHI device, no OS surface (nothing is rasterised)");
     } else {
         FE_LOG_INFO("headless run: no graphics context, device and renderers are skipped");
     }
@@ -94,16 +108,16 @@ Error Engine::initialize(const Config& config) {
         FE_LOG_INFO("import cache root '%s'", resources_->import_cache().root().c_str());
     }
     resources_->register_loader(std::make_unique<ImageLoader>(&resources_->import_cache()));
-    if (has_graphics_) {
-        // The GPU texture loader needs a device to upload through. Headless runs
-        // register only the CPU image loader, so an asset can still be decoded
-        // and inspected with no context (see the null RHI device in ADR-0041).
+    if (wants_device) {
+        // The GPU texture loader needs a device to upload through. A run with no
+        // device registers only the CPU image loader, so an asset can still be
+        // decoded and inspected with no context.
         resources_->register_loader(std::make_unique<Texture2DLoader>(*device_, *resources_));
     }
     resources_->register_loader(std::make_unique<ObjLoader>());
     resources_->register_loader(std::make_unique<GltfLoader>());
 
-    if (has_graphics_) {
+    if (wants_device) {
         renderer_2d_ = std::make_unique<renderer2d::Renderer2D>();
         if (Error error = renderer_2d_->initialize(*device_); error) {
             device_.reset();
@@ -152,6 +166,11 @@ void Engine::shutdown() {
     window_.reset();
 
     initialized_ = false;
+    // Clear the surface flags with the lifetime they describe: after shutdown
+    // there is no device and no surface, so has_graphics()/headless_render()
+    // must not keep reporting the state of a torn-down engine.
+    has_graphics_ = false;
+    headless_render_ = false;
     FE_LOG_INFO("engine shut down");
 }
 

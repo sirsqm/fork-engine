@@ -54,6 +54,13 @@ public:
         // existed. A project sets it to a disposable directory (for example
         // "<project>/.fork/cache"). See docs/adr/0029-import-cache.md.
         std::string cache_root;
+        // When the window has no graphics context (WindowBackend::Null), create
+        // the null RHI device and the renderers so the render path -- extraction,
+        // batching, and draw submission -- runs headless instead of being
+        // skipped. Off by default: a plain headless run creates no device, which
+        // is the ADR-0041 behaviour. Nothing is rasterised, so this proves
+        // submission, not pixels. See docs/adr/0042-null-rhi-device.md.
+        bool headless_render = false;
     };
 
     // Declared but not defined here: the unique_ptr members need their types
@@ -81,6 +88,15 @@ public:
     // a null window cannot render. See
     // docs/adr/0041-platform-contract-and-null-backend.md.
     [[nodiscard]] bool has_graphics() const noexcept { return has_graphics_; }
+
+    // True when the engine came up with a device and renderers but no OS
+    // surface: a headless run with Engine::Config::headless_render set. The
+    // render path executes against the null RHI device, so device(),
+    // renderer_2d() and renderer_3d() are valid, but nothing reaches a screen
+    // and read_pixels() yields no pixels. has_graphics() and
+    // headless_render() are never both true. See
+    // docs/adr/0042-null-rhi-device.md.
+    [[nodiscard]] bool headless_render() const noexcept { return headless_render_; }
 
     [[nodiscard]] Window& window() noexcept { return *window_; }
     [[nodiscard]] const Window& window() const noexcept { return *window_; }
@@ -138,6 +154,7 @@ public:
 private:
     bool initialized_ = false;
     bool has_graphics_ = false;
+    bool headless_render_ = false;
     std::unique_ptr<Window> window_;
     std::unique_ptr<rhi::Device> device_;
     std::unique_ptr<ResourceManager> resources_;

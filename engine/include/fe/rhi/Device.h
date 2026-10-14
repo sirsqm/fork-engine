@@ -88,5 +88,16 @@ public:
 // does not provide an OpenGL 3.3 core context).
 [[nodiscard]] Result<std::unique_ptr<Device>> create_device(Window& window);
 
+// Creates a null (headless) device: inert resources, no-op commands, no
+// graphics context.
+//
+// This is the backend for a run with no display that still wants the render path
+// -- extraction, batching, and draw submission -- to execute rather than be
+// skipped. It never fails and rasterises nothing, so it proves *submission*, not
+// pixels. The runtime selects it for a contextless window when headless
+// rendering is requested (see Engine::Config::headless_render); a test may also
+// create one directly to drive a renderer with no GL context.
+[[nodiscard]] Result<std::unique_ptr<Device>> create_null_device();
+
 } // namespace rhi
 } // namespace fe
