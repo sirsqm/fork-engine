@@ -70,7 +70,7 @@ core  <-  net                     (planned: collaborative editing)
 | `resources` | Asset loading, caching, lifetime | core, rhi |
 | `scene` | Node/component hierarchy, transforms | core |
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
-| `serialization` | JSON persistence of scenes, driven by reflection | core, scene, resources, reflect |
+| `serialization` | JSON persistence of scenes, driven by reflection, and the serializable `Operation` model (apply/inverse, `docs/adr/0047-local-operation-model.md`) | core, scene, resources, reflect |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
 | `script` | The language-agnostic gameplay seam: `Script`, `ScriptHost` (per-node instances keyed by stable node id), `ScriptRegistry`, and the `ScriptSystem` bridge. Header-only | core, scene, systems |
 | `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
@@ -779,17 +779,23 @@ changes and presence live, and never run a manual merge — see
 
 - Every edit goes through the command stack rather than mutating the scene
   ([ADR-0015](adr/0015-editor-undo-redo.md)), so an edit is already a discrete,
-  invertible step.
+  invertible step, and every local edit now builds a serializable `Operation`
+  ([ADR-0047](adr/0047-local-operation-model.md)) that names its objects by
+  stable id.
 - Serialization and the inspector are reflection-driven
   ([ADR-0005](adr/0005-reflection-and-serialization.md)), so a property edit is
   already addressable as `(component, property path, value)` with no per-type
   code.
-- Nodes already carry a stable `Uuid`.
+- Nodes already carry a stable `Uuid`, and components carry one too
+  ([ADR-0045](adr/0045-component-identity.md)).
 
-Collaboration generalises this. Components gain stable ids; the command stack is
-generalised into a serializable `Operation`; a `Session` holds the document and
-an ordered, replicated log that every replica applies to converge. An
-authoritative session server orders structural operations and resolves
+Collaboration generalises this. The command stack is generalised into a
+serializable `Operation` — a tagged value that round-trips through JSON, applies
+to a `Scene`, and has an inverse derived from the document rather than captured
+in the editor (the local step is done:
+[ADR-0047](adr/0047-local-operation-model.md)). A `Session` then holds the
+document and an ordered, replicated log that every replica applies to converge.
+An authoritative session server orders structural operations and resolves
 concurrent property edits last-writer-wins per property; presence (cursors,
 selections, viewport cameras) rides alongside as ephemeral messages. The first
 steps are local and headless — two in-process replicas, no network — which also

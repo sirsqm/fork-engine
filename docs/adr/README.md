@@ -53,6 +53,7 @@ rather than editing it.
 | [0044](0044-scripting-seam.md) | The scripting seam, and C++ as the first language behind it | Accepted |
 | [0045](0045-component-identity.md) | Stable component identity | Accepted |
 | [0046](0046-resource-change-detection-and-reload.md) | Resource change detection and reload | Accepted |
+| [0047](0047-local-operation-model.md) | The local operation model | Accepted |
 
 ## Format
 

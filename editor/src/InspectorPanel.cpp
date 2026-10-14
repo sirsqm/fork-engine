@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 #include "fe/editor/InspectorPanel.h"
 
-#include "fe/editor/Commands.h"
 #include "fe/editor/EditorContext.h"
+#include "fe/editor/OperationCommand.h"
 #include "fe/editor/PropertyEditor.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Property.h"
@@ -13,6 +13,7 @@
 #include "fe/resources/ResourceManager.h"
 #include "fe/scene/Component.h"
 #include "fe/scene/Node.h"
+#include "fe/serialization/Operation.h"
 
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"
@@ -42,25 +43,33 @@ using TextFields = InspectorPanel::TextFields;
 // and drop. See docs/adr/0028-editor-hint-metadata.md.
 constexpr const char* kAssetDragPayload = "FE_ASSET_REF";
 
-// Per-component edit target: which node and which component index every widget
-// in this section writes to. A widget records its own property *path* relative
-// to the component (a leaf name, or a member path for a group), so one
-// `SetPropertyCommand` covers every field of every type via the registry
-// (docs/adr/0015-editor-undo-redo.md).
+// Per-component edit target: which node and which component every widget in
+// this section writes to. The component is named by its stable id, not its
+// index, so an operation resolves to the exact component even when the node
+// carries two of the same type (docs/adr/0045-component-identity.md). A widget
+// records its own property *path* relative to the component (a leaf name, or a
+// member path for a group), so one `SetProperty` operation covers every field
+// of every type via the registry (docs/adr/0047-local-operation-model.md).
 struct EditContext {
     EditorContext* context = nullptr;
     Uuid node_id{};
-    usize component_index = 0;
+    Uuid component_id{};
 };
 
-// Applies an edit through the command stack, so it is undoable and coalesces
-// with the previous edit of the same property. `path` is the full path from the
-// component to the edited property.
+// Applies an edit as a serializable `SetProperty` operation, so it is undoable
+// and coalesces with the previous edit of the same property. `path` is the full
+// path from the component to the edited property.
 void commit(EditContext& edit, const std::vector<std::string>& path, const Value& value) {
     if (edit.context == nullptr) {
         return;
     }
-    edit.context->execute(std::make_unique<SetPropertyCommand>(edit.node_id, edit.component_index, path, value));
+    serialization::Operation op;
+    op.kind = serialization::OperationKind::SetProperty;
+    op.node_id = edit.node_id;
+    op.component_id = edit.component_id;
+    op.path = path;
+    op.value = value;
+    edit.context->execute(std::make_unique<OperationCommand>(std::move(op)));
 }
 
 void group_suffix(const Property& property) {
@@ -165,9 +174,10 @@ void draw_string_row(const Property& property, void* component, EditContext& edi
 // `resolve_resource`: the inspector never assigns a raw key, because that would
 // discard the resolved resource (see Property.h). It is edited three ways - a
 // text field for the manager key, a drop target for an asset dragged from the
-// browser, and a clear button - and every edit goes through
-// `SetResourceCommand`, so a resource reference is now undoable like any other
-// property (see docs/adr/0028-editor-hint-metadata.md).
+// browser, and a clear button - and every edit goes through a `SetResource`
+// operation, so a resource reference is now undoable like any other property and
+// carries as a serializable operation
+// (see docs/adr/0047-local-operation-model.md).
 void draw_resource_row(const Property& property, void* component, EditContext& edit, TextFields& fields) {
     const std::string current = property.resource_ref ? property.resource_ref(component) : std::string{};
     sync(fields.scalar_label, fields.scalar_text, property.name, current);
@@ -180,13 +190,22 @@ void draw_resource_row(const Property& property, void* component, EditContext& e
 
     ResourceManager* resources = edit.context != nullptr ? edit.context->resources() : nullptr;
 
-    // The text field seeds from the current key and, on commit, routes the typed
-    // reference through the command (an empty string clears the slot).
-    if (ImGui::InputTextWithHint(property.name.c_str(), "guid:... or tex:assets/...", &fields.scalar_text)) {
+    auto commit_resource = [&](const std::string& reference) {
         if (resources != nullptr && edit.context != nullptr) {
-            edit.context->execute(std::make_unique<SetResourceCommand>(edit.node_id, edit.component_index,
-                                                                       property.name, fields.scalar_text, resources));
+            serialization::Operation op;
+            op.kind = serialization::OperationKind::SetResource;
+            op.node_id = edit.node_id;
+            op.component_id = edit.component_id;
+            op.property_name = property.name;
+            op.reference = reference;
+            edit.context->execute(std::make_unique<OperationCommand>(std::move(op), resources));
         }
+    };
+
+    // The text field seeds from the current key and, on commit, routes the typed
+    // reference through the operation (an empty string clears the slot).
+    if (ImGui::InputTextWithHint(property.name.c_str(), "guid:... or tex:assets/...", &fields.scalar_text)) {
+        commit_resource(fields.scalar_text);
     }
     end_gesture_if_finished(edit);
 
@@ -197,10 +216,7 @@ void draw_resource_row(const Property& property, void* component, EditContext& e
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAssetDragPayload)) {
             const std::string reference(static_cast<const char*>(payload->Data),
                                         static_cast<std::size_t>(payload->DataSize));
-            if (resources != nullptr && edit.context != nullptr) {
-                edit.context->execute(std::make_unique<SetResourceCommand>(edit.node_id, edit.component_index,
-                                                                           property.name, reference, resources));
-            }
+            commit_resource(reference);
         }
         ImGui::EndDragDropTarget();
     }
@@ -210,8 +226,7 @@ void draw_resource_row(const Property& property, void* component, EditContext& e
         ImGui::SameLine();
         const std::string clear_label = std::string("Clear##clear_") + property.name;
         if (ImGui::SmallButton(clear_label.c_str()) && resources != nullptr) {
-            edit.context->execute(std::make_unique<SetResourceCommand>(edit.node_id, edit.component_index,
-                                                                       property.name, std::string{}, resources));
+            commit_resource(std::string{});
         }
     }
 
@@ -372,8 +387,8 @@ void InspectorPanel::draw(EditorContext& context) {
 
     const reflect::Registry& registry = reflect::Registry::instance();
 
-    // The component's index, so every edit targets exactly this component even
-    // when a node carries more than one of the same type.
+    // The component is addressed by its stable id, so every edit targets exactly
+    // this component even when a node carries more than one of the same type.
     const auto& components = node->components();
     for (usize index = 0; index < components.size(); ++index) {
         Component* component = components[index].get();
@@ -385,12 +400,16 @@ void InspectorPanel::draw(EditorContext& context) {
         ImGui::SeparatorText(component->type_name());
 
         // A "remove component" affordance next to the header. Routed through the
-        // command stack like every other edit.
+        // command stack as a serializable operation like every other edit.
         if (context.is_editable()) {
             ImGui::SameLine();
             const std::string button_label = std::string("Remove##remove_") + component->type_name();
             if (ImGui::SmallButton(button_label.c_str())) {
-                context.execute(std::make_unique<RemoveComponentCommand>(node->id(), index));
+                serialization::Operation op;
+                op.kind = serialization::OperationKind::RemoveComponent;
+                op.node_id = node->id();
+                op.component_id = component->id();
+                context.execute(std::make_unique<OperationCommand>(std::move(op)));
                 ImGui::PopID();
                 break; // The component vector changed; stop iterating it.
             }
@@ -408,7 +427,7 @@ void InspectorPanel::draw(EditorContext& context) {
         EditContext edit;
         edit.context = &context;
         edit.node_id = node->id();
-        edit.component_index = index;
+        edit.component_id = component->id();
 
         std::vector<std::string> empty_path;
         for (const Property& property : type->properties) {
@@ -436,7 +455,13 @@ void InspectorPanel::draw(EditorContext& context) {
                 continue;
             }
             if (ImGui::MenuItem(type.name.c_str())) {
-                context.execute(std::make_unique<AddComponentCommand>(node->id(), type.name, node->component_count()));
+                serialization::Operation op;
+                op.kind = serialization::OperationKind::AddComponent;
+                op.node_id = node->id();
+                op.component_id = Uuid::generate();
+                op.index = node->component_count();
+                op.name = type.name;
+                context.execute(std::make_unique<OperationCommand>(std::move(op)));
             }
         }
         ImGui::EndPopup();

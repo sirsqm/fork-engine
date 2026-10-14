@@ -316,8 +316,10 @@ and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       undo — a `Uuid` on every `Component`, assigned at creation and written to
       the scene document (format version 3); `Scene::find_component` resolves one
       anywhere in the tree ([ADR-0045](adr/0045-component-identity.md))
-- [ ] Operation model (local only): generalise `Command` into a serializable
-      `Operation`; route local edits through it
+- [x] Operation model (local only): a serializable `Operation` generalising
+      `Command`, naming objects by stable id, with JSON round-trip, `apply`, and
+      a document-derived `inverse`; local edits route through an
+      `OperationCommand` adapter ([ADR-0047](adr/0047-local-operation-model.md))
 - [ ] Replicated log (local only): a `Session` holding a document and an ordered
       log; two in-process replicas converge; undo becomes log-based
 - [ ] Transport and server: a `net` module with an in-process loopback transport

@@ -2,19 +2,28 @@
 // SPDX-License-Identifier: MIT
 #include "fe/editor/HierarchyPanel.h"
 
-#include "fe/editor/Commands.h"
 #include "fe/editor/EditorContext.h"
 #include "fe/editor/HierarchyViewModel.h"
+#include "fe/editor/OperationCommand.h"
 #include "fe/scene/Node.h"
+#include "fe/serialization/Operation.h"
 
 #include "imgui.h"
 
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace fe::editor {
 namespace {
+
+// Builds an operation and pushes it onto the undo stack through the adapter, so
+// every hierarchy edit is the serializable operation a log would carry
+// (docs/adr/0047-local-operation-model.md).
+bool commit_operation(EditorContext& context, serialization::Operation op) {
+    return context.execute(std::make_unique<OperationCommand>(std::move(op)));
+}
 
 // The payload type for a hierarchy drag: the dragged node's id as its canonical
 // string. An id (not a pointer) survives the frames between drag start and drop.
@@ -48,7 +57,11 @@ void HierarchyPanel::commit_rename(EditorContext& context) {
     if (new_name.empty() || new_name == node->name()) {
         return;
     }
-    context.execute(std::make_unique<RenameNodeCommand>(node->id(), new_name));
+    serialization::Operation op;
+    op.kind = serialization::OperationKind::RenameNode;
+    op.node_id = node->id();
+    op.name = new_name;
+    commit_operation(context, std::move(op));
 }
 
 void HierarchyPanel::draw_row_context_menu(EditorContext& context, Node& node) {
@@ -56,11 +69,16 @@ void HierarchyPanel::draw_row_context_menu(EditorContext& context, Node& node) {
         const bool editable = context.is_editable();
 
         if (ImGui::MenuItem("Add Child Node", nullptr, false, editable)) {
-            auto command = std::make_unique<CreateNodeCommand>("Node", node.id(), node.child_count());
-            CreateNodeCommand* raw = command.get();
-            if (context.execute(std::move(command))) {
+            const Uuid node_id = Uuid::generate();
+            serialization::Operation op;
+            op.kind = serialization::OperationKind::CreateNode;
+            op.node_id = node_id;
+            op.parent_id = node.id();
+            op.index = node.child_count();
+            op.name = "Node";
+            if (commit_operation(context, std::move(op))) {
                 // Select the new node so the user can immediately rename it.
-                if (Node* created = context.scene().find_node(raw->node_id()); created != nullptr) {
+                if (Node* created = context.scene().find_node(node_id); created != nullptr) {
                     context.hierarchy().select(created);
                 }
             }
@@ -70,7 +88,10 @@ void HierarchyPanel::draw_row_context_menu(EditorContext& context, Node& node) {
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Delete", "Del", false, editable)) {
-            context.execute(std::make_unique<DeleteNodeCommand>(node.id()));
+            serialization::Operation op;
+            op.kind = serialization::OperationKind::DeleteNode;
+            op.node_id = node.id();
+            commit_operation(context, std::move(op));
         }
         ImGui::EndPopup();
     }
@@ -98,8 +119,12 @@ void HierarchyPanel::draw_row_drag_drop(EditorContext& context, Node& node) {
                 // create a cycle. The engine's add_child would assert, so this
                 // is a guard, not an optimisation.
                 if (dragged != nullptr && dragged != &node && !dragged->is_ancestor_of(node)) {
-                    context.execute(
-                        std::make_unique<ReparentNodeCommand>(dragged->id(), node.id(), node.child_count()));
+                    serialization::Operation op;
+                    op.kind = serialization::OperationKind::ReparentNode;
+                    op.node_id = dragged->id();
+                    op.parent_id = node.id();
+                    op.index = node.child_count();
+                    commit_operation(context, std::move(op));
                 }
             }
         }
@@ -125,7 +150,10 @@ void HierarchyPanel::draw(EditorContext& context) {
         if (context.is_editable() && !renaming_ && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
             !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
             if (Node* selected = model.selected_node(); selected != nullptr) {
-                context.execute(std::make_unique<DeleteNodeCommand>(selected->id()));
+                serialization::Operation op;
+                op.kind = serialization::OperationKind::DeleteNode;
+                op.node_id = selected->id();
+                commit_operation(context, std::move(op));
             }
         }
 
@@ -190,7 +218,12 @@ void HierarchyPanel::draw(EditorContext& context) {
         // Right-clicking empty space adds a scene root.
         if (ImGui::BeginPopupContextWindow("##empty_menu", ImGuiPopupFlags_NoOpenOverItems) && context.is_editable()) {
             if (ImGui::MenuItem("Add Root Node")) {
-                context.execute(std::make_unique<CreateNodeCommand>("Node", Uuid{}, context.scene().root_count()));
+                serialization::Operation op;
+                op.kind = serialization::OperationKind::CreateNode;
+                op.node_id = Uuid::generate();
+                op.index = context.scene().root_count();
+                op.name = "Node";
+                commit_operation(context, std::move(op));
             }
             ImGui::EndPopup();
         }
