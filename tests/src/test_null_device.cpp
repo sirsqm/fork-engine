@@ -11,7 +11,9 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/mesh/Mesh.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/renderer3d/Renderer3D.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/rhi/Device.h"
 #include "fe/rhi/Resources.h"
@@ -22,6 +24,9 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene3d/Camera3D.h"
+#include "fe/scene3d/DirectionalLight3D.h"
+#include "fe/scene3d/MeshRenderer3D.h"
 
 #include <string_view>
 #include <vector>
@@ -183,6 +188,45 @@ TEST_CASE("the 2D renderer submits its batches to a null device") {
     // reports, so they prove submission, not pixels.
     CHECK(drawn.value() == 3);
     CHECK(renderer.last_draw_calls() == 1); // three sprites sharing one texture batch into one call
+    device.end_frame();
+}
+
+TEST_CASE("the 3D renderer runs its shadow pass against a null device") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+
+    renderer3d::Renderer3D renderer;
+    REQUIRE(renderer.initialize(device).ok() == true);
+
+    Scene scene;
+    Node* camera = scene.create_node("Camera");
+    camera->add_component<Camera3D>();
+
+    Node* light = scene.create_node("Sun");
+    light->add_component<DirectionalLight3D>();
+
+    Node* cube = scene.create_node("Cube");
+    auto* mesh_renderer = cube->add_component<MeshRenderer3D>();
+    mesh_renderer->mesh = Mesh::make_cube();
+
+    device.begin_frame(320, 200, rhi::ClearColor{});
+    auto drawn = renderer.render(device, scene, 320, 200);
+    REQUIRE(drawn.ok());
+
+    // One visible cube is one main-pass draw. The shadow pass runs too: it binds
+    // the shadow render target the null device created, clears it, draws the
+    // caster, and restores the previous target -- the bind/restore sequence that
+    // is the whole reason the null device must return a usable render target
+    // rather than nullptr. If that path were broken this would not reach here.
+    CHECK(drawn.value() == 1);
+    CHECK(renderer.last_draw_calls() == 1);
+    CHECK(renderer.last_shadow_casters() == 1);
+    CHECK(renderer.cached_mesh_count() == 1);
+
+    // The shadow pass restored the caller's target, so the main pass drew where
+    // the frame began: the default target.
+    CHECK(device.bound_render_target() == nullptr);
     device.end_frame();
 }
 
