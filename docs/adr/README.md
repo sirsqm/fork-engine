@@ -51,6 +51,7 @@ rather than editing it.
 | [0042](0042-null-rhi-device.md) | A null RHI device for headless rendering | Accepted |
 | [0043](0043-physics3d-angular-dynamics.md) | 3D angular dynamics, and a quaternion orientation | Accepted |
 | [0044](0044-scripting-seam.md) | The scripting seam, and C++ as the first language behind it | Accepted |
+| [0045](0045-component-identity.md) | Stable component identity | Accepted |
 
 ## Format
 
