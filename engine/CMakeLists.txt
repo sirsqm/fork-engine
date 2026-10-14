@@ -10,12 +10,19 @@
 #   core  <-  reflect  <-  scene, resources
 #   core  <-  serialization  <-  scene, resources, reflect
 #   core, scene, resources  <-  systems
+#   core, scene, systems  <-  script
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, reflect  <-  physics3d
 #   core, scene, systems, resources  <-  audio
 #   core, resources  <-  pack
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
+#
+# The `script` module (fe/script/) is header-only: it is the language-agnostic
+# gameplay seam (Script, ScriptHost, ScriptRegistry, ScriptSystem) and has no
+# translation unit of its own, so it contributes no entry to FE_ENGINE_SOURCES.
+# Its headers ship with the library through the public include directory below.
+# See docs/adr/0043-scripting-seam.md.
 
 set(FE_ENGINE_SOURCES
     src/core/Log.cpp
