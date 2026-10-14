@@ -552,6 +552,14 @@ This is the foundation of the asset pipeline. Import settings, a
 content-addressed cache, and hot reload build on top of it without changing the
 load/cache/release contract.
 
+Change detection and reload reuse that contract rather than bending it. Each
+cache entry remembers the file its resource was loaded from and that file's write
+time; `poll_changed()` returns the references whose file changed, and `reload()`
+re-loads a named one and returns the fresh instance for the caller to adopt and
+re-wire. Detection and adoption are separate because the cache is weak: an
+instance swapped in with no caller to hold it would be released at once. See
+[ADR-0046](adr/0046-resource-change-detection-and-reload.md).
+
 ### Import settings
 
 How an asset is turned into a resource -- how a texture is sampled, and later how

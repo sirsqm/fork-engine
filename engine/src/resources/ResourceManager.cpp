@@ -5,7 +5,9 @@
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace fe {
 
@@ -73,6 +75,31 @@ Result<std::shared_ptr<Resource>> ResourceManager::load(std::string_view referen
         // reload, replacing the dead weak reference.
     }
 
+    std::string watched_path;
+    auto result = load_uncached(key, &watched_path);
+    if (!result) {
+        return result.error();
+    }
+    remember_for_reload(key, result.value(), watched_path);
+    return result.value();
+}
+
+void ResourceManager::remember_for_reload(const std::string& key, const std::shared_ptr<Resource>& resource,
+                                          std::string_view file_path) {
+    CacheEntry entry;
+    entry.resource = resource;
+    if (!source_ && !file_path.empty()) {
+        entry.reload_path = fs::normalize(file_path);
+        entry.reload_stamp = fs::last_write_time_ns(entry.reload_path);
+    }
+    cache_[key] = std::move(entry);
+}
+
+Result<std::shared_ptr<Resource>> ResourceManager::load_uncached(const std::string& key, std::string* watched_path) {
+    if (watched_path != nullptr) {
+        watched_path->clear();
+    }
+
     // A GUID reference names an identity, not a file. Resolve it to the asset's
     // current path and import scheme; this is what lets a reference survive a
     // file move. A mounted source (a pack) carries the mapping itself; otherwise
@@ -106,7 +133,9 @@ Result<std::shared_ptr<Resource>> ResourceManager::load(std::string_view referen
             return result.error();
         }
         result.value()->set_asset_id(guid);
-        cache_[key] = CacheEntry{result.value()};
+        if (watched_path != nullptr && !source_) {
+            *watched_path = assets_.absolute_path(guid);
+        }
         FE_LOG_DEBUG("resolved guid asset '%s' to '%s'", guid.to_string().c_str(), path.c_str());
         return result.value();
     }
@@ -143,7 +172,13 @@ Result<std::shared_ptr<Resource>> ResourceManager::load(std::string_view referen
     if (!result) {
         return result.error();
     }
-    cache_[key] = CacheEntry{result.value()};
+    if (watched_path != nullptr && !source_) {
+        // Resolve the file the loader actually read to an absolute path so a
+        // change check does not depend on the process working directory, which
+        // a project load can change.
+        const std::string absolute = assets_.absolute_path_by_path(file_path);
+        *watched_path = absolute.empty() ? fs::normalize(std::string(file_path)) : absolute;
+    }
     return result.value();
 }
 
@@ -229,6 +264,57 @@ usize ResourceManager::loaded_count() const noexcept {
         }
     }
     return count;
+}
+
+std::vector<std::string> ResourceManager::poll_changed() {
+    // A mounted pack has no loose files to watch; the pack is the source of
+    // truth and is replaced wholesale, not edited in place.
+    if (source_) {
+        return {};
+    }
+
+    std::vector<std::string> changed;
+    for (auto& [key, entry] : cache_) {
+        if (entry.resource.expired() || entry.reload_path.empty()) {
+            continue;
+        }
+        const u64 stamp = fs::last_write_time_ns(entry.reload_path);
+        // Zero means the file could not be read; treat that as "leave it alone"
+        // rather than "it was deleted", so a transient error does not tear down
+        // a loaded asset.
+        if (stamp != 0 && stamp != entry.reload_stamp) {
+            // Record the new time now, so an unchanged poll after this does not
+            // report the same change twice; the caller still has to adopt the
+            // reload it was told about.
+            entry.reload_stamp = stamp;
+            changed.push_back(key);
+        }
+    }
+    return changed;
+}
+
+Result<std::shared_ptr<Resource>> ResourceManager::reload(std::string_view reference) {
+    const std::string key = fs::normalize(reference);
+
+    const auto it = cache_.find(key);
+    if (it == cache_.end() || it->second.resource.expired()) {
+        // Not cached, or cached but released: there is no live instance to
+        // refresh, and reloading would resurrect a resource nothing asked for.
+        return Error("resource '" + key + "' is not loaded");
+    }
+
+    std::string watched_path;
+    auto result = load_uncached(key, &watched_path);
+    if (!result) {
+        // A broken file is not a reason to drop a working resource; keep the
+        // existing instance and report the failure.
+        FE_LOG_DEBUG("reload of '%s' failed: %s", key.c_str(), result.error().message().c_str());
+        return result.error();
+    }
+
+    remember_for_reload(key, result.value(), watched_path);
+    FE_LOG_DEBUG("reloaded resource '%s'", key.c_str());
+    return result.value();
 }
 
 } // namespace fe
