@@ -45,6 +45,7 @@ rather than editing it.
 | [0034](0034-audio-attenuation-buses.md) | Audio attenuation and mixing buses | Accepted |
 | [0035](0035-ci-quality-gates.md) | CI quality gates: sanitizers and an optimised warnings build | Accepted |
 | [0036](0036-breakout-vertical-slice.md) | The breakout vertical slice, and the integration test it is | Accepted |
+| [0037](0037-physics2d-oriented-boxes-offsets.md) | Oriented-box colliders and collider offsets | Accepted |
 
 ## Format
 
