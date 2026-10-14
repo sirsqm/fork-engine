@@ -50,6 +50,7 @@ rather than editing it.
 | [0041](0041-platform-contract-and-null-backend.md) | The platform contract and a null/headless backend | Accepted |
 | [0042](0042-null-rhi-device.md) | A null RHI device for headless rendering | Accepted |
 | [0043](0043-physics3d-angular-dynamics.md) | 3D angular dynamics, and a quaternion orientation | Accepted |
+| [0044](0044-scripting-seam.md) | The scripting seam, and C++ as the first language behind it | Accepted |
 
 ## Format
 
