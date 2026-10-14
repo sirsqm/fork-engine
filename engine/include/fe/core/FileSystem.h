@@ -34,6 +34,18 @@ namespace fs {
 
 [[nodiscard]] bool exists(std::string_view path);
 
+// The last-write time of `path` in nanoseconds since the filesystem epoch, or
+// 0 when the path does not exist or its time cannot be read.
+//
+// This is the one place a file's modification time is read, so a resource
+// change check (ResourceManager::poll_reloads) asks here rather than calling a
+// native API. The unit is deliberately opaque: callers compare two values for
+// inequality, never interpret them, which is all a "did this change" test
+// needs. A filesystem with a coarse clock may report the same value for two
+// writes close together; that is a property of the clock, and the check is a
+// poll, not a promise of sub-second resolution.
+[[nodiscard]] u64 last_write_time_ns(std::string_view path);
+
 // Creates a directory and all missing parents. Returns an Error on failure.
 [[nodiscard]] Error create_directories(std::string_view path);
 

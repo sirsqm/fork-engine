@@ -34,6 +34,7 @@ add_executable(fork_engine_tests
     src/test_audio.cpp
     src/test_pack.cpp
     src/test_resource_manager.cpp
+    src/test_resource_reload.cpp
     src/test_asset_database.cpp
     src/test_import_settings.cpp
     src/test_import_cache.cpp

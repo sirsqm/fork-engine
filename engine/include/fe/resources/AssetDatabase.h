@@ -109,6 +109,13 @@ public:
     // The absolute filesystem path of an asset, or "" when the id is unknown.
     [[nodiscard]] std::string absolute_path(const AssetId& id) const;
 
+    // The absolute filesystem path of the asset stored at a root-relative
+    // `path`, or "" when the path is not indexed. This is the path form of
+    // absolute_path: a change check that only has the path a resource was
+    // loaded from (a bare path reference, or a reference resolved through the
+    // database) asks here rather than re-deriving the join.
+    [[nodiscard]] std::string absolute_path_by_path(std::string_view path) const;
+
     [[nodiscard]] usize asset_count() const noexcept { return by_id_.size(); }
 
     // Every indexed asset. The order is unspecified; a caller that needs a

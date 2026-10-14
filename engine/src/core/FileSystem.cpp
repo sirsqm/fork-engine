@@ -3,6 +3,7 @@
 #include "fe/core/FileSystem.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -97,6 +98,18 @@ Error write_text_file(std::string_view path, std::string_view text) {
 bool exists(std::string_view path) {
     std::error_code ec;
     return stdfs::exists(to_native(path), ec);
+}
+
+u64 last_write_time_ns(std::string_view path) {
+    std::error_code ec;
+    const stdfs::file_time_type time = stdfs::last_write_time(to_native(path), ec);
+    if (ec) {
+        return 0;
+    }
+    // file_time_type is a clock-specific duration. Convert to nanoseconds and
+    // return the raw count; callers only ever compare two of these for
+    // inequality, so the epoch the count is relative to does not matter.
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
 }
 
 Error create_directories(std::string_view path) {
