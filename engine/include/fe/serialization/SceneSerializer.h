@@ -39,7 +39,7 @@ namespace scene {
 // 1; older documents load with ids assigned at creation. The reader migrates
 // version-1 documents at load time. See
 // docs/adr/0020-resource-identity-guid-sidecar.md and
-// docs/adr/0043-component-identity.md.
+// docs/adr/0045-component-identity.md.
 inline constexpr i32 kFormatVersion = 3;
 
 // Serialises `scene` to a JSON string.

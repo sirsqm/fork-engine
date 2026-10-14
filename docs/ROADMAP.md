@@ -185,9 +185,14 @@ is missing than ten roadmap items, and it is the precondition for a community.
       `DistanceJoint3D`, `Physics3DSystem`) — a hand-written core kept behind a
       component-and-query boundary so a third-party solver can replace it later;
       see [ADR-0031](adr/0031-physics3d-and-backend-seam.md)
-- [ ] 3D physics refinements: angular dynamics (torque, inertia, quaternion
-      rotation), more joint types, and islands / sleeping — mirroring the 2D
-      cuts; deferred behind the backend seam rather than chased to parity
+- [~] 3D physics refinements: angular dynamics are done — a body carries an
+      angular velocity, torque, and a shape-derived (isotropic) inertia, the
+      solver integrates the orientation as a quaternion and applies angular
+      impulses from contacts and joints (`RigidBody3D` angular fields, `Quat` in
+      `core/Math.h`) — see [ADR-0043](adr/0043-physics3d-angular-dynamics.md).
+      Oriented colliders, more joint types, and islands / sleeping remain,
+      mirroring the 2D cuts; deferred behind the backend seam rather than chased
+      to parity
 - [ ] Integration with the scene and the editor
 - [ ] Debug drawing
 
@@ -305,7 +310,7 @@ and trade-offs: [`STRATEGY.md`](STRATEGY.md),
 - [x] Component identity: stable ids that survive serialization, reimport, and
       undo — a `Uuid` on every `Component`, assigned at creation and written to
       the scene document (format version 3); `Scene::find_component` resolves one
-      anywhere in the tree ([ADR-0043](adr/0043-component-identity.md))
+      anywhere in the tree ([ADR-0045](adr/0045-component-identity.md))
 - [ ] Operation model (local only): generalise `Command` into a serializable
       `Operation`; route local edits through it
 - [ ] Replicated log (local only): a `Session` holding a document and an ordered
