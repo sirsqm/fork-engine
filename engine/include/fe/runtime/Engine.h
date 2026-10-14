@@ -73,6 +73,15 @@ public:
 
     [[nodiscard]] bool is_initialized() const noexcept { return initialized_; }
 
+    // True when the engine came up with a graphics context and a device. False
+    // for a headless run (a null window). When false, device(), renderer_2d()
+    // and renderer_3d() must not be called: they have no object to return, and
+    // code that renders must branch on this rather than assume a surface. This
+    // is the one place the runtime asks "is there a surface?", and it is honest:
+    // a null window cannot render. See
+    // docs/adr/0041-platform-contract-and-null-backend.md.
+    [[nodiscard]] bool has_graphics() const noexcept { return has_graphics_; }
+
     [[nodiscard]] Window& window() noexcept { return *window_; }
     [[nodiscard]] const Window& window() const noexcept { return *window_; }
 
@@ -82,15 +91,18 @@ public:
     [[nodiscard]] InputState& input() noexcept { return window_->input(); }
     [[nodiscard]] const InputState& input() const noexcept { return window_->input(); }
 
+    // Requires has_graphics(). A headless engine has no device to return.
     [[nodiscard]] rhi::Device& device() noexcept { return *device_; }
     [[nodiscard]] const rhi::Device& device() const noexcept { return *device_; }
 
     [[nodiscard]] ResourceManager& resources() noexcept { return *resources_; }
     [[nodiscard]] const ResourceManager& resources() const noexcept { return *resources_; }
 
+    // Requires has_graphics().
     [[nodiscard]] renderer2d::Renderer2D& renderer_2d() noexcept { return *renderer_2d_; }
     [[nodiscard]] const renderer2d::Renderer2D& renderer_2d() const noexcept { return *renderer_2d_; }
 
+    // Requires has_graphics().
     [[nodiscard]] renderer3d::Renderer3D& renderer_3d() noexcept { return *renderer_3d_; }
     [[nodiscard]] const renderer3d::Renderer3D& renderer_3d() const noexcept { return *renderer_3d_; }
 
@@ -125,6 +137,7 @@ public:
 
 private:
     bool initialized_ = false;
+    bool has_graphics_ = false;
     std::unique_ptr<Window> window_;
     std::unique_ptr<rhi::Device> device_;
     std::unique_ptr<ResourceManager> resources_;

@@ -24,6 +24,7 @@ set(FE_ENGINE_SOURCES
     src/core/FileSystem.cpp
     src/core/Profiler.cpp
     src/platform/InputState.cpp
+    src/platform/NullWindow.cpp
     src/platform/Window.cpp
     src/rhi/Device.cpp
     src/rhi/opengl/OpenGLDevice.cpp

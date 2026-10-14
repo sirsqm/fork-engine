@@ -234,10 +234,17 @@ The goal is that a game built in Fork Engine reaches every platform its players
 use, not merely that the editor runs on several OSes. Plan and trade-offs:
 [`STRATEGY.md`](STRATEGY.md), [ADR-0018](adr/0018-multi-platform-shipping.md).
 
-- [ ] Platform interface audit: define the full OS contract (window/surface,
-      input incl. touch and gamepad, filesystem, threads, time, dynamic
-      libraries, lifecycle) and add a **null/headless** backend for CI and
-      servers
+- [x] Platform interface audit: the full OS contract (window/surface, input
+      incl. touch and gamepad, filesystem, threads, time, dynamic libraries,
+      lifecycle) is recorded concern by concern, with what is implemented now
+      and what is deferred, and a **null/headless** window backend exists for CI
+      and servers ([ADR-0041](adr/0041-platform-contract-and-null-backend.md)).
+      The engine's frame loop and its systems run with no display and no GL
+      context; the `fork_headless` example is the executable proof.
+- [ ] Headless rendering: a no-op RHI device so the render extraction and draw
+      submission can run with no context (the follow-up recorded in ADR-0041),
+      and the touch/gamepad, dynamic-library, and suspend/resume rows of the
+      platform contract, each implemented behind the existing seam
 - [x] Asset packaging: a versioned pack format (`PackFile`), a writer that turns
       a project's asset tree and startup scene into one file, and a `PackSource`
       the runtime mounts so the loaders and the scene reader read from a pack as

@@ -15,6 +15,7 @@ add_executable(fork_engine_tests
     src/test_math.cpp
     src/test_frustum.cpp
     src/test_input_state.cpp
+    src/test_platform_null.cpp
     src/test_scene.cpp
     src/test_components.cpp
     src/test_serialization.cpp
