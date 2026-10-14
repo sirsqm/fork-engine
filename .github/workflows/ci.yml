@@ -91,6 +91,14 @@ jobs:
         if: runner.os == 'Linux'
         run: ./build/bin/fork_headless 10
 
+      # The render path with no display and no GPU: the null RHI device
+      # (ADR-0042) runs extraction, batching, and draw submission. Also not
+      # wrapped in xvfb-run: if it ever needs a virtual display, the null device
+      # has sprung a leak.
+      - name: Run the headless render path with no display (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: ./build/bin/fork_headless --render 10
+
       - name: Run the editor headless over the demo project (Linux smoke test)
         if: runner.os == 'Linux'
         run: |

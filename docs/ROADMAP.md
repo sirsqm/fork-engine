@@ -243,9 +243,10 @@ use, not merely that the editor runs on several OSes. Plan and trade-offs:
       and servers ([ADR-0041](adr/0041-platform-contract-and-null-backend.md)).
       The engine's frame loop and its systems run with no display and no GL
       context; the `fork_headless` example is the executable proof.
-- [ ] Headless rendering: a no-op RHI device so the render extraction and draw
-      submission can run with no context (the follow-up recorded in ADR-0041),
-      and the touch/gamepad, dynamic-library, and suspend/resume rows of the
+- [x] Headless rendering: a null RHI device so the render extraction, batching,
+      and draw submission run with no context, selected by an explicit
+      `Engine::Config::headless_render` opt-in ([ADR-0042](adr/0042-null-rhi-device.md)).
+- [ ] The touch/gamepad, dynamic-library, and suspend/resume rows of the
       platform contract, each implemented behind the existing seam
 - [x] Asset packaging: a versioned pack format (`PackFile`), a writer that turns
       a project's asset tree and startup scene into one file, and a `PackSource`
