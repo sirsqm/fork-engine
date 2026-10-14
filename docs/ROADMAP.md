@@ -132,7 +132,10 @@ is missing than ten roadmap items, and it is the precondition for a community.
       [ADR-0020](adr/0020-resource-identity-guid-sidecar.md)
 - [x] Import settings per asset type — typed, stored in the sidecar, applied at load ([ADR-0027](adr/0027-asset-import-settings.md))
 - [x] An import cache — a content-addressed store so a re-import and a rebuild are cheap ([ADR-0029](adr/0029-import-cache.md))
-- [ ] Hot reload of resources
+- [x] Hot reload of resources — the manager records each cached resource's file
+      and write time, `poll_changed()` reports the ones that changed, and
+      `reload()` re-loads a named one and returns the fresh instance for the
+      caller to adopt ([ADR-0046](adr/0046-resource-change-detection-and-reload.md))
 
 ## M4 — 3D rendering
 

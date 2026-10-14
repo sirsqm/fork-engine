@@ -214,4 +214,9 @@ std::string AssetDatabase::absolute_path(const AssetId& id) const {
     return asset == nullptr ? std::string{} : fs::join(root_, asset->path);
 }
 
+std::string AssetDatabase::absolute_path_by_path(std::string_view path) const {
+    const Asset* asset = find_by_path(path);
+    return asset == nullptr ? std::string{} : fs::join(root_, asset->path);
+}
+
 } // namespace fe

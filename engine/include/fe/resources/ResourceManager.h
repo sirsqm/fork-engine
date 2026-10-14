@@ -125,13 +125,67 @@ public:
     // at any time; typically called between scene loads.
     void collect_garbage();
 
+    // --- Hot reload --------------------------------------------------------
+
+    // The references of cached resources whose source file changed on disk
+    // since it was loaded, and updates each one's recorded time so a change is
+    // reported once. Empty when nothing changed. This is the editor's "asset
+    // changed, refresh what uses it" step, headless and poll-driven: there is no
+    // OS watch here, so a caller (the editor's frame loop, a test) decides how
+    // often to ask.
+    //
+    // It detects but does not itself reload. A cache entry holds a weak
+    // reference (see the ownership note above), so an instance swapped in with
+    // no caller to adopt it would be released on the spot; detection and
+    // adoption are therefore two steps. The caller takes each returned reference
+    // to reload() and re-wires whatever holds it.
+    //
+    // Only live resources are considered: an entry whose resource has been
+    // released is dropped and not reported. A resource whose file cannot be
+    // stat-ed is left alone rather than treated as deleted, so a transient read
+    // error does not tear down a loaded asset. A resource mounted from a pack
+    // has no loose file and is never reported.
+    [[nodiscard]] std::vector<std::string> poll_changed();
+
+    // Loads `reference` afresh, replaces its cache entry, and returns the new
+    // instance for the caller to hold (and to re-resolve into a component's
+    // property - that re-wiring is the editor's job; this refreshes the cache).
+    // The previous shared_ptr stays valid to callers still holding it, so
+    // nothing observes a dangling pointer.
+    //
+    // Returns an Error when the reference is not cached (nothing to refresh) or
+    // the reload fails; on failure the existing entry is left untouched, so a
+    // broken file does not tear down a working resource.
+    [[nodiscard]] Result<std::shared_ptr<Resource>> reload(std::string_view reference);
+
     [[nodiscard]] usize cached_count() const noexcept { return cache_.size(); }
     [[nodiscard]] usize loaded_count() const noexcept;
 
 private:
     struct CacheEntry {
         std::weak_ptr<Resource> resource;
+        // The absolute path whose bytes produced this resource, or "" when the
+        // resource has no loose file (loaded from a mounted pack, or from a
+        // source that is not the filesystem). poll_reloads() compares this
+        // file's write time against the recorded stamp. See ADR-0046.
+        std::string reload_path;
+        // The file's last-write time at load, in the opaque unit fs::last_write_time_ns
+        // returns. Compared for inequality only.
+        u64 reload_stamp = 0;
     };
+
+    // Records a freshly cached entry: remembers the file to watch and its
+    // current write time, so poll_reloads() can detect a later change. Called
+    // from both the path and GUID load paths, after the resource is loaded.
+    void remember_for_reload(const std::string& key, const std::shared_ptr<Resource>& resource,
+                             std::string_view file_path);
+
+    // The body of load() without the cache lookup or the cache store: resolves
+    // `key` and loads it through the loaders, reporting the absolute file it
+    // read in `*watched_path` (or clearing it when the load read no loose file,
+    // e.g. from a mounted pack). load() and reload() share it so a reload
+    // re-runs exactly the resolution a first load did.
+    [[nodiscard]] Result<std::shared_ptr<Resource>> load_uncached(const std::string& key, std::string* watched_path);
 
     // Loads a concrete file path (already scheme-stripped) through the loaders.
     // Shared by the path and GUID load paths. `settings`, when non-null, is the
