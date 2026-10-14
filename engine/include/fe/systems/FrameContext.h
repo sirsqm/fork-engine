@@ -6,6 +6,7 @@
 
 namespace fe {
 
+class InputState;
 class ResourceManager;
 
 // What a system is told about the frame it is running in.
@@ -26,6 +27,12 @@ struct FrameContext {
     // test may run a schedule without one, and a system that needs it must
     // check rather than assume.
     ResourceManager* resources = nullptr;
+
+    // This frame's input snapshot. Nullable: a headless tool or a test with no
+    // window runs the schedule with no input, and a gameplay system must null-
+    // check it (or disable itself) rather than assume a keyboard exists. The
+    // edge state has already been advanced for the frame when a system sees it.
+    InputState* input = nullptr;
 };
 
 } // namespace fe

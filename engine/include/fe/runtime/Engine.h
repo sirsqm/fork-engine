@@ -5,6 +5,7 @@
 #include "fe/core/Error.h"
 #include "fe/core/Log.h"
 #include "fe/core/Types.h"
+#include "fe/platform/InputState.h"
 #include "fe/platform/Window.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/rhi/Device.h"
@@ -74,6 +75,12 @@ public:
 
     [[nodiscard]] Window& window() noexcept { return *window_; }
     [[nodiscard]] const Window& window() const noexcept { return *window_; }
+
+    // The frame's input snapshot, owned by the window. A gameplay system reaches
+    // it through FrameContext::input rather than through the window directly, so
+    // a system never depends on the platform layer.
+    [[nodiscard]] InputState& input() noexcept { return window_->input(); }
+    [[nodiscard]] const InputState& input() const noexcept { return window_->input(); }
 
     [[nodiscard]] rhi::Device& device() noexcept { return *device_; }
     [[nodiscard]] const rhi::Device& device() const noexcept { return *device_; }
