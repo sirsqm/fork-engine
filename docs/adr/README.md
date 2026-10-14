@@ -54,6 +54,7 @@ rather than editing it.
 | [0045](0045-component-identity.md) | Stable component identity | Accepted |
 | [0046](0046-resource-change-detection-and-reload.md) | Resource change detection and reload | Accepted |
 | [0047](0047-local-operation-model.md) | The local operation model | Accepted |
+| [0048](0048-replicated-operation-log.md) | The replicated operation log, local only | Accepted |
 
 ## Format
 

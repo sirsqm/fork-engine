@@ -58,6 +58,7 @@ core, scene, resources  <-  scene3d
 core, rhi, resources, scene, mesh  <-  renderer3d
 core, scene, systems, resources  <-  audio
 core, resources  <-  pack
+core, scene, serialization  <-  session
 everything  <-  runtime
 core  <-  net                     (planned: collaborative editing)
 ```
@@ -71,6 +72,7 @@ core  <-  net                     (planned: collaborative editing)
 | `scene` | Node/component hierarchy, transforms | core |
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection, and the serializable `Operation` model (apply/inverse, `docs/adr/0047-local-operation-model.md`) | core, scene, resources, reflect |
+| `session` | The local, headless replicated log: `Session` holds a document and an ordered log of `Operation`s, two in-process replicas converge, and undo is log-based (`docs/adr/0048-replicated-operation-log.md`) | core, scene, serialization |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
 | `script` | The language-agnostic gameplay seam: `Script`, `ScriptHost` (per-node instances keyed by stable node id), `ScriptRegistry`, and the `ScriptSystem` bridge. Header-only | core, scene, systems |
 | `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
@@ -794,14 +796,16 @@ serializable `Operation` — a tagged value that round-trips through JSON, appli
 to a `Scene`, and has an inverse derived from the document rather than captured
 in the editor (the local step is done:
 [ADR-0047](adr/0047-local-operation-model.md)). A `Session` then holds the
-document and an ordered, replicated log that every replica applies to converge.
-An authoritative session server orders structural operations and resolves
-concurrent property edits last-writer-wins per property; presence (cursors,
-selections, viewport cameras) rides alongside as ephemeral messages. The first
-steps are local and headless — two in-process replicas, no network — which also
-makes undo/redo more robust, so they earn their keep before any server exists.
-The `net` module is where the transport lives; nothing above it knows whether
-the peer is in-process or remote.
+document and an ordered, replicated log that every replica applies to converge
+(the local step is done: [ADR-0048](adr/0048-replicated-operation-log.md) — two
+in-process replicas fed the same log converge, and undo is the inverse of a log
+entry). An authoritative session server orders structural operations and
+resolves concurrent property edits last-writer-wins per property; presence
+(cursors, selections, viewport cameras) rides alongside as ephemeral messages.
+The first steps are local and headless — two in-process replicas, no network —
+which also makes undo/redo more robust, so they earn their keep before any
+server exists. The `net` module is where the transport lives; nothing above it
+knows whether the peer is in-process or remote.
 
 ## 9. Scripting
 
@@ -972,8 +976,8 @@ Every milestone must build and pass its tests before the next one begins.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 10). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).
-- Collaborative editing: component identity, the operation model, the
-  replicated log, the session server, and presence are planned in M10
-  (section 8).
+- Collaborative editing: component identity, the operation model, and the
+  replicated log are in place; the session server and presence are planned in
+  M10 (section 8).
 
 These are sequenced in [`docs/ROADMAP.md`](ROADMAP.md).

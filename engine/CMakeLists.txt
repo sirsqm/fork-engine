@@ -82,6 +82,7 @@ set(FE_ENGINE_SOURCES
     src/serialization/Json.cpp
     src/serialization/SceneSerializer.cpp
     src/serialization/Operation.cpp
+    src/session/Session.cpp
     src/renderer2d/Renderer2D.cpp
     src/renderer3d/Renderer3D.cpp
     src/runtime/Engine.cpp
