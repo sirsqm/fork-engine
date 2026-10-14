@@ -147,7 +147,9 @@ is missing than ten roadmap items, and it is the precondition for a community.
       [ADR-0014](adr/0014-directional-shadow-mapping.md)
 - [ ] A spatial hierarchy (BVH/octree) over static geometry
 - [ ] Environment rendering and a post-processing chain
-- [ ] A glTF importer
+- [x] A glTF importer — `GltfLoader` decodes `.gltf` (JSON) and `.glb`
+      (binary) into a `Mesh` per primitive, reading through `ResourceSource` so a
+      mounted pack works unchanged; see [ADR-0040](adr/0040-gltf-importer.md)
 
 ## M5 — Physics
 

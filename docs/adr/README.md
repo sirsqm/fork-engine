@@ -46,6 +46,7 @@ rather than editing it.
 | [0035](0035-ci-quality-gates.md) | CI quality gates: sanitizers and an optimised warnings build | Accepted |
 | [0036](0036-breakout-vertical-slice.md) | The breakout vertical slice, and the integration test it is | Accepted |
 | [0037](0037-physics2d-oriented-boxes-offsets.md) | Oriented-box colliders and collider offsets | Accepted |
+| [0040](0040-gltf-importer.md) | A glTF 2.0 importer for 3D content | Accepted |
 
 ## Format
 

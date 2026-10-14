@@ -410,7 +410,11 @@ different optima.
 about the GPU, exactly as `Image` knows nothing about textures, so geometry can
 be built and tested with no context. `make_box`/`make_cube`/`make_plane` give a
 scene something to render before an asset pipeline exists, and `ObjLoader`
-(scheme `obj`) decodes Wavefront OBJ into a `Mesh`.
+(scheme `obj`) decodes Wavefront OBJ into a `Mesh`. `GltfLoader` (scheme `gltf`)
+decodes glTF 2.0 — both the JSON `.gltf` form and the binary `.glb` container —
+into one `Mesh` per primitive; it reads through `ResourceSource` like every other
+loader, so a mounted pack is served unchanged
+([ADR-0040](adr/0040-gltf-importer.md)).
 
 **`renderer3d::Renderer3D`** walks the scene, pairs each `MeshRenderer3D` with
 its node's world matrix, and issues one indexed draw per instance. It owns a
