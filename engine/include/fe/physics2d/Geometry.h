@@ -65,11 +65,19 @@ struct Obb2D {
     // along `axis_x` and `half_extent.y` along `axis_y`. The axes are unit
     // length, which is what the projection in `intersect` relies on.
     [[nodiscard]] Vec2 axis_x() const noexcept {
+        // The axis-aligned case is the common one, so it skips the trigonometry
+        // entirely; the axes are exactly the world axes.
+        if (rotation == 0.0f) {
+            return Vec2{1.0f, 0.0f};
+        }
         const f32 c = std::cos(rotation);
         const f32 s = std::sin(rotation);
         return Vec2{c, s};
     }
     [[nodiscard]] Vec2 axis_y() const noexcept {
+        if (rotation == 0.0f) {
+            return Vec2{0.0f, 1.0f};
+        }
         const f32 c = std::cos(rotation);
         const f32 s = std::sin(rotation);
         return Vec2{-s, c};
