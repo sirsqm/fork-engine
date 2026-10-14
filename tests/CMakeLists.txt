@@ -39,6 +39,7 @@ add_executable(fork_engine_tests
     src/test_import_settings.cpp
     src/test_import_cache.cpp
     src/test_version.cpp
+    src/test_session.cpp
 )
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_engine_tests PRIVATE cxx_std_20)

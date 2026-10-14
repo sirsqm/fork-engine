@@ -320,8 +320,9 @@ and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       `Command`, naming objects by stable id, with JSON round-trip, `apply`, and
       a document-derived `inverse`; local edits route through an
       `OperationCommand` adapter ([ADR-0047](adr/0047-local-operation-model.md))
-- [ ] Replicated log (local only): a `Session` holding a document and an ordered
+- [x] Replicated log (local only): a `Session` holding a document and an ordered
       log; two in-process replicas converge; undo becomes log-based
+      ([ADR-0048](adr/0048-replicated-operation-log.md))
 - [ ] Transport and server: a `net` module with an in-process loopback transport
       (tests) and WebSocket (production), plus an authoritative session server
       (ordered structural operations, last-writer-wins per property)

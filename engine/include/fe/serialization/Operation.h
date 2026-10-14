@@ -104,8 +104,12 @@ struct AppliedObjects {
 
     std::unique_ptr<Node> node;
     std::unique_ptr<Component> component;
-    // DeleteNode: where the node came from, so it can be restored in place.
+    // DeleteNode: where the node came from, so it can be restored in place
+    // (nil means the scene roots).
     Uuid parent_id{};
+    // RemoveComponent: the node the component was detached from, so `restore`
+    // can find it again.
+    Uuid owner_id{};
     usize index = 0;
 };
 
@@ -124,6 +128,16 @@ struct AppliedObjects {
 // `DeleteNode` and `RemoveComponent`: their inverse is the object they removed,
 // which is not a single operation, so the caller holds it (see `AppliedObjects`).
 [[nodiscard]] Result<Operation> inverse(const Operation& op, const Scene& scene);
+
+// Re-attaches the object `captured` holds, undoing a `DeleteNode` (its node) or
+// a `RemoveComponent` (its component). The counterpart of the capture sink: an
+// undo stack uses it to restore a removed object with identity intact.
+//
+// A `DeleteNode`'s node may carry child nodes of its own; the caller is
+// responsible for restoring the rest of the subtree (its children were captured
+// by the delete of each descendant). `index` is clamped to the parent's child
+// count. Returns an error when `captured` holds nothing to restore.
+[[nodiscard]] Error restore(AppliedObjects& captured, Scene& scene);
 
 } // namespace serialization
 } // namespace fe

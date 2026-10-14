@@ -432,6 +432,7 @@ Error apply(const Operation& op, Scene& scene, ResourceManager* resources, Appli
         }
         std::unique_ptr<Component> owned = node->detach_component(index);
         if (captured != nullptr) {
+            captured->owner_id = op.node_id;
             captured->index = index;
             captured->component = std::move(owned);
         }
@@ -588,6 +589,25 @@ Result<Operation> inverse(const Operation& op, const Scene& scene) {
     }
     }
     return Error("operation: unknown kind");
+}
+Error restore(AppliedObjects& captured, Scene& scene) {
+    if (captured.component != nullptr) {
+        Node* owner = scene.find_node(captured.owner_id);
+        if (owner == nullptr) {
+            return Error("operation: cannot restore a component whose node is gone");
+        }
+        // A component with this id already present means the restore is a
+        // repeat; treat it as done rather than inserting a duplicate.
+        if (scene.find_component(captured.component->id()) == nullptr) {
+            owner->insert_component(captured.index, std::move(captured.component));
+        }
+        return Error::none();
+    }
+    if (captured.node != nullptr) {
+        attach_node(scene, std::move(captured.node), captured.parent_id, captured.index);
+        return Error::none();
+    }
+    return Error("operation: nothing captured to restore");
 }
 
 } // namespace fe::serialization
