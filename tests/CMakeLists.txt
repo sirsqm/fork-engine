@@ -85,6 +85,7 @@ if(FE_BUILD_EDITOR)
       src/test_property_editor.cpp
       src/test_viewport.cpp
       src/test_commands.cpp
+      src/test_operations.cpp
       src/test_editor_physics_play.cpp
   )
   target_link_libraries(fork_editor_tests PRIVATE FE::editor_core ${FE_DOCTEST_TARGET} fe_warnings)

@@ -27,6 +27,7 @@ add_library(fork_editor_core STATIC
     src/Viewport.cpp
     src/Command.cpp
     src/Commands.cpp
+    src/OperationCommand.cpp
 )
 add_library(FE::editor_core ALIAS fork_editor_core)
 

@@ -46,3 +46,7 @@ Thumbs.db
 # Local scratch
 *.log
 /tmp/
+
+# Test scratch: the editor tests write editor_test_*.json into the working
+# directory (see tests/src/test_editor_context.cpp). Test output, never source.
+editor_test_*.json
