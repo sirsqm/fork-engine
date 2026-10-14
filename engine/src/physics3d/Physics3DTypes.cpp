@@ -72,14 +72,24 @@ void register_rigid_body3d(Registry& registry) {
 
     desc.properties.push_back(make_vector_group<physics3d::RigidBody3D, Vec3>(
         "velocity", &physics3d::RigidBody3D::velocity, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_vector_group<physics3d::RigidBody3D, Vec3>(
+        "angular_velocity", &physics3d::RigidBody3D::angular_velocity, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_vector_group<physics3d::RigidBody3D, Vec3>("torque", &physics3d::RigidBody3D::torque,
+                                                                              "Vec3", {"x", "y", "z"}));
     desc.properties.push_back(
         make_scalar<physics3d::RigidBody3D, f32>("mass", &physics3d::RigidBody3D::mass, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RigidBody3D, f32>("inertia", &physics3d::RigidBody3D::inertia,
+                                                                       ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::RigidBody3D, f32>(
         "linear_damping", &physics3d::RigidBody3D::linear_damping, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RigidBody3D, f32>(
+        "angular_damping", &physics3d::RigidBody3D::angular_damping, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::RigidBody3D, bool>("kinematic", &physics3d::RigidBody3D::kinematic,
                                                                         ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<physics3d::RigidBody3D, bool>(
         "affected_by_gravity", &physics3d::RigidBody3D::affected_by_gravity, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RigidBody3D, bool>(
+        "fixed_rotation", &physics3d::RigidBody3D::fixed_rotation, ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
 }
