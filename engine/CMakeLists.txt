@@ -27,6 +27,7 @@ set(FE_ENGINE_SOURCES
     src/platform/NullWindow.cpp
     src/platform/Window.cpp
     src/rhi/Device.cpp
+    src/rhi/null/NullDevice.cpp
     src/rhi/opengl/OpenGLDevice.cpp
     src/resources/ResourceManager.cpp
     src/resources/ImageLoader.cpp

@@ -74,14 +74,16 @@ int Application::run() {
 
         {
             const ProfileScope render_scope("frame/render");
-            // A headless engine has no device or renderer, so there is nothing to
-            // draw. The frame still advances the clock, the input edges and the
-            // systems; only the presentation is skipped, and it is skipped
-            // explicitly here rather than by a no-op device pretending to render.
-            if (engine_.has_graphics()) {
+            // A plain headless engine has no device or renderer, so there is
+            // nothing to draw: the frame still advances the clock, the input
+            // edges and the systems. A headless engine that asked to render has
+            // a null RHI device, so the render path (extraction, batching, draw
+            // submission) runs and only rasterisation is absent. Both cases are
+            // explicit here rather than a no-op device pretending to render.
+            if (engine_.has_graphics() || engine_.headless_render()) {
                 render_frame();
-                // Presents the back buffer. The frame was fully rendered, so the
-                // pipeline is exercised.
+                // Presents the back buffer. With a real window this flips the
+                // surface; with the null backend it is a no-op.
                 engine_.device().end_frame();
             }
         }
