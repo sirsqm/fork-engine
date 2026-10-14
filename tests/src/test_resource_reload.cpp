@@ -176,7 +176,9 @@ TEST_CASE("poll_changed reports a changed file once and leaves an unchanged one 
     touch_forward(changed);
     const std::vector<std::string> changed_refs = manager.poll_changed();
     REQUIRE(changed_refs.size() == 1);
-    CHECK(changed_refs.front() == changed);
+    // The reported reference is the normalized cache key, so compare through
+    // fs::normalize: on Windows the raw path uses backslashes.
+    CHECK(changed_refs.front() == fs::normalize(changed));
 
     // The change is reported once; a second poll before adopting it is empty.
     CHECK(manager.poll_changed().empty());
