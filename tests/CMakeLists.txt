@@ -22,6 +22,7 @@ add_executable(fork_engine_tests
     src/test_serialization.cpp
     src/test_reflect.cpp
     src/test_systems.cpp
+    src/test_script.cpp
     src/test_physics2d.cpp
     src/test_physics3d.cpp
     src/test_physics3d_angular.cpp
