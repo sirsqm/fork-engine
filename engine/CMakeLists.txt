@@ -22,7 +22,7 @@
 # gameplay seam (Script, ScriptHost, ScriptRegistry, ScriptSystem) and has no
 # translation unit of its own, so it contributes no entry to FE_ENGINE_SOURCES.
 # Its headers ship with the library through the public include directory below.
-# See docs/adr/0043-scripting-seam.md.
+# See docs/adr/0044-scripting-seam.md.
 
 set(FE_ENGINE_SOURCES
     src/core/Log.cpp

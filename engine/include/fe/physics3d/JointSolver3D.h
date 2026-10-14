@@ -23,27 +23,32 @@ namespace fe::physics3d {
 // drives the constraint error to zero over the next steps, so a joint and a
 // contact can be solved by one loop without it knowing which is which.
 //
-// This cut is **linear only**. There is no angular velocity, torque, or inertia,
-// so a joint cannot spin its ends. That keeps the row a single scalar over three
-// linear degrees of freedom, exactly as the 2D cut began before angular dynamics
-// arrived (ADR-0013); angular joints are the same later cut as angular bodies
-// (ADR-0031).
+// The row carries angular terms (ADR-0043), so a joint can spin its ends when the
+// constraint acts off-centre. A distance joint measures between the two centres,
+// so its angular Jacobians stay zero and it remains linear in practice; the terms
+// exist so the row type is complete and a future anchor-based joint (a revolute
+// or point-to-point constraint) needs no new machinery, exactly as the 2D row
+// carries them for its revolute joint (ADR-0021).
 
-// One end of a joint: the linear state a constraint row reads and writes, plus
-// the inverse mass that decides how the correction is shared. A static body
-// carries a zero inverse, so a joint to it moves only the other end, exactly as
-// the contact solver treats a static collider.
+// One end of a joint: the linear and angular state a constraint row reads and
+// writes, plus the inverse mass and inertia that decide how the correction is
+// shared. A static body carries zero inverses, so a joint to it moves only the
+// other end, exactly as the contact solver treats a static collider.
 struct JointBody3D {
     Vec3 position{};
     Vec3 velocity{};
+    Quat orientation{};
+    Vec3 angular_velocity{};
     f32 inv_mass = 0.0f;
+    f32 inv_inertia = 0.0f;
 };
 
 // A scalar constraint row: a 1-DOF correction the solver applies by weighting
 // each body by the row's Jacobian and the body's inverse mass.
 //
 // `jacobian_a`/`jacobian_b` are the row's linear Jacobians at each body centre,
-// and `effective_mass` the inverse of the row's apparent mass
+// `angular_a`/`angular_b` the angular Jacobians (the lever arm crossed with the
+// linear Jacobian), and `effective_mass` the inverse of the row's apparent mass
 // (1 / (J M^-1 J^T)).
 //
 // The row carries two corrections, mirroring how the contact solver separates a
@@ -58,18 +63,22 @@ struct JointBody3D {
 struct ConstraintRow3D {
     Vec3 jacobian_a{};
     Vec3 jacobian_b{};
+    Vec3 angular_a{};
+    Vec3 angular_b{};
     f32 effective_mass = 0.0f;
     f32 bias = 0.0f;
     f32 position_error = 0.0f;
     f32 position_factor = 0.0f;
 };
 
-// The apparent mass of a row: 1 / (J M^-1 J^T), summing the linear terms of both
-// bodies. A zero result means neither body can move along the row (both are
-// static), which the callers report as an unsolvable constraint.
+// The apparent mass of a row: 1 / (J M^-1 J^T), summing the linear and angular
+// terms of both bodies. A zero result means neither body can move along the row
+// (both are static), which the callers report as an unsolvable constraint.
 [[nodiscard]] inline f32 row_effective_mass(const ConstraintRow3D& row, const JointBody3D& a,
                                             const JointBody3D& b) noexcept {
-    const f32 denom = a.inv_mass * row.jacobian_a.length_squared() + b.inv_mass * row.jacobian_b.length_squared();
+    const f32 linear = a.inv_mass * row.jacobian_a.length_squared() + b.inv_mass * row.jacobian_b.length_squared();
+    const f32 angular = a.inv_inertia * row.angular_a.length_squared() + b.inv_inertia * row.angular_b.length_squared();
+    const f32 denom = linear + angular;
     return denom > 0.0f ? 1.0f / denom : 0.0f;
 }
 
@@ -96,14 +105,14 @@ struct DistanceJoint3DParams {
                                                          const DistanceJoint3DParams& params, f32 delta_time);
 
 // Applies a solved row's velocity impulse to the two bodies: the impulse is the
-// current relative velocity along the row plus the row's bias, scaled by the
-// row's effective mass. This is the one place the sign convention lives, so the
-// solver and any test agree by construction.
+// current relative velocity along the row (linear and angular) plus the row's
+// bias, scaled by the row's effective mass. This is the one place the sign
+// convention lives, so the solver and any test agree by construction.
 void apply_row(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
 
 // Applies a solved row's positional correction: `position_factor` of the row's
-// position error is removed along the row, split by inverse mass. A no-op when
-// the row has no position term (a spring) or is unsolvable.
+// position error is removed along the row, split by inverse mass and inertia. A
+// no-op when the row has no position term (a spring) or is unsolvable.
 void apply_row_position(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
 
 } // namespace fe::physics3d

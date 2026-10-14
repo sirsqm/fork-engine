@@ -24,7 +24,7 @@ class Node;
 //
 // A Script is not reflection-serialized and not a component: components are
 // engine data (ADR-0002, ADR-0005), scripts are game code. The seam is
-// language-agnostic (ADR-0043): nothing here names C++, and a second language
+// language-agnostic (ADR-0044): nothing here names C++, and a second language
 // would implement this interface rather than change it.
 //
 // Lifetime: a Script is owned by a ScriptHost and must not outlive the node it
@@ -55,7 +55,7 @@ public:
     //
     // The host contains failures: an error returned here, or an exception
     // thrown from here, disables this script and is reported, but does not stop
-    // the other scripts or the frame (ADR-0003, ADR-0043).
+    // the other scripts or the frame (ADR-0003, ADR-0044).
     [[nodiscard]] virtual Error update(const FrameContext& context) = 0;
 
     // The node this script is attached to, or nullptr while detached.

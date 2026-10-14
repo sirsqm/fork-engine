@@ -25,6 +25,7 @@ add_executable(fork_engine_tests
     src/test_script.cpp
     src/test_physics2d.cpp
     src/test_physics3d.cpp
+    src/test_physics3d_angular.cpp
     src/test_broadphase.cpp
     src/test_sleeping.cpp
     src/test_mesh.cpp

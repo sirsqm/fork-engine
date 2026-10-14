@@ -50,14 +50,17 @@ struct ContactEvent {
 //
 // This is the 3D counterpart of Physics2DSystem and shares its shape: it is a
 // single-threaded, fixed-iteration sequential-impulse solver with gravity,
-// restitution, and friction. It is the first cut, so it is deliberately narrower
-// than the 2D module:
+// restitution, friction, and -- since ADR-0043 -- angular dynamics. It is the
+// first cut, so it is deliberately narrower than the 2D module:
 //
-//   * **Linear only.** There is no angular velocity, torque, or inertia; a body
-//     does not turn. Rotation is Euler angles in `Transform` and the engine has
-//     no quaternion yet, so angular integration is a separate cut (ADR-0031),
-//     exactly as it was for 2D (ADR-0013). Joints are linear for the same
-//     reason: a distance joint constrains the centres, not a shared anchor.
+//   * **Angular dynamics, but an axis-aligned collider.** A body carries an
+//     angular velocity, a torque, and a shape-derived (isotropic) inertia; the
+//     solver integrates the orientation as a quaternion and applies angular
+//     impulses from contacts and joints, so a box tumbles and a ball rolls. The
+//     collider shape is not re-oriented, though: a rotated body is drawn rotated
+//     and collided as its unrotated box or sphere, exactly the limit the 2D
+//     collider had before oriented boxes (ADR-0037). Oriented shapes are later
+//     work.
 //   * **Box and sphere shapes.** The 3D analogues of box and circle. Capsules and
 //     convex hulls are later work.
 //   * **No sleeping or islands yet.** Those were a later 2D cut (ADR-0026) and
@@ -74,11 +77,11 @@ struct ContactEvent {
 // One step runs, in order:
 //
 //   1. gather      -- flatten the scene into bodies and joints
-//   2. integrate   -- gravity, damping, position
+//   2. integrate   -- gravity, torque, damping, position, orientation
 //   3. broad phase -- find the candidate contact pairs once for the step
 //   4. solve       -- sequential impulses over the candidate pairs
 //   5. joints      -- solve every joint once, after the contacts
-//   6. write back  -- transforms and velocities
+//   6. write back  -- transforms, velocities, and orientation
 //   7. reconcile   -- diff the touching pairs against last frame for events
 class Physics3DSystem final : public System {
 public:
@@ -133,9 +136,13 @@ private:
         Node* node;
         Vec3 position;
         Vec3 velocity;
+        Quat orientation; // the node's world rotation, integrated in place
+        Vec3 angular_velocity;
         f32 inv_mass;
+        f32 inv_inertia;
         f32 restitution;
         f32 friction;
+        bool fixed_rotation; // the solver must not change this body's orientation
     };
 
     // A collider pair, keyed by node identity so it is stable across frames
