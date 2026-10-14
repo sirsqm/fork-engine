@@ -59,6 +59,10 @@ defect, not noise.
 - Include the standard header for every std type you name. GCC and libc++
   provide many headers transitively; MSVC does not, so a missing
   `#include <string_view>` compiles everywhere except Windows.
+- The benchmark regression baseline (`benchmarks/baseline.json`) is recorded on
+  the CI runner, not locally. The runner is ~40% slower than a dev machine, so a
+  locally recorded baseline fails the gate on its own reference code. Re-record
+  from the gate job's `benchmark-result` artifact (see `benchmarks/README.md`).
 
 ## Portability traps seen before
 
