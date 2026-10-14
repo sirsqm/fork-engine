@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/platform/Window.h"
 
+#include "NullWindow.h"
 #include "fe/core/Log.h"
 
 // GLFW is an implementation detail and never appears in a public header.
@@ -257,13 +258,18 @@ void error_callback(int code, const char* description) {
 
 } // namespace
 
-Window::Window() = default;
+Window::Window(const char* backend_name) : backend_name_(backend_name) {}
 
 Window::~Window() {
-    if (native_handle_ != nullptr) {
-        glfwDestroyWindow(static_cast<GLFWwindow*>(native_handle_));
-        native_handle_ = nullptr;
+    if (native_handle_ == nullptr) {
+        // No OS handle (the null backend): this window owns no GLFW state, so it
+        // must not touch GLFW's reference count or terminate the library out
+        // from under a real window in the same process.
+        return;
     }
+
+    glfwDestroyWindow(static_cast<GLFWwindow*>(native_handle_));
+    native_handle_ = nullptr;
 
     std::lock_guard lock(g_init_mutex);
     if (g_window_count > 0) {
@@ -275,6 +281,14 @@ Window::~Window() {
 }
 
 Result<std::unique_ptr<Window>> Window::create(const WindowDesc& desc) {
+    // Backend selection lives here, on the descriptor, and nowhere else. A
+    // second backend is a case in this switch, not a change to the runtime. The
+    // null backend is the first such case; see
+    // docs/adr/0041-platform-contract-and-null-backend.md.
+    if (desc.backend == WindowBackend::Null) {
+        return std::unique_ptr<Window>(new NullWindow(desc));
+    }
+
     {
         std::lock_guard lock(g_init_mutex);
         if (g_window_count == 0) {
@@ -305,7 +319,7 @@ Result<std::unique_ptr<Window>> Window::create(const WindowDesc& desc) {
                      std::to_string(desc.gl_minor) + " core context");
     }
 
-    auto window = std::unique_ptr<Window>(new Window());
+    auto window = std::unique_ptr<Window>(new Window("GLFW"));
     window->native_handle_ = handle;
     glfwSetWindowUserPointer(handle, window.get());
 
@@ -391,10 +405,6 @@ void Window::set_vsync(bool enabled) {
 
 void* Window::get_proc_address(const char* name) const {
     return reinterpret_cast<void*>(glfwGetProcAddress(name));
-}
-
-const char* Window::backend_name() noexcept {
-    return "GLFW";
 }
 
 } // namespace fe
