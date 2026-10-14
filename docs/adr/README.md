@@ -49,6 +49,7 @@ rather than editing it.
 | [0040](0040-gltf-importer.md) | A glTF 2.0 importer for 3D content | Accepted |
 | [0041](0041-platform-contract-and-null-backend.md) | The platform contract and a null/headless backend | Accepted |
 | [0042](0042-null-rhi-device.md) | A null RHI device for headless rendering | Accepted |
+| [0043](0043-component-identity.md) | Stable component identity | Accepted |
 
 ## Format
 

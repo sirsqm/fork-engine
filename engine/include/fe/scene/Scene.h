@@ -75,6 +75,17 @@ public:
     [[nodiscard]] Node* find_node(const Uuid& id) const noexcept;
     [[nodiscard]] Node* find_node_by_name(std::string_view name) const noexcept;
 
+    // Finds a component anywhere in the scene by its stable id, or nullptr.
+    //
+    // This is the counterpart of find_node() for the component identity added in
+    // version 3 of the scene format (ADR-0043). It walks the tree rather than
+    // keeping a second index: a component is created and destroyed far more
+    // often than a node, and an index over it would have to be updated from
+    // Node::attach_component/detach_component on every edit. The walk is the
+    // correct first cut, and an index is a measured optimisation if a profile
+    // ever shows this hot.
+    [[nodiscard]] Component* find_component(const Uuid& id) const noexcept;
+
     // Rebuilds the id index from the current node tree. Deserialization assigns
     // saved ids to nodes after they are attached, so it must call this once the
     // whole tree is loaded for `find_node` (and any component that stores a node

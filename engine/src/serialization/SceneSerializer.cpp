@@ -205,6 +205,12 @@ using json = nlohmann::json;
 [[nodiscard]] json component_to_json(const Component& component, const ResourceManager* resources) {
     json fields = json::object();
     fields["type"] = component.type_name();
+    // The component's stable id, written so that an edit that names this exact
+    // component (and the operation log of collaborative editing) survives a
+    // save/load cycle. A component is written by id, not by index, for the same
+    // reason a node is: index is not identity, and a node may carry more than
+    // one component of the same type.
+    fields["id"] = component.id();
 
     if (const reflect::TypeDesc* type = reflect::Registry::instance().find(component.type_name())) {
         for (const auto& property : type->properties) {
@@ -227,6 +233,14 @@ using json = nlohmann::json;
     }
 
     Component* component = node.add_component(type->factory());
+
+    // Restore identity so references to this component survive a save/load
+    // cycle. A document without ids (hand-written, or version 2 and older)
+    // keeps the id the component was assigned when it was created.
+    if (source.contains("id")) {
+        component->set_id(source.at("id").get<Uuid>());
+    }
+
     for (const auto& property : type->properties) {
         if (source.contains(property.name)) {
             if (Error error = apply_value(property, component, source.at(property.name), resources, source_version);
