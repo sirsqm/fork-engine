@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// Tests for the scripting seam (ADR-0043): the Script interface, the ScriptHost
+// Tests for the scripting seam (ADR-0044): the Script interface, the ScriptHost
 // that owns per-node instances by stable node id, the ScriptRegistry, and the
 // ScriptSystem that drives the host from the ordinary schedule. All of it is
 // headless -- no window, no RHI, no editor.
@@ -18,6 +18,7 @@
 #include "fe/systems/SceneSchedule.h"
 
 #include <memory>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>

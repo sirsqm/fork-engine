@@ -1,4 +1,4 @@
-# ADR-0043: The scripting seam, and C++ as the first language behind it
+# ADR-0044: The scripting seam, and C++ as the first language behind it
 
 - **Status:** Accepted
 - **Date:** 2026-10

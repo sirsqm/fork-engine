@@ -26,7 +26,7 @@ namespace fe {
 // calls a script's attach/detach/update, and it is where a failing script is
 // contained: a script that returns an Error or throws is logged, disabled, and
 // skipped, while the rest keep running and the frame keeps going (ADR-0003,
-// ADR-0043).
+// ADR-0044).
 //
 // Instances are keyed by the node's stable Uuid, not by pointer. That is the
 // same identity the serializer persists and the collaboration work (ADR-0019,

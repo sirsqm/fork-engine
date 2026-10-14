@@ -64,13 +64,17 @@ void apply_row(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexc
         return; // unsolvable row: both bodies are immovable along it
     }
 
-    // The relative velocity along the row, then the impulse that cancels it and
-    // applies the bias. One sign convention, shared with the builder.
-    const f32 row_velocity = row.jacobian_a.dot(a.velocity) + row.jacobian_b.dot(b.velocity);
+    // The relative velocity along the row (linear and angular), then the impulse
+    // that cancels it and applies the bias. One sign convention, shared with the
+    // builder.
+    const f32 row_velocity = row.jacobian_a.dot(a.velocity) + row.angular_a.dot(a.angular_velocity) +
+                             row.jacobian_b.dot(b.velocity) + row.angular_b.dot(b.angular_velocity);
     const f32 impulse = -row.effective_mass * (row_velocity + row.bias);
 
     a.velocity += row.jacobian_a * (impulse * a.inv_mass);
     b.velocity += row.jacobian_b * (impulse * b.inv_mass);
+    a.angular_velocity += row.angular_a * (impulse * a.inv_inertia);
+    b.angular_velocity += row.angular_b * (impulse * b.inv_inertia);
 }
 
 void apply_row_position(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept {
