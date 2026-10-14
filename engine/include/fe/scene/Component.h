@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/core/Uuid.h"
+
 #include <memory>
 #include <typeinfo>
 #include <vector>
@@ -37,6 +39,26 @@ public:
     // The registered type name used by the serializer and the inspector.
     [[nodiscard]] virtual const char* type_name() const noexcept = 0;
 
+    // A stable identity for this component, assigned when it is created and
+    // preserved across a save/load cycle.
+    //
+    // A node already has a `Uuid`; a component needs one for the same reason and
+    // one more. The same reason: an edit that targets a component must survive
+    // serialization, reimport, and reordering, so a reference to "the collider on
+    // this node" cannot be a pointer or an index. The extra reason: a node may
+    // carry several components of the same type, so the type name is not an
+    // identity either, and the operation log of collaborative editing (ADR-0019)
+    // must be able to name the exact component an edit applies to.
+    //
+    // Like a node id, this is assigned at creation and read back by the loader;
+    // a component taken out of a node and put back keeps its id.
+    [[nodiscard]] const Uuid& id() const noexcept { return id_; }
+
+    // Restores a saved id. The loader uses this after constructing a component
+    // so that references to it survive a save/load cycle. The same escape hatch
+    // Node::set_id() provides, for the same reason.
+    void set_id(const Uuid& id) noexcept { id_ = id; }
+
     // The owning node, or nullptr while detached.
     [[nodiscard]] Node* node() const noexcept { return node_; }
 
@@ -57,6 +79,7 @@ private:
     void set_node(Node* node) noexcept { node_ = node; }
 
     Node* node_ = nullptr;
+    Uuid id_ = Uuid::generate();
 };
 
 } // namespace fe
