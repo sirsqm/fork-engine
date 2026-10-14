@@ -216,11 +216,13 @@ dramatically better for the engine's use case than embedding a proven language,
 not merely different. The seam is the cheap, reversible decision; the language
 is the expensive one, and it waits.
 
-- [ ] Choose and document the scripting strategy (ADR first): C++ native modules
+- [x] Choose and document the scripting strategy (ADR first): C++ native modules
       as the primary path, the seam's shape, and the criteria under which an
       embedded language or a custom language would be added
-- [ ] A language-agnostic scripting seam: the engine core talks to an interface
-      (`ScriptLanguage`/`ScriptInstance`-style), never to a concrete language
+      ([ADR-0043](adr/0043-scripting-seam.md))
+- [x] A language-agnostic scripting seam: the engine core talks to an interface
+      (`Script`/`ScriptHost`/`ScriptRegistry`), never to a concrete language
+      (`fe/script/`, driven by `ScriptSystem` through the ordinary schedule)
 - [ ] C++ native gameplay modules: compile against the engine, load, and
       hot-reload without restarting the editor
 - [ ] Reflection-backed bindings, so a script's exposed properties flow through
