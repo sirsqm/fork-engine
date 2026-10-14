@@ -27,7 +27,9 @@
 // docs/adr/0042-null-rhi-device.md.
 
 #include "fe/core/Log.h"
+#include "fe/mesh/Mesh.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/renderer3d/Renderer3D.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/rhi/Device.h"
 #include "fe/rhi/Types.h"
@@ -36,6 +38,9 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene3d/Camera3D.h"
+#include "fe/scene3d/DirectionalLight3D.h"
+#include "fe/scene3d/MeshRenderer3D.h"
 #include "fe/systems/SceneSchedule.h"
 #include "fe/systems/System.h"
 
@@ -100,6 +105,17 @@ protected:
             }
             sprite->size = fe::Vec2{1.0f, 1.0f};
             sprite->texture = std::make_shared<fe::Texture2D>("tex:headless.png", texture.value());
+
+            // A 3D slice too, so the executable proof covers both renderers: a
+            // camera, a light, and a cube. The 3D pass runs its shadow render
+            // target bind/clear/draw/restore against the null device, which is
+            // the deepest part of the render path to exercise headless.
+            fe::Node* camera3d = scene().create_node("Camera3D");
+            camera3d->add_component<fe::Camera3D>();
+            fe::Node* sun = scene().create_node("Sun");
+            sun->add_component<fe::DirectionalLight3D>();
+            fe::Node* cube = scene().create_node("Cube");
+            cube->add_component<fe::MeshRenderer3D>()->mesh = fe::Mesh::make_cube();
         }
 
         spin_ = schedule().add_system<SpinSystem>();
@@ -114,14 +130,28 @@ protected:
         FE_LOG_INFO("headless: has_graphics=%s headless_render=%s", engine().has_graphics() ? "true" : "false",
                     engine().headless_render() ? "true" : "false");
         if (engine().headless_render()) {
-            // The renderer's own counter: the same value an interactive run
-            // reports. It proves submission, not pixels.
-            FE_LOG_INFO("headless: render submitted %u draw call(s) with no surface",
-                        engine().renderer_2d().last_draw_calls());
+            // The renderers' own counters: the same values an interactive run
+            // reports. They prove submission, not pixels.
+            FE_LOG_INFO("headless: render submitted %u 2D draw call(s) and %u 3D draw call(s) with no surface",
+                        engine().renderer_2d().last_draw_calls(), engine().renderer_3d().last_draw_calls());
         }
     }
 
     void on_update(fe::f32) override { ++frame_count_; }
+
+    void on_render(fe::f32) override {
+        // Application's frame draws 2D; 3D is the app's own step. With no device
+        // there is nothing to draw into, so guard on the same question the frame
+        // loop asks rather than assuming a surface.
+        if (render_ && engine().headless_render()) {
+            auto drawn =
+                engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
+                                              engine().window().framebuffer_height());
+            if (!drawn) {
+                FE_LOG_ERROR("3D render failed: %s", drawn.error().message().c_str());
+            }
+        }
+    }
 
 private:
     SpinSystem* spin_ = nullptr;
