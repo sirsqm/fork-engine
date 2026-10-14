@@ -21,6 +21,7 @@
 #include <cmath>
 #include <ostream>
 #include <string>
+#include <vector>
 
 using namespace fe;
 
@@ -1312,4 +1313,230 @@ TEST_CASE("a revolute joint round-trips through the serializer") {
     CHECK(loaded_joint->anchor_a.y == doctest::Approx(-0.5f));
     CHECK(loaded_joint->anchor_b.x == doctest::Approx(-0.75f));
     CHECK(loaded_joint->anchor_b.y == doctest::Approx(1.0f));
+}
+
+// ---------------------------------------------------------------------------
+// Oriented boxes and collider offsets.
+//
+// A box collider carries the node's Z rotation and a local offset, so a rotated
+// node collides as its true oriented shape and an offset shape stays attached
+// as the node turns. These tests cover the pure geometry first, then the system
+// end to end.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+physics2d::Obb2D obb(f32 cx, f32 cy, f32 hx, f32 hy, f32 rotation) {
+    return physics2d::Obb2D{Vec2{cx, cy}, Vec2{hx, hy}, rotation};
+}
+
+} // namespace
+
+TEST_CASE("a box rotated 90 degrees collides as the swapped axis-aligned box") {
+    // Half-extent (2, 0.5) rotated 90 degrees spans 2 units along y and 0.5 along
+    // x, so it is the axis-aligned box (0.5, 2). This is the sharpest proof the
+    // orientation is applied: the same shape, one quarter turn.
+    const physics2d::Obb2D turned = obb(0.0f, 0.0f, 2.0f, 0.5f, kPi / 2.0f);
+
+    // A box sitting above the turned shape (y = 2.3) overlaps; the same box to
+    // the side (x = 2.3) does not, because the turned shape is thin in x.
+    CHECK(physics2d::intersect(turned, obb(0.0f, 2.3f, 0.5f, 0.5f, 0.0f)).overlapping);
+    CHECK_FALSE(physics2d::intersect(turned, obb(2.3f, 0.0f, 0.5f, 0.5f, 0.0f)).overlapping);
+}
+
+TEST_CASE("a rotated box that its bounding box would report as colliding is separated") {
+    // A long thin box turned 45 degrees. Its axis-aligned bound is a square of
+    // half-extent ~1.56, so an AABB collider would claim the small box in the
+    // corner touches it. The oriented shape is thin along the diagonal, so the
+    // corner box is genuinely clear.
+    const physics2d::Obb2D beam = obb(0.0f, 0.0f, 2.0f, 0.2f, kPi / 4.0f);
+    const physics2d::Obb2D corner = obb(1.55f, 1.55f, 0.05f, 0.05f, 0.0f);
+
+    // The bounding boxes do overlap -- this is exactly the false positive the
+    // orientation removes.
+    CHECK(physics2d::bounds_overlap(physics2d::bounds_of(beam), physics2d::bounds_of(corner)));
+    // The true oriented shapes do not.
+    CHECK_FALSE(physics2d::intersect(beam, corner).overlapping);
+}
+
+TEST_CASE("a rotated box still overlaps where its oriented shape reaches") {
+    const physics2d::Obb2D beam = obb(0.0f, 0.0f, 2.0f, 0.2f, kPi / 4.0f);
+    // On the beam's own long axis, one unit out from the centre.
+    const Vec2 on_axis = beam.axis_x() * 1.2f;
+    const physics2d::Obb2D hit = obb(on_axis.x, on_axis.y, 0.1f, 0.1f, 0.0f);
+    const auto contact = physics2d::intersect(beam, hit);
+    REQUIRE(contact.overlapping);
+    CHECK(contact.penetration > 0.0f);
+    CHECK(contact.normal.length() == doctest::Approx(1.0f));
+}
+
+TEST_CASE("the bounding box of a rotated box is the conservative axis-aligned bound") {
+    // A unit box turned 45 degrees has corners at +/- (sqrt2, sqrt2), so its
+    // axis-aligned bound is the square of half-extent sqrt2 -- larger than the
+    // unrotated half-extent, which is what keeps the broad phase a superset.
+    const physics2d::Aabb2D bound = physics2d::bounds_of(obb(0.0f, 0.0f, 1.0f, 1.0f, kPi / 4.0f));
+    CHECK(bound.half_extent.x == doctest::Approx(std::sqrt(2.0f)));
+    CHECK(bound.half_extent.y == doctest::Approx(std::sqrt(2.0f)));
+    // A zero-rotation box's bound is exactly its own half-extent.
+    const physics2d::Aabb2D aligned = physics2d::bounds_of(obb(0.0f, 0.0f, 1.0f, 2.0f, 0.0f));
+    CHECK(aligned.half_extent.x == doctest::Approx(1.0f));
+    CHECK(aligned.half_extent.y == doctest::Approx(2.0f));
+}
+
+TEST_CASE("a circle against a rotated box face reports the rotated face normal") {
+    // A circle on the box's local +y face. The face normal is the box's local
+    // +y axis, rotated into world space, so the contact normal is -axis_y.
+    const physics2d::Obb2D beam = obb(0.0f, 0.0f, 2.0f, 0.2f, kPi / 4.0f);
+    const Vec2 circle_center = beam.axis_y() * 0.7f;
+    const auto contact = physics2d::intersect(physics2d::Circle2D{circle_center, 0.6f}, beam);
+
+    REQUIRE(contact.overlapping);
+    const Vec2 axis_y = beam.axis_y();
+    CHECK(contact.normal.x == doctest::Approx(-axis_y.x));
+    CHECK(contact.normal.y == doctest::Approx(-axis_y.y));
+    CHECK(contact.penetration == doctest::Approx(0.1f));
+}
+
+TEST_CASE("a circle outside a rotated box's corner is separated") {
+    // The corner of the rotated box's bounding box that the true shape does not
+    // reach. The AABB prefilter would pass; the oriented narrow phase does not.
+    const physics2d::Obb2D beam = obb(0.0f, 0.0f, 2.0f, 0.2f, kPi / 4.0f);
+    const physics2d::Circle2D probe{Vec2{1.5f, 1.5f}, 0.1f};
+    CHECK(physics2d::bounds_overlap(physics2d::bounds_of(beam), physics2d::bounds_of(probe)));
+    CHECK_FALSE(physics2d::intersect(probe, beam).overlapping);
+}
+
+TEST_CASE("intersect_shapes keeps the normal pointing from the first shape for oriented boxes") {
+    const physics2d::Obb2D a = obb(0.0f, 0.0f, 1.0f, 1.0f, kPi / 6.0f);
+    const physics2d::Circle2D b{Vec2{0.0f, 1.6f}, 1.0f};
+
+    const auto circle_first =
+        physics2d::intersect_shapes(physics2d::ShapeType::Circle, a, b, physics2d::ShapeType::Box, a, b);
+    const auto box_first =
+        physics2d::intersect_shapes(physics2d::ShapeType::Box, a, b, physics2d::ShapeType::Circle, a, b);
+
+    REQUIRE(circle_first.overlapping);
+    REQUIRE(box_first.overlapping);
+    CHECK(circle_first.normal.x == doctest::Approx(-box_first.normal.x));
+    CHECK(circle_first.normal.y == doctest::Approx(-box_first.normal.y));
+    CHECK(circle_first.penetration == doctest::Approx(box_first.penetration));
+}
+
+TEST_CASE("a rotated box collides as its oriented shape in the solver") {
+    Scene scene;
+    // A long thin static beam turned 45 degrees.
+    Node* beam = scene.create_node("Beam");
+    auto* beam_collider = beam->add_component<physics2d::Collider2D>();
+    beam_collider->half_extent = Vec2{2.0f, 0.2f};
+    beam->transform().rotation.z = kPi / 4.0f;
+
+    // A small dynamic box in the corner of the beam's bounding box but clear of
+    // the oriented shape. No gravity, so it stays put and the only thing that
+    // could move it is a spurious contact.
+    Node* corner = add_dynamic_box(scene, Vec2{1.55f, 1.55f}, 0.05f, 1.0f);
+    corner->get_component<physics2d::RigidBody2D>()->affected_by_gravity = false;
+
+    physics2d::Physics2DSystem system;
+    system.gravity = Vec2{0.0f, 0.0f};
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.contact_count() == 0);
+    CHECK(corner->transform().position.x == doctest::Approx(1.55f));
+    CHECK(corner->transform().position.y == doctest::Approx(1.55f));
+}
+
+TEST_CASE("a rotated box collides where its oriented shape does overlap") {
+    Scene scene;
+    Node* beam = scene.create_node("Beam");
+    auto* beam_collider = beam->add_component<physics2d::Collider2D>();
+    beam_collider->half_extent = Vec2{2.0f, 0.2f};
+    beam->transform().rotation.z = kPi / 4.0f;
+
+    // On the beam's long axis, so the oriented shape and the box overlap.
+    const Vec2 on_axis = Vec2{std::cos(kPi / 4.0f), std::sin(kPi / 4.0f)} * 1.2f;
+    add_dynamic_box(scene, on_axis, 0.1f, 1.0f);
+
+    physics2d::Physics2DSystem system;
+    system.gravity = Vec2{0.0f, 0.0f};
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.contact_count() >= 1);
+}
+
+TEST_CASE("a collider offset is rotated into the world by the node's rotation") {
+    // The collider is offset one unit along the node's local +x. The node is
+    // turned 90 degrees, so the shape lands one unit along world +y, not +x.
+    Scene scene;
+    Node* anchor = scene.create_node("Anchor");
+    auto* collider = anchor->add_component<physics2d::Collider2D>();
+    collider->half_extent = Vec2{0.5f, 0.5f};
+    collider->offset = Vec2{1.0f, 0.0f};
+    anchor->transform().rotation.z = kPi / 2.0f;
+
+    Node* above = add_dynamic_box(scene, Vec2{0.0f, 1.0f}, 0.5f, 1.0f);
+    above->get_component<physics2d::RigidBody2D>()->affected_by_gravity = false;
+
+    physics2d::Physics2DSystem system;
+    system.gravity = Vec2{0.0f, 0.0f};
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.contact_count() >= 1);
+}
+
+TEST_CASE("an offset collider does not stay on the node's axis when the node rotates") {
+    // Same offset and rotation as above, but a body where the offset *would* be
+    // without rotation (world +x). If the offset were not rotated the two would
+    // collide; correctly rotated, they are one unit apart and clear.
+    Scene scene;
+    Node* anchor = scene.create_node("Anchor");
+    auto* collider = anchor->add_component<physics2d::Collider2D>();
+    collider->half_extent = Vec2{0.5f, 0.5f};
+    collider->offset = Vec2{1.0f, 0.0f};
+    anchor->transform().rotation.z = kPi / 2.0f;
+
+    Node* to_the_side = add_dynamic_box(scene, Vec2{1.0f, 0.0f}, 0.5f, 1.0f);
+    to_the_side->get_component<physics2d::RigidBody2D>()->affected_by_gravity = false;
+
+    physics2d::Physics2DSystem system;
+    system.gravity = Vec2{0.0f, 0.0f};
+    system.update(step(1.0f / 60.0f), scene);
+
+    CHECK(system.contact_count() == 0);
+}
+
+TEST_CASE("a collider offset places the shape for a query as well as the solver") {
+    Scene scene;
+    Node* node = scene.create_node("Offset");
+    auto* collider = node->add_component<physics2d::Collider2D>();
+    collider->half_extent = Vec2{0.5f, 0.5f};
+    collider->offset = Vec2{2.0f, 0.0f};
+
+    // The node is at the origin; the shape is two units to the right.
+    CHECK_FALSE(physics2d::overlap_point(scene, Vec2{0.0f, 0.0f}));
+    CHECK(physics2d::overlap_point(scene, Vec2{2.0f, 0.0f}));
+
+    std::vector<physics2d::OverlapHit> hits;
+    CHECK(physics2d::overlap_circle(scene, Vec2{2.0f, 0.0f}, 0.25f, hits) == 1);
+}
+
+TEST_CASE("a collider offset round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* node = scene.create_node("Offset");
+    auto* collider = node->add_component<physics2d::Collider2D>();
+    collider->offset = Vec2{0.25f, -1.5f};
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+    Node* loaded_node = loaded.find_node_by_name("Offset");
+    REQUIRE(loaded_node != nullptr);
+    const auto* loaded_collider = loaded_node->get_component<physics2d::Collider2D>();
+    REQUIRE(loaded_collider != nullptr);
+    CHECK(loaded_collider->offset.x == doctest::Approx(0.25f));
+    CHECK(loaded_collider->offset.y == doctest::Approx(-1.5f));
 }

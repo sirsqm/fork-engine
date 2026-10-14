@@ -14,30 +14,57 @@ namespace {
 // and well above denormal noise.
 constexpr f32 kDirectionEpsilon = 1e-8f;
 
-// Boxes are axis-aligned, so overlap on each axis is an interval test and the
-// separating axis is the one with the smallest overlap. That axis is the
-// contact normal, and the smallest overlap is the penetration depth.
-Contact2D intersect_boxes(const Aabb2D& a, const Aabb2D& b) noexcept {
-    const f32 overlap_x = std::min(a.max_x(), b.max_x()) - std::max(a.min_x(), b.min_x());
-    if (overlap_x <= 0.0f) {
-        return Contact2D{};
-    }
-    const f32 overlap_y = std::min(a.max_y(), b.max_y()) - std::max(a.min_y(), b.min_y());
-    if (overlap_y <= 0.0f) {
-        return Contact2D{};
+// Rotate `v` by `angle` radians about the origin. The 2D rotation used to move
+// a circle into a box's local frame and a local normal back into world space.
+[[nodiscard]] Vec2 rotate(const Vec2& v, f32 angle) noexcept {
+    const f32 c = std::cos(angle);
+    const f32 s = std::sin(angle);
+    return Vec2{v.x * c - v.y * s, v.x * s + v.y * c};
+}
+
+// The half-width of an oriented box's projection onto the unit `axis`: the sum
+// of each half-extent times the absolute cosine between that local axis and
+// `axis`. This is the `r` term of the separating-axis test, and it is exact
+// because the box's axes are orthonormal.
+[[nodiscard]] f32 project_radius(const Obb2D& box, const Vec2& axis) noexcept {
+    const f32 along_x = std::abs(axis.dot(box.axis_x()));
+    const f32 along_y = std::abs(axis.dot(box.axis_y()));
+    return box.half_extent.x * along_x + box.half_extent.y * along_y;
+}
+
+// The separating-axis test for two oriented boxes. A box is convex with only
+// two face normals, so the candidate separating axes are the four face normals
+// (two from each box); on each, the boxes are projected to intervals and
+// separated if the intervals do not overlap. The axis with the least overlap is
+// the contact normal and that overlap is the penetration, matching the
+// axis-aligned test this generalises. The result is exact: SAT reports a
+// collision if and only if the true shapes overlap, which is what lets a rotated
+// box stop being collided as its (larger) bounding box.
+Contact2D intersect_obbs(const Obb2D& a, const Obb2D& b) noexcept {
+    const Vec2 delta = b.center - a.center;
+    const Vec2 axes[4] = {a.axis_x(), a.axis_y(), b.axis_x(), b.axis_y()};
+
+    f32 min_overlap = 0.0f;
+    Vec2 min_axis{};
+    for (const Vec2& axis : axes) {
+        const f32 overlap = project_radius(a, axis) + project_radius(b, axis) - std::abs(delta.dot(axis));
+        if (overlap <= 0.0f) {
+            return Contact2D{}; // a separating axis: the boxes do not touch
+        }
+        // Strictly less keeps the first axis on a tie, so the result is
+        // deterministic for aligned boxes (a face axis of A wins over B's).
+        if (min_overlap == 0.0f || overlap < min_overlap) {
+            min_overlap = overlap;
+            min_axis = axis;
+        }
     }
 
     Contact2D contact;
     contact.overlapping = true;
-    if (overlap_x < overlap_y) {
-        contact.penetration = overlap_x;
-        // Normal points from A towards B. If B's centre is to the right of A's,
-        // that is +x; otherwise -x.
-        contact.normal = Vec2{b.center.x >= a.center.x ? 1.0f : -1.0f, 0.0f};
-    } else {
-        contact.penetration = overlap_y;
-        contact.normal = Vec2{0.0f, b.center.y >= a.center.y ? 1.0f : -1.0f};
-    }
+    contact.penetration = min_overlap;
+    // Normal points from A towards B. A zero projection means the centres are
+    // level on this axis; pick + to match the axis-aligned test's tie-break.
+    contact.normal = min_axis * (delta.dot(min_axis) < 0.0f ? -1.0f : 1.0f);
     return contact;
 }
 
@@ -66,15 +93,16 @@ Contact2D intersect_circles(const Circle2D& a, const Circle2D& b) noexcept {
     return contact;
 }
 
-Contact2D intersect_circle_box(const Circle2D& circle, const Aabb2D& box) noexcept {
-    // Closest point on the box to the circle centre, in box-local terms. This
-    // handles the face, edge, and corner cases uniformly: if the centre is
-    // inside the box, the closest point is the centre itself and the depth is
-    // measured to the nearest face instead.
-    const f32 closest_x = std::clamp(circle.center.x, box.min_x(), box.max_x());
-    const f32 closest_y = std::clamp(circle.center.y, box.min_y(), box.max_y());
-    const Vec2 closest{closest_x, closest_y};
-    const Vec2 delta = closest - circle.center;
+// Circle against an oriented box, resolved in the box's local frame: rotate the
+// circle centre by -rotation so the box is axis-aligned, run the closest-point
+// test there, then rotate the normal back. Doing the work in the local frame
+// keeps the face, edge, corner, and centre-inside cases identical to the
+// axis-aligned version -- the only difference is the frame it is computed in.
+Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcept {
+    const Vec2 local = rotate(circle.center - box.center, -box.rotation);
+    const f32 closest_x = std::clamp(local.x, -box.half_extent.x, box.half_extent.x);
+    const f32 closest_y = std::clamp(local.y, -box.half_extent.y, box.half_extent.y);
+    const Vec2 delta = Vec2{closest_x, closest_y} - local;
     const f32 distance_squared = delta.length_squared();
 
     if (distance_squared > circle.radius * circle.radius) {
@@ -83,34 +111,43 @@ Contact2D intersect_circle_box(const Circle2D& circle, const Aabb2D& box) noexce
 
     Contact2D contact;
     contact.overlapping = true;
+    Vec2 normal_local{};
     if (distance_squared > 0.0f) {
         const f32 distance = std::sqrt(distance_squared);
-        // Normal points from the circle towards the box.
-        contact.normal = delta / distance;
+        // Normal points from the circle towards the box (in the local frame).
+        normal_local = delta / distance;
         contact.penetration = circle.radius - distance;
     } else {
         // The circle centre is inside the box. Separate along the nearest face.
-        const f32 to_left = circle.center.x - box.min_x();
-        const f32 to_right = box.max_x() - circle.center.x;
-        const f32 to_bottom = circle.center.y - box.min_y();
-        const f32 to_top = box.max_y() - circle.center.y;
+        const f32 to_left = local.x + box.half_extent.x;
+        const f32 to_right = box.half_extent.x - local.x;
+        const f32 to_bottom = local.y + box.half_extent.y;
+        const f32 to_top = box.half_extent.y - local.y;
         const f32 min_x = std::min(to_left, to_right);
         const f32 min_y = std::min(to_bottom, to_top);
         if (min_x < min_y) {
-            contact.normal = Vec2{to_right < to_left ? 1.0f : -1.0f, 0.0f};
+            normal_local = Vec2{to_right < to_left ? 1.0f : -1.0f, 0.0f};
             contact.penetration = min_x + circle.radius;
         } else {
-            contact.normal = Vec2{0.0f, to_top < to_bottom ? 1.0f : -1.0f};
+            normal_local = Vec2{0.0f, to_top < to_bottom ? 1.0f : -1.0f};
             contact.penetration = min_y + circle.radius;
         }
     }
+    contact.normal = rotate(normal_local, box.rotation);
     return contact;
+}
+
+// The zero-rotation `Obb2D` matching an axis-aligned box. The axis-aligned
+// entry points are thin wrappers over the oriented ones, so there is one narrow
+// phase rather than two that can drift apart.
+[[nodiscard]] Obb2D as_obb(const Aabb2D& box) noexcept {
+    return Obb2D{box.center, box.half_extent, 0.0f};
 }
 
 } // namespace
 
 Contact2D intersect(const Aabb2D& a, const Aabb2D& b) noexcept {
-    return intersect_boxes(a, b);
+    return intersect_obbs(as_obb(a), as_obb(b));
 }
 
 Contact2D intersect(const Circle2D& a, const Circle2D& b) noexcept {
@@ -118,7 +155,23 @@ Contact2D intersect(const Circle2D& a, const Circle2D& b) noexcept {
 }
 
 Contact2D intersect(const Circle2D& a, const Aabb2D& b) noexcept {
-    return intersect_circle_box(a, b);
+    return intersect_circle_obb(a, as_obb(b));
+}
+
+Contact2D intersect(const Obb2D& a, const Obb2D& b) noexcept {
+    return intersect_obbs(a, b);
+}
+
+Contact2D intersect(const Circle2D& a, const Obb2D& b) noexcept {
+    return intersect_circle_obb(a, b);
+}
+
+// Box vs circle: compute circle-vs-box and flip the normal so it still points
+// from the box towards the circle.
+Contact2D intersect(const Obb2D& a, const Circle2D& b) noexcept {
+    Contact2D contact = intersect_circle_obb(b, a);
+    contact.normal = Vec2{-contact.normal.x, -contact.normal.y};
+    return contact;
 }
 
 bool bounds_overlap(const Aabb2D& a, const Aabb2D& b) noexcept {
@@ -137,8 +190,26 @@ Aabb2D bounds_of(const Aabb2D& box) noexcept {
     return box;
 }
 
+Aabb2D bounds_of(const Obb2D& box) noexcept {
+    // The extent of the oriented box along each world axis is the projection
+    // radius, which is exact for a box, so this is the tightest axis-aligned box
+    // that contains the rotated shape. With rotation 0 it reduces to the box's
+    // own half-extent, matching `bounds_of(const Aabb2D&)`.
+    const Vec2 extent{project_radius(box, Vec2{1.0f, 0.0f}), project_radius(box, Vec2{0.0f, 1.0f})};
+    return Aabb2D{box.center, extent};
+}
+
+f32 support_radius(const Obb2D& box, const Vec2& axis) noexcept {
+    return project_radius(box, axis);
+}
+
 Contact2D intersect_shapes(ShapeType a_type, const Aabb2D& a_box, const Circle2D& a_circle, ShapeType b_type,
                            const Aabb2D& b_box, const Circle2D& b_circle) noexcept {
+    return intersect_shapes(a_type, as_obb(a_box), a_circle, b_type, as_obb(b_box), b_circle);
+}
+
+Contact2D intersect_shapes(ShapeType a_type, const Obb2D& a_box, const Circle2D& a_circle, ShapeType b_type,
+                           const Obb2D& b_box, const Circle2D& b_circle) noexcept {
     if (a_type == ShapeType::Box && b_type == ShapeType::Box) {
         return intersect(a_box, b_box);
     }
@@ -150,9 +221,7 @@ Contact2D intersect_shapes(ShapeType a_type, const Aabb2D& a_box, const Circle2D
     }
     // Box vs circle: compute circle-vs-box and flip the normal so it still
     // points from the first shape towards the second.
-    Contact2D contact = intersect(b_circle, a_box);
-    contact.normal = Vec2{-contact.normal.x, -contact.normal.y};
-    return contact;
+    return intersect(a_box, b_circle);
 }
 
 // --- Ray casts -------------------------------------------------------------

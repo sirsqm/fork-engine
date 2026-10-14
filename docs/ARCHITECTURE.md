@@ -252,12 +252,15 @@ gameplay system that runs after physics reads them; no event bus is introduced,
 because the systems layer (ADR-0008) deliberately has none.
 
 Angular dynamics was added in a later cut, extending the same impulse equations
-rather than replacing the solver. A `Collider2D` is still an AABB or a circle,
-so a rotated box is drawn rotated but collided as its unrotated AABB. See
+rather than replacing the solver. A box collider is an *oriented* box: it
+carries the node's Z rotation and a local offset, so a rotated or offset shape is
+collided as its true shape rather than its bounding box. See
 [ADR-0009](adr/0009-physics2d-system.md) for the first cut,
 [ADR-0013](adr/0013-physics2d-queries-events-angular.md) for queries, contact
-events, and angular dynamics, and [ADR-0021](adr/0021-physics2d-joints.md) for
-joints.
+events, and angular dynamics,
+[ADR-0021](adr/0021-physics2d-joints.md) for joints, and
+[ADR-0037](adr/0037-physics2d-oriented-boxes-offsets.md) for oriented-box
+colliders and collider offsets.
 
 **Joints** are two components, `DistanceJoint2D` (a rigid rod or a spring) and
 `RevoluteJoint2D` (a hinge or pendulum), each naming its two ends by node id so
@@ -841,12 +844,13 @@ Every milestone must build and pass its tests before the next one begins.
   [ADR-0011](adr/0011-frustum-culling.md),
   [ADR-0012](adr/0012-forward-lighting-model.md), and
   [ADR-0014](adr/0014-directional-shadow-mapping.md)).
-- 3D physics, and the parts of 2D physics not in the first cuts: collider
-  offsets, oriented-box colliders, continuous collision detection, and sleeping
-  (see [ADR-0009](adr/0009-physics2d-system.md),
+- 3D physics, and the parts of 2D physics not in the first cuts: continuous
+  collision detection and a rotated broad-phase cell (see
+  [ADR-0009](adr/0009-physics2d-system.md),
   [ADR-0013](adr/0013-physics2d-queries-events-angular.md),
-  [ADR-0021](adr/0021-physics2d-joints.md), and
-  [ADR-0023](adr/0023-physics2d-broadphase.md)).
+  [ADR-0021](adr/0021-physics2d-joints.md),
+  [ADR-0023](adr/0023-physics2d-broadphase.md), and
+  [ADR-0037](adr/0037-physics2d-oriented-boxes-offsets.md)).
 - The parts of audio not in the first cut: 3D positional attenuation, streaming
   and large-file playback, compressed codecs, and audio buses / mixing groups
   (see [ADR-0016](adr/0016-audio-module.md)).
