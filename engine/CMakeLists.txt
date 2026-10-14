@@ -57,6 +57,7 @@ set(FE_ENGINE_SOURCES
     src/physics3d/Physics3DTypes.cpp
     src/mesh/Mesh.cpp
     src/mesh/ObjLoader.cpp
+    src/mesh/GltfLoader.cpp
     src/scene3d/Camera3D.cpp
     src/scene3d/Scene3DTypes.cpp
     src/audio/AudioDevice.cpp

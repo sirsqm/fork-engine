@@ -7,6 +7,7 @@
 #include "fe/audio/WavLoader.h"
 #include "fe/core/Assert.h"
 #include "fe/core/Log.h"
+#include "fe/mesh/GltfLoader.h"
 #include "fe/mesh/ObjLoader.h"
 #include "fe/physics2d/PhysicsTypes.h"
 #include "fe/physics3d/Physics3DTypes.h"
@@ -86,6 +87,7 @@ Error Engine::initialize(const Config& config) {
     resources_->register_loader(std::make_unique<ImageLoader>(&resources_->import_cache()));
     resources_->register_loader(std::make_unique<Texture2DLoader>(*device_, *resources_));
     resources_->register_loader(std::make_unique<ObjLoader>());
+    resources_->register_loader(std::make_unique<GltfLoader>());
 
     renderer_2d_ = std::make_unique<renderer2d::Renderer2D>();
     if (Error error = renderer_2d_->initialize(*device_); error) {
