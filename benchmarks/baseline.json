@@ -6,8 +6,8 @@
   "frames": 300,
   "warmup": 60,
   "metrics": {
-    "frame_total": {"p50_ms": 1.4274, "p95_ms": 1.4898, "p99_ms": 1.6132, "mean_ms": 1.4335, "min_ms": 1.3521, "max_ms": 1.7366, "samples": 64},
-    "frame_update": {"p50_ms": 0.6490, "p95_ms": 0.6785, "p99_ms": 0.7056, "mean_ms": 0.6505, "min_ms": 0.6203, "max_ms": 0.7206, "samples": 64},
-    "frame_render": {"p50_ms": 0.1596, "p95_ms": 0.2050, "p99_ms": 0.2158, "mean_ms": 0.1686, "min_ms": 0.1446, "max_ms": 0.2231, "samples": 64}
+    "frame_total": {"p50_ms": 1.9663, "p95_ms": 2.0230, "p99_ms": 2.0281, "mean_ms": 1.9660, "min_ms": 1.8971, "max_ms": 2.0291, "samples": 64},
+    "frame_update": {"p50_ms": 0.9974, "p95_ms": 1.0075, "p99_ms": 1.0126, "mean_ms": 0.9972, "min_ms": 0.9828, "max_ms": 1.0175, "samples": 64},
+    "frame_render": {"p50_ms": 0.1814, "p95_ms": 0.2252, "p99_ms": 0.2332, "mean_ms": 0.1895, "min_ms": 0.1641, "max_ms": 0.2374, "samples": 64}
   }
 }

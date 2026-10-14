@@ -80,7 +80,11 @@ coarse so the gate survives CI noise:
 
 The baseline is committed. It is a number from one machine, not a promise about
 all machines; it is meaningful because CI compares like against like (the same
-runner image, the same Release build), which is what a regression gate needs.
+runner image, the same Release build), which is what a regression gate needs. It
+is therefore recorded *on the CI runner* — from the gate job's
+`benchmark-result` artifact — not locally: a developer machine is faster than a
+shared runner, and a locally recorded baseline made the gate fail on the very
+first pull request. See `benchmarks/README.md` for the re-recording procedure.
 
 ## Consequences
 

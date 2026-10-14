@@ -58,9 +58,9 @@ Output (CSV):
 # fork_engine benchmark
 # scene=sprite_heavy sprites=2000 bricks=500 bodies=200 frames=300 warmup=60
 metric,p50_ms,p95_ms,p99_ms,mean_ms,min_ms,max_ms,samples
-frame_total,1.4274,1.4898,1.6132,1.4335,1.3521,1.7366,64
-frame_update,0.6490,0.6785,0.7056,0.6505,0.6203,0.7206,64
-frame_render,0.1596,0.2050,0.2158,0.1686,0.1446,0.2231,64
+frame_total,1.9663,2.0230,2.0281,1.9660,1.8971,2.0291,64
+frame_update,0.9974,1.0075,1.0126,0.9972,0.9828,1.0175,64
+frame_render,0.1814,0.2252,0.2332,0.1895,0.1641,0.2374,64
 ```
 
 ## The regression gate
@@ -82,9 +82,17 @@ python3 benchmarks/check_regression.py \
   --current benchmark.json --update
 ```
 
-The baseline is a number from one machine. It is meaningful because CI compares
-like against like — the same runner image, the same Release build — which is
-exactly what a regression gate needs.
+The baseline is a number from one machine, so it must be recorded on the machine
+that checks it. It is recorded on the CI runner (the `Benchmark regression gate`
+job's `benchmark-result` artifact), which is why it reads higher than a local
+run: a shared runner is slower and noisier than a developer's machine, and a
+baseline taken locally would make the gate fail on the first pull request. CI
+then compares like against like — the same runner image, the same Release build —
+which is exactly what a regression gate needs.
+
+To re-record it, run the job on `main`, download its `benchmark-result` artifact,
+and copy its `benchmark.json` over `benchmarks/baseline.json`. A local `--update`
+is for experimenting only; do not commit a locally recorded baseline.
 
 ## Sanitizers
 
