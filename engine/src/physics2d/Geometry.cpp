@@ -137,8 +137,10 @@ Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcep
     // Axis-aligned box: skip the two rotations and work in world space directly.
     // This is the same closest-point test, just without the frame change.
     if (box.rotation == 0.0f) {
-        const f32 closest_x = std::clamp(circle.center.x, box.center.x - box.half_extent.x, box.center.x + box.half_extent.x);
-        const f32 closest_y = std::clamp(circle.center.y, box.center.y - box.half_extent.y, box.center.y + box.half_extent.y);
+        const f32 closest_x =
+            std::clamp(circle.center.x, box.center.x - box.half_extent.x, box.center.x + box.half_extent.x);
+        const f32 closest_y =
+            std::clamp(circle.center.y, box.center.y - box.half_extent.y, box.center.y + box.half_extent.y);
         const Vec2 delta = Vec2{closest_x, closest_y} - circle.center;
         const f32 distance_squared = delta.length_squared();
         if (distance_squared > circle.radius * circle.radius) {
