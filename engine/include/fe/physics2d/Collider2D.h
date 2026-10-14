@@ -59,6 +59,12 @@ public:
     // `rotation`: the local offset rotated into world space and added to the
     // node's centre. With a zero offset this is just `center`.
     [[nodiscard]] Vec2 world_center(const Vec2& center, f32 rotation) const noexcept {
+        // A zero offset is the overwhelmingly common case and needs no rotation:
+        // the shape sits exactly on the node. This keeps the common case free of
+        // trigonometry.
+        if (offset.x == 0.0f && offset.y == 0.0f) {
+            return center;
+        }
         const f32 c = std::cos(rotation);
         const f32 s = std::sin(rotation);
         return Vec2{center.x + offset.x * c - offset.y * s, center.y + offset.x * s + offset.y * c};
@@ -81,6 +87,13 @@ public:
     // For a box this is the conservative bound of the oriented box, so the grid
     // stays a superset of the truly-touching pairs (ADR-0023).
     [[nodiscard]] Aabb2D bounds(const Vec2& center, f32 rotation) const noexcept {
+        // A zero rotation and a zero offset leave the shape axis-aligned on the
+        // node, which is the common case and the exact `Aabb2D` form -- no
+        // oriented box is built. This runs once per collider per step and again
+        // per pair in the island graph, so the shortcut matters.
+        if (rotation == 0.0f && offset.x == 0.0f && offset.y == 0.0f) {
+            return shape == ShapeType::Box ? box(center) : bounds_of(circle(center));
+        }
         return shape == ShapeType::Box ? bounds_of(oriented_box(center, rotation))
                                        : bounds_of(oriented_circle(center, rotation));
     }

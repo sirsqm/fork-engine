@@ -27,6 +27,12 @@ constexpr f32 kDirectionEpsilon = 1e-8f;
 // `axis`. This is the `r` term of the separating-axis test, and it is exact
 // because the box's axes are orthonormal.
 [[nodiscard]] f32 project_radius(const Obb2D& box, const Vec2& axis) noexcept {
+    // An axis-aligned box projects to its own half-extents, with no trigonometry
+    // and no dot products. This is the pre-orientation path, kept so the common
+    // case does not pay for the general one.
+    if (box.rotation == 0.0f) {
+        return box.half_extent.x * std::abs(axis.x) + box.half_extent.y * std::abs(axis.y);
+    }
     const f32 along_x = std::abs(axis.dot(box.axis_x()));
     const f32 along_y = std::abs(axis.dot(box.axis_y()));
     return box.half_extent.x * along_x + box.half_extent.y * along_y;
@@ -42,6 +48,35 @@ constexpr f32 kDirectionEpsilon = 1e-8f;
 // box stop being collided as its (larger) bounding box.
 Contact2D intersect_obbs(const Obb2D& a, const Obb2D& b) noexcept {
     const Vec2 delta = b.center - a.center;
+
+    // Both boxes axis-aligned: the two world axes are the only candidate
+    // separating axes, so this is the interval test the SAT generalises. Taking
+    // this path keeps an unrotated scene as cheap as it was before orientation
+    // existed, and it is bit-for-bit the SAT result (the first axis wins a tie,
+    // as it does below).
+    if (a.rotation == 0.0f && b.rotation == 0.0f) {
+        const f32 overlap_x = std::min(a.center.x + a.half_extent.x, b.center.x + b.half_extent.x) -
+                              std::max(a.center.x - a.half_extent.x, b.center.x - b.half_extent.x);
+        if (overlap_x <= 0.0f) {
+            return Contact2D{};
+        }
+        const f32 overlap_y = std::min(a.center.y + a.half_extent.y, b.center.y + b.half_extent.y) -
+                              std::max(a.center.y - a.half_extent.y, b.center.y - b.half_extent.y);
+        if (overlap_y <= 0.0f) {
+            return Contact2D{};
+        }
+        Contact2D contact;
+        contact.overlapping = true;
+        if (overlap_x <= overlap_y) {
+            contact.penetration = overlap_x;
+            contact.normal = Vec2{delta.x >= 0.0f ? 1.0f : -1.0f, 0.0f};
+        } else {
+            contact.penetration = overlap_y;
+            contact.normal = Vec2{0.0f, delta.y >= 0.0f ? 1.0f : -1.0f};
+        }
+        return contact;
+    }
+
     const Vec2 axes[4] = {a.axis_x(), a.axis_y(), b.axis_x(), b.axis_y()};
 
     f32 min_overlap = 0.0f;
@@ -99,6 +134,40 @@ Contact2D intersect_circles(const Circle2D& a, const Circle2D& b) noexcept {
 // keeps the face, edge, corner, and centre-inside cases identical to the
 // axis-aligned version -- the only difference is the frame it is computed in.
 Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcept {
+    // Axis-aligned box: skip the two rotations and work in world space directly.
+    // This is the same closest-point test, just without the frame change.
+    if (box.rotation == 0.0f) {
+        const f32 closest_x = std::clamp(circle.center.x, box.center.x - box.half_extent.x, box.center.x + box.half_extent.x);
+        const f32 closest_y = std::clamp(circle.center.y, box.center.y - box.half_extent.y, box.center.y + box.half_extent.y);
+        const Vec2 delta = Vec2{closest_x, closest_y} - circle.center;
+        const f32 distance_squared = delta.length_squared();
+        if (distance_squared > circle.radius * circle.radius) {
+            return Contact2D{};
+        }
+        Contact2D contact;
+        contact.overlapping = true;
+        if (distance_squared > 0.0f) {
+            const f32 distance = std::sqrt(distance_squared);
+            contact.normal = delta / distance;
+            contact.penetration = circle.radius - distance;
+        } else {
+            const f32 to_left = circle.center.x - (box.center.x - box.half_extent.x);
+            const f32 to_right = (box.center.x + box.half_extent.x) - circle.center.x;
+            const f32 to_bottom = circle.center.y - (box.center.y - box.half_extent.y);
+            const f32 to_top = (box.center.y + box.half_extent.y) - circle.center.y;
+            const f32 min_x = std::min(to_left, to_right);
+            const f32 min_y = std::min(to_bottom, to_top);
+            if (min_x < min_y) {
+                contact.normal = Vec2{to_right < to_left ? 1.0f : -1.0f, 0.0f};
+                contact.penetration = min_x + circle.radius;
+            } else {
+                contact.normal = Vec2{0.0f, to_top < to_bottom ? 1.0f : -1.0f};
+                contact.penetration = min_y + circle.radius;
+            }
+        }
+        return contact;
+    }
+
     const Vec2 local = rotate(circle.center - box.center, -box.rotation);
     const f32 closest_x = std::clamp(local.x, -box.half_extent.x, box.half_extent.x);
     const f32 closest_y = std::clamp(local.y, -box.half_extent.y, box.half_extent.y);
