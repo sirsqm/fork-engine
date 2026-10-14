@@ -91,6 +91,22 @@ Node* Scene::find_node_by_name(std::string_view name) const noexcept {
     return found;
 }
 
+Component* Scene::find_component(const Uuid& id) const noexcept {
+    Component* found = nullptr;
+    for_each_node([&](Node& node) {
+        if (found != nullptr) {
+            return;
+        }
+        for (const auto& component : node.components()) {
+            if (component->id() == id) {
+                found = component.get();
+                return;
+            }
+        }
+    });
+    return found;
+}
+
 void Scene::clear() {
     while (!roots_.empty()) {
         auto node = std::move(roots_.back());

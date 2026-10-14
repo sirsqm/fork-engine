@@ -98,6 +98,83 @@ TEST_CASE("node identity survives a round trip") {
     CHECK(reloaded->id() == original_id);
 }
 
+TEST_CASE("component identity survives a round trip") {
+    Scene original;
+    Node* node = original.create_node("Thing");
+    auto* sprite = node->add_component<Sprite2D>();
+    const Uuid sprite_id = sprite->id();
+
+    // Identity is assigned at creation, so it is never nil and two components
+    // are never the same component.
+    CHECK_FALSE(sprite_id.is_nil());
+    CHECK(sprite_id != node->id());
+
+    auto text = serialization::scene::to_json(original);
+    REQUIRE(text);
+
+    Scene restored;
+    REQUIRE_FALSE(serialization::scene::from_json(text.value(), restored));
+
+    Node* reloaded = restored.find_node_by_name("Thing");
+    REQUIRE(reloaded != nullptr);
+    const auto* reloaded_sprite = reloaded->get_component<Sprite2D>();
+    REQUIRE(reloaded_sprite != nullptr);
+    CHECK(reloaded_sprite->id() == sprite_id);
+
+    // The scene can find it by that id, which is what an operation that targets
+    // this exact component (the collaborative-editing log, ADR-0019) relies on.
+    CHECK(restored.find_component(sprite_id) == reloaded_sprite);
+    CHECK(restored.find_component(Uuid::generate()) == nullptr);
+}
+
+TEST_CASE("a component's id is distinct per component and stable across a move") {
+    Scene scene;
+    Node* node = scene.create_node("Thing");
+    auto* first = node->add_component<Sprite2D>();
+    auto* second = node->add_component<Sprite2D>();
+    CHECK(first->id() != second->id());
+
+    // Taking a component out of its node and putting it back must not change its
+    // identity: an operation log that names it by id has to keep working.
+    const Uuid id = first->id();
+    auto taken = node->detach_component(0);
+    REQUIRE(taken != nullptr);
+    CHECK(taken->id() == id);
+    node->insert_component(0, std::move(taken));
+    CHECK(node->components()[0]->id() == id);
+}
+
+TEST_CASE("a version-2 document loads and assigns fresh component ids") {
+    // A version-2 component has a type and properties but no "id". The reader
+    // must still load it, keeping the id the component was created with rather
+    // than failing or leaving a nil id.
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 2,
+        "name": "Old",
+        "roots": [
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "name": "Hero",
+                "type": "Node",
+                "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]},
+                "components": [{"type": "Sprite2D", "size": [8, 8]}],
+                "children": []
+            }
+        ]
+    })";
+
+    Scene scene;
+    REQUIRE_FALSE(serialization::scene::from_json(document, scene));
+
+    Node* hero = scene.find_node_by_name("Hero");
+    REQUIRE(hero != nullptr);
+    const auto* sprite = hero->get_component<Sprite2D>();
+    REQUIRE(sprite != nullptr);
+    CHECK_FALSE(sprite->id().is_nil());
+    CHECK(scene.find_component(sprite->id()) == sprite);
+}
+
 TEST_CASE("the document records a format and version") {
     Scene scene;
     [[maybe_unused]] Node* root = scene.create_node("Root");
@@ -105,7 +182,7 @@ TEST_CASE("the document records a format and version") {
     auto text = serialization::scene::to_json(scene);
     REQUIRE(text);
     CHECK(text.value().find("\"format\": \"fork_scene\"") != std::string::npos);
-    CHECK(text.value().find("\"format_version\": 2") != std::string::npos);
+    CHECK(text.value().find("\"format_version\": 3") != std::string::npos);
 }
 
 TEST_CASE("loading rejects a document that is not a fork scene") {

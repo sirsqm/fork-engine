@@ -309,8 +309,10 @@ lands after the editor is mature because it reaches into the editor's core. Plan
 and trade-offs: [`STRATEGY.md`](STRATEGY.md),
 [ADR-0019](adr/0019-collaborative-editing.md).
 
-- [ ] Component identity: stable ids that survive serialization, reimport, and
-      undo
+- [x] Component identity: stable ids that survive serialization, reimport, and
+      undo — a `Uuid` on every `Component`, assigned at creation and written to
+      the scene document (format version 3); `Scene::find_component` resolves one
+      anywhere in the tree ([ADR-0045](adr/0045-component-identity.md))
 - [ ] Operation model (local only): generalise `Command` into a serializable
       `Operation`; route local edits through it
 - [ ] Replicated log (local only): a `Session` holding a document and an ordered

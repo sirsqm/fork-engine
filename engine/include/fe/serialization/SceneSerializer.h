@@ -34,9 +34,13 @@ namespace scene {
 
 // Version 1 stored resource references as path-derived keys ("tex:assets/hero.png").
 // Version 2 stores them as stable asset GUIDs ("guid:<uuid>"), which survive a
-// file move. The reader migrates version-1 documents at load time. See
-// docs/adr/0020-resource-identity-guid-sidecar.md.
-inline constexpr i32 kFormatVersion = 2;
+// file move. Version 3 gives every component a stable `Uuid` in the document
+// (`"id"`), the counterpart of the node id that has been written since version
+// 1; older documents load with ids assigned at creation. The reader migrates
+// version-1 documents at load time. See
+// docs/adr/0020-resource-identity-guid-sidecar.md and
+// docs/adr/0045-component-identity.md.
+inline constexpr i32 kFormatVersion = 3;
 
 // Serialises `scene` to a JSON string.
 //
