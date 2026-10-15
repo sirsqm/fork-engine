@@ -187,7 +187,7 @@ TEST_CASE("extraction composes a child's world transform through its parent") {
 
 TEST_CASE("a null frustum culls nothing") {
     std::vector<render::MeshInstance> instances(3);
-    CHECK(renderer3d::Renderer3D::cull(instances, nullptr) == 0);
+    CHECK(renderer3d::Renderer3D::cull_flat(instances, nullptr) == 0);
     CHECK(instances.size() == 3);
 
     std::vector<render::SpriteInstance> sprites(2);
@@ -206,7 +206,7 @@ TEST_CASE("culling keeps a box inside the frustum and drops one wholly outside")
     instances[1].world_min = Vec3{100.0f, -0.5f, -0.5f};
     instances[1].world_max = Vec3{101.0f, 0.5f, 0.5f};
 
-    CHECK(renderer3d::Renderer3D::cull(instances, &frustum) == 1);
+    CHECK(renderer3d::Renderer3D::cull_flat(instances, &frustum) == 1);
     REQUIRE(instances.size() == 1);
     CHECK(instances[0].world_min.x == doctest::Approx(-0.5f));
 }
@@ -220,7 +220,7 @@ TEST_CASE("culling keeps a box that straddles a frustum plane") {
     instances[0].world_min = Vec3{-1000.0f, -1000.0f, -1000.0f};
     instances[0].world_max = Vec3{1000.0f, 1000.0f, 1000.0f};
 
-    CHECK(renderer3d::Renderer3D::cull(instances, &frustum) == 0);
+    CHECK(renderer3d::Renderer3D::cull_flat(instances, &frustum) == 0);
     CHECK(instances.size() == 1);
 }
 
@@ -238,6 +238,95 @@ TEST_CASE("culling a sprite uses its quad size, not a point") {
     CHECK(renderer2d::Renderer2D::cull(instances, &frustum) == 1);
     REQUIRE(instances.size() == 1);
     CHECK(instances[0].world.at(0, 3) == doctest::Approx(0.0f));
+}
+
+// ---------------------------------------------------------------------------
+// Culling through the spatial hierarchy: the BVH path must match the flat
+// reference and must rebuild the tree only when the geometry moves.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the BVH cull matches the flat cull over a grid of boxes") {
+    const Frustum frustum = Frustum::from_view_projection(looking_at_origin(1.0f));
+
+    // A spread of boxes: some dead centre, some far outside on every axis, so
+    // the two paths have both keep and drop cases to agree on.
+    std::vector<render::MeshInstance> source;
+    for (int x = -3; x <= 3; ++x) {
+        for (int y = -3; y <= 3; ++y) {
+            for (int z = -3; z <= 3; ++z) {
+                render::MeshInstance instance;
+                const Vec3 centre{static_cast<f32>(x) * 3.0f, static_cast<f32>(y) * 3.0f, static_cast<f32>(z) * 3.0f};
+                instance.world_min = centre - Vec3{0.5f, 0.5f, 0.5f};
+                instance.world_max = centre + Vec3{0.5f, 0.5f, 0.5f};
+                source.push_back(instance);
+            }
+        }
+    }
+
+    std::vector<render::MeshInstance> flat = source;
+    const usize flat_dropped = renderer3d::Renderer3D::cull_flat(flat, &frustum);
+
+    renderer3d::Renderer3D renderer;
+    std::vector<render::MeshInstance> tree = source;
+    const usize tree_dropped = renderer.cull(tree, &frustum);
+
+    // Same count dropped, same survivors, in the same order: the tree changes
+    // how the visible set is found, never which set it is.
+    CHECK(tree_dropped == flat_dropped);
+    REQUIRE(tree.size() == flat.size());
+    for (usize i = 0; i < tree.size(); ++i) {
+        CHECK(tree[i].world_min.x == doctest::Approx(flat[i].world_min.x));
+        CHECK(tree[i].world_max.z == doctest::Approx(flat[i].world_max.z));
+    }
+}
+
+TEST_CASE("the cull BVH is reused while the geometry is static") {
+    const Frustum frustum = Frustum::from_view_projection(looking_at_origin(1.0f));
+
+    std::vector<render::MeshInstance> source(8);
+    for (usize i = 0; i < source.size(); ++i) {
+        const Vec3 centre{static_cast<f32>(i), 0.0f, 0.0f};
+        source[i].world_min = centre - Vec3{0.5f, 0.5f, 0.5f};
+        source[i].world_max = centre + Vec3{0.5f, 0.5f, 0.5f};
+    }
+
+    renderer3d::Renderer3D renderer;
+    for (int frame = 0; frame < 5; ++frame) {
+        std::vector<render::MeshInstance> instances = source;
+        (void)renderer.cull(instances, &frustum);
+    }
+
+    // The geometry never changed, so the tree was built once and queried five
+    // times. This is the point of the cache: a moving camera over static
+    // geometry does not rebuild.
+    CHECK(renderer.bvh_rebuilds() == 1);
+}
+
+TEST_CASE("the cull BVH rebuilds when an instance moves") {
+    const Frustum frustum = Frustum::from_view_projection(looking_at_origin(1.0f));
+
+    std::vector<render::MeshInstance> instances(4);
+    for (usize i = 0; i < instances.size(); ++i) {
+        instances[i].world_min = Vec3{static_cast<f32>(i), 0.0f, 0.0f};
+        instances[i].world_max = Vec3{static_cast<f32>(i) + 0.5f, 0.5f, 0.5f};
+    }
+
+    renderer3d::Renderer3D renderer;
+    (void)renderer.cull(instances, &frustum);
+    CHECK(renderer.bvh_rebuilds() == 1);
+
+    // Move one instance: its key changes, so the tree must be rebuilt.
+    std::vector<render::MeshInstance> moved = instances;
+    moved[0].world_min.x += 10.0f;
+    moved[0].world_max.x += 10.0f;
+    (void)renderer.cull(moved, &frustum);
+    CHECK(renderer.bvh_rebuilds() == 2);
+
+    // A null frustum keeps everything and does not touch the cache.
+    std::vector<render::MeshInstance> again = moved;
+    CHECK(renderer.cull(again, nullptr) == 0);
+    CHECK(again.size() == moved.size());
+    CHECK(renderer.bvh_rebuilds() == 2);
 }
 
 // ---------------------------------------------------------------------------

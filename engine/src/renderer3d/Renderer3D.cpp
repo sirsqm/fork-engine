@@ -388,7 +388,69 @@ void Renderer3D::extract(const Scene& scene, std::vector<render::MeshInstance>& 
 }
 
 usize Renderer3D::cull(std::vector<render::MeshInstance>& out, const Frustum* frustum) {
+    if (frustum == nullptr) {
+        return 0;
+    }
+    if (out.empty()) {
+        cull_bvh_valid_ = false;
+        return 0;
+    }
+
+    refresh_cull_bvh(out);
+
+    // Query the tree, then drop everything it did not return. The BVH's frustum
+    // query is the same conservative `Frustum::intersects_aabb` test the flat
+    // pass used, so the surviving set is identical; the tree only skips the
+    // boxes a rejected subtree would have tested one by one. The output is
+    // sorted by primitive index, which is the extraction order, so the draw
+    // order - and therefore the rendered image - is unchanged.
+    cull_bvh_.query(*frustum, cull_hits_);
+    cull_visible_.assign(out.size(), false);
+    for (u32 index : cull_hits_) {
+        cull_visible_[index] = true;
+    }
+
+    const usize before = out.size();
+    usize write = 0;
+    for (usize read = 0; read < before; ++read) {
+        if (cull_visible_[read]) {
+            out[write++] = out[read];
+        }
+    }
+    out.resize(write);
+    return before - write;
+}
+
+usize Renderer3D::cull_flat(std::vector<render::MeshInstance>& out, const Frustum* frustum) {
     return render::cull_meshes(out, frustum);
+}
+
+bool Renderer3D::refresh_cull_bvh(const std::vector<render::MeshInstance>& instances) {
+    const usize count = instances.size();
+    if (cull_bvh_valid_ && cull_keys_.size() == count) {
+        bool same = true;
+        for (usize i = 0; i < count; ++i) {
+            if (!(cull_keys_[i] == render::instance_key(instances[i]))) {
+                same = false;
+                break;
+            }
+        }
+        if (same) {
+            return false;
+        }
+    }
+
+    cull_bounds_.resize(count);
+    cull_keys_.resize(count);
+    for (usize i = 0; i < count; ++i) {
+        const render::MeshInstance& instance = instances[i];
+        cull_bounds_[i] = Aabb{instance.world_min, instance.world_max};
+        cull_keys_[i] = render::instance_key(instance);
+    }
+    cull_bvh_.build(cull_bounds_);
+    cull_bvh_valid_ = true;
+    ++bvh_rebuilds_;
+    return true;
 }
 
 Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height) {

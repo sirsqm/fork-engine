@@ -467,12 +467,20 @@ light's influence is finite.
 outside the camera frustum, as the seam's culling step, before they reach the GPU
 (ADR-0011, ADR-0052). `core::Frustum` extracts the six planes from a
 view-projection matrix; the test is conservative (a box straddling a plane is
-kept), so it can only save a draw, never hide a visible instance. It is a flat
-pass over the extracted array, not a spatial hierarchy — the leaf operation a BVH
-would call. `last_culled()` reports how many instances the step dropped. That
-leaf operation is now also available as a tree: `core::SpatialBvh` (ADR-0053)
-builds a bounding-volume hierarchy over static boxes and answers the same frustum
-test a subtree at a time. Wiring the renderers to it is the follow-on.
+kept), so it can only save a draw, never hide a visible instance. `last_culled()`
+reports how many instances the step dropped.
+
+The 3D renderer culls through a spatial hierarchy: `Renderer3D` builds a
+`core::SpatialBvh` (ADR-0053) over the extracted instances' world AABBs and
+queries it, so a rejected subtree costs one box test instead of one per primitive
+below it ([ADR-0056](adr/0056-renderer3d-spatial-cull.md)). The tree is rebuilt
+only when an instance's world bounds change — the renderer caches a compact key
+per instance and compares — so a moving camera over static geometry builds once
+and queries every frame; `bvh_rebuilds()` reports the build count. The tree calls
+the identical conservative leaf test and returns its hits in extraction order, so
+the visible set and the rendered image are unchanged; the flat pass is kept as
+`cull_flat` and is the reference the tree path is tested against. The 2D renderer
+keeps the flat pass, which suits its small, highly dynamic quad set.
 
 **Shadows.** When the scene has a directional light, `Renderer3D` runs a
 depth-only pass before the main pass, rendering the culled instances into a
@@ -484,8 +492,8 @@ and a slope-scaled bias removes self-shadowing acne. Only the directional light
 casts; ambient stays unshadowed so occluded areas keep fill. `last_shadow_casters()`
 reports the depth-pass draw count.
 
-Batching, point/spot shadows, a spatial tree, and a material graph are later work
-behind these same interfaces.
+Batching, point/spot shadows, and a material graph are later work behind these
+same interfaces.
 
 ### The extraction seam
 
@@ -500,10 +508,11 @@ the first two are public so a caller or a test can run one in isolation:
   its renderer component, the world matrix, and the mesh's world-space AABB.
   Extraction does no GPU work. `Renderer3D::extract` also records every mesh seen
   (culled or not), which its buffer-liveness sweep keys off.
-- **Cull** — a `static` function over that array that drops instances whose world
-  AABB lies wholly outside the frustum. It is a pure function of the array: the
-  world AABB is baked in at extraction, so culling needs neither the `Mesh` nor
-  the `Scene`. A null frustum culls nothing.
+- **Cull** — drops instances whose world AABB lies wholly outside the frustum.
+  It is a pure function of the array: the world AABB is baked in at extraction, so
+  culling needs neither the `Mesh` nor the `Scene`. A null frustum culls nothing.
+  `Renderer3D::cull` queries its cached BVH (ADR-0056); `Renderer3D::cull_flat`
+  and `Renderer2D::cull` are the flat, hierarchy-free passes.
 - **Draw** — sort, build geometry, upload, and issue draws over the array it is
   handed. It does no culling; that is a separate, explicit step.
 
@@ -978,8 +987,8 @@ Every milestone must build and pass its tests before the next one begins.
   [ADR-0011](adr/0011-frustum-culling.md),
   [ADR-0012](adr/0012-forward-lighting-model.md), and
   [ADR-0014](adr/0014-directional-shadow-mapping.md)). The spatial hierarchy over
-  static geometry is in place as a `core` primitive (`SpatialBvh`, ADR-0053) but
-  the renderers do not use it yet.
+  static geometry is in place and wired: `SpatialBvh` (ADR-0053) backs
+  `Renderer3D`'s cull pass (ADR-0056).
 - 3D physics, and the parts of 2D physics not in the first cuts: continuous
   collision detection and a rotated broad-phase cell (see
   [ADR-0009](adr/0009-physics2d-system.md),

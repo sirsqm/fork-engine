@@ -4,6 +4,7 @@
 
 #include "fe/core/Error.h"
 #include "fe/core/Math.h"
+#include "fe/core/SpatialBvh.h"
 #include "fe/core/Types.h"
 #include "fe/mesh/Mesh.h"
 #include "fe/render/RenderExtract.h"
@@ -51,10 +52,14 @@ namespace renderer3d {
 //
 // Culling model: culling tests each instance's world-space AABB against the six
 // frustum planes and is conservative - a box that straddles a plane is kept - so
-// it can only save a draw, never hide a visible mesh. It is a flat pass, not a
-// spatial hierarchy: the renderer still visits every node. A tree over static
-// geometry is a later revision, and this AABB test is the leaf operation it
-// would call.
+// it can only save a draw, never hide a visible mesh. It is backed by a spatial
+// hierarchy over the static instances (`SpatialBvh`, ADR-0053): the tree is built
+// once and rebuilt only when an instance's world AABB changes, so a moving camera
+// over static geometry descends the tree instead of testing every box. The tree
+// calls the same `Frustum::intersects_aabb` leaf test the flat pass used, so the
+// visible set is identical to the pre-BVH behaviour - only the work to find it
+// changes. `cull_flat` is kept as that reference and is what a test compares
+// against.
 //
 // Depth: the 3D pass enables depth testing and writes depth. It expects the
 // caller's frame to have a depth buffer available. The window's default
@@ -88,6 +93,13 @@ public:
     // both are reported so a test can assert culling happened without guessing.
     [[nodiscard]] u32 last_culled() const noexcept { return last_culled_; }
 
+    // The number of times the cull BVH was rebuilt from scratch over the
+    // lifetime of this renderer. A rebuild is triggered by a change in the
+    // instances' world bounds, so a static scene under a moving camera reports a
+    // small, constant count - that is the whole point of caching the tree, and
+    // it is what a test asserts on rather than a timing.
+    [[nodiscard]] u32 bvh_rebuilds() const noexcept { return bvh_rebuilds_; }
+
     // --- Extraction seam ---------------------------------------------------
     // render() is these three steps in sequence. They are public so a caller
     // (and a test) can run a step in isolation, and so the culling step can be
@@ -101,8 +113,15 @@ public:
 
     // Step 2: drop instances whose world AABB lies wholly outside `frustum`; a
     // null frustum keeps everything. Returns the number dropped. A pure function
-    // of `out`, so it is testable with no scene.
-    [[nodiscard]] static usize cull(std::vector<render::MeshInstance>& out, const Frustum* frustum);
+    // of `out`, so it is testable with no scene. Uses the cached BVH, rebuilding
+    // it only when the instances' world bounds changed since the last frame.
+    [[nodiscard]] usize cull(std::vector<render::MeshInstance>& out, const Frustum* frustum);
+
+    // The flat, hierarchy-free cull: tests every instance's world AABB directly.
+    // Kept as the reference the BVH path must match, and as the fallback for a
+    // caller that does not want the renderer to hold tree state (a static
+    // helper, like the sprite cull). A null `frustum` keeps everything.
+    [[nodiscard]] static usize cull_flat(std::vector<render::MeshInstance>& out, const Frustum* frustum);
 
     // Step 3: acquire mesh buffers and issue the shadow and main passes over
     // `instances`. `view_projection` and `camera_position` come from the active
@@ -191,6 +210,25 @@ private:
     u32 last_point_lights_ = 0;
     u32 last_spot_lights_ = 0;
     u32 last_shadow_casters_ = 0;
+
+    // --- Static-geometry cull cache ----------------------------------------
+    // The BVH over the instances' world AABBs, and the key list it was built
+    // from. `cull` reuses the tree while the key list is unchanged and rebuilds
+    // otherwise, so a static scene under a moving camera descends the tree
+    // instead of rebuilding it every frame. Both are reused buffers: a rebuild
+    // refills them in place rather than reallocating, so a steady-state frame
+    // does not grow.
+    SpatialBvh cull_bvh_;
+    std::vector<render::MeshInstanceKey> cull_keys_;
+    std::vector<Aabb> cull_bounds_;
+    std::vector<u32> cull_hits_;
+    std::vector<bool> cull_visible_;
+    bool cull_bvh_valid_ = false;
+    u32 bvh_rebuilds_ = 0;
+
+    // Rebuilds `cull_bvh_` from `instances` when their keys differ from the
+    // cached ones. Returns true when a rebuild happened.
+    bool refresh_cull_bvh(const std::vector<render::MeshInstance>& instances);
 
     // Reused across frames to avoid per-frame allocation. Each holds one vec4
     // per light in a fixed-size array, packed as the shader expects:
