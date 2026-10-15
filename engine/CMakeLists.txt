@@ -83,6 +83,10 @@ set(FE_ENGINE_SOURCES
     src/serialization/SceneSerializer.cpp
     src/serialization/Operation.cpp
     src/session/Session.cpp
+    src/net/Message.cpp
+    src/net/LoopbackNetwork.cpp
+    src/net/SessionServer.cpp
+    src/net/SessionClient.cpp
     src/renderer2d/Renderer2D.cpp
     src/renderer3d/Renderer3D.cpp
     src/runtime/Engine.cpp

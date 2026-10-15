@@ -53,6 +53,11 @@ public:
     // null and SetResource becomes a no-op.
     explicit Session(ResourceManager* resources = nullptr);
 
+    // A session whose replica id is chosen by the caller rather than generated.
+    // A networked replica uses this: its identity must be the one the server and
+    // its peers already know it by, not a fresh id minted on construction.
+    Session(const ReplicaId& replica, ResourceManager* resources);
+
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
 

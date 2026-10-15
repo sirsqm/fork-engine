@@ -326,6 +326,10 @@ and trade-offs: [`STRATEGY.md`](STRATEGY.md),
 - [ ] Transport and server: a `net` module with an in-process loopback transport
       (tests) and WebSocket (production), plus an authoritative session server
       (ordered structural operations, last-writer-wins per property)
+      — the loopback transport, the `Transport` seam, the authoritative
+      `SessionServer`, and the `SessionClient` have landed
+      ([ADR-0049](adr/0049-net-transport-and-session-server.md)); the WebSocket
+      backend and optimistic local apply remain
 - [ ] Presence: cursors, selections, and per-user viewport cameras
 - [ ] Conflict policy refinement: node-level locking for structural edits, or
       property CRDTs, only against a reproduced conflict
