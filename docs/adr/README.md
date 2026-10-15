@@ -60,6 +60,7 @@ rather than editing it.
 | [0052](0052-render-extraction-seam.md) | The render extraction seam | Accepted |
 | [0053](0053-spatial-bvh.md) | A spatial BVH over static geometry in `core` | Accepted |
 | [0054](0054-frame-loop-arena.md) | The frame arena in the frame loop | Accepted |
+| [0055](0055-editor-profiler-panel.md) | An in-editor profiler panel fed by the core profiler | Accepted |
 
 ## Format
 

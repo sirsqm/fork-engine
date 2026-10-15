@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/core/Error.h"
+#include "fe/core/Profiler.h"
 #include "fe/editor/Command.h"
 #include "fe/editor/Commands.h"
 #include "fe/editor/HierarchyViewModel.h"
@@ -11,6 +12,7 @@
 #include "fe/scene/Scene.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -170,6 +172,29 @@ public:
     // step. The panels call this when an edit gesture finishes.
     void break_undo_coalescing() noexcept { commands_.break_coalescing(); }
 
+    // --- Profiling ---------------------------------------------------------
+    // The editor's profiler, owned here so the profiler panel has a stable
+    // source and the editor does not have to reach into the embedded engine for
+    // one. It is created lazily by ensure_profiler(), because the object is
+    // large (the ring is inline storage) and a host that never shows the panel
+    // should not pay for it.
+    //
+    // It is not a member by value: `Profiler` is non-movable, and a
+    // `std::optional` holds it in place while still letting the editor have no
+    // profiler until one is asked for. The host installs it as the thread's
+    // current profiler for the duration of each frame, so scopes recorded by the
+    // editor's own frame are captured.
+    [[nodiscard]] Profiler* profiler() noexcept { return profiler_ ? &*profiler_ : nullptr; }
+    [[nodiscard]] const Profiler* profiler() const noexcept { return profiler_ ? &*profiler_ : nullptr; }
+
+    // Creates the profiler on first use and returns it. Idempotent.
+    Profiler& ensure_profiler() {
+        if (!profiler_) {
+            profiler_.emplace();
+        }
+        return *profiler_;
+    }
+
 private:
     Scene scene_;
     HierarchyViewModel hierarchy_;
@@ -181,6 +206,7 @@ private:
     std::string project_root_;
     ResourceManager* resources_ = nullptr;
     PlayRequest play_request_ = PlayRequest::None;
+    std::optional<Profiler> profiler_;
 };
 
 } // namespace editor
