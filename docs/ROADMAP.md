@@ -148,7 +148,13 @@ is missing than ten roadmap items, and it is the precondition for a community.
       [ADR-0012](adr/0012-forward-lighting-model.md)
 - [x] Shadow mapping (single-cascade directional) — see
       [ADR-0014](adr/0014-directional-shadow-mapping.md)
-- [ ] A spatial hierarchy (BVH/octree) over static geometry
+- [ ] A spatial hierarchy (BVH/octree) over static geometry — the `core`
+      primitive has landed: `SpatialBvh` builds a binned-SAH binary BVH over
+      world-space AABBs and answers frustum and box queries, reusing
+      `Frustum::intersects_aabb` as its leaf test, with the query checked against
+      a brute-force reference ([ADR-0053](adr/0053-spatial-bvh.md)). Wiring
+      `Renderer3D` to build and query a tree in place of its flat cull pass is
+      the follow-on, so this stays open
 - [ ] Environment rendering and a post-processing chain
 - [x] A glTF importer — `GltfLoader` decodes `.gltf` (JSON) and `.glb`
       (binary) into a `Mesh` per primitive, reading through `ResourceSource` so a

@@ -65,7 +65,7 @@ everything  <-  runtime
 
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
-| `core` | Fixed-width types, math, `Error`/`Result`, logging, assertions, UUID, filesystem helpers, frame profiler, frame arena | — |
+| `core` | Fixed-width types, math, `Error`/`Result`, logging, assertions, UUID, filesystem helpers, frame profiler, frame arena, spatial BVH | — |
 | `platform` | Window creation, input, and the graphics context | core |
 | `rhi` | Graphics device abstraction and backend selection | core |
 | `resources` | Asset loading, caching, lifetime | core, rhi |
@@ -465,7 +465,10 @@ outside the camera frustum, as the seam's culling step, before they reach the GP
 view-projection matrix; the test is conservative (a box straddling a plane is
 kept), so it can only save a draw, never hide a visible instance. It is a flat
 pass over the extracted array, not a spatial hierarchy — the leaf operation a BVH
-would call. `last_culled()` reports how many instances the step dropped.
+would call. `last_culled()` reports how many instances the step dropped. That
+leaf operation is now also available as a tree: `core::SpatialBvh` (ADR-0053)
+builds a bounding-volume hierarchy over static boxes and answers the same frustum
+test a subtree at a time. Wiring the renderers to it is the follow-on.
 
 **Shadows.** When the scene has a directional light, `Renderer3D` runs a
 depth-only pass before the main pass, rendering the culled instances into a
@@ -965,13 +968,14 @@ Every milestone must build and pass its tests before the next one begins.
 ## 12. What is deliberately not here yet
 
 - The parts of 3D rendering beyond the forward lit pass and directional shadows:
-  batching, point/spot shadows, cascaded shadow maps, skeletal animation, a
-  spatial hierarchy over static geometry, environment rendering and
-  post-processing, and a material graph (see
+  batching, point/spot shadows, cascaded shadow maps, skeletal animation,
+  environment rendering and post-processing, and a material graph (see
   [ADR-0010](adr/0010-3d-rendering-foundation.md),
   [ADR-0011](adr/0011-frustum-culling.md),
   [ADR-0012](adr/0012-forward-lighting-model.md), and
-  [ADR-0014](adr/0014-directional-shadow-mapping.md)).
+  [ADR-0014](adr/0014-directional-shadow-mapping.md)). The spatial hierarchy over
+  static geometry is in place as a `core` primitive (`SpatialBvh`, ADR-0053) but
+  the renderers do not use it yet.
 - 3D physics, and the parts of 2D physics not in the first cuts: continuous
   collision detection and a rotated broad-phase cell (see
   [ADR-0009](adr/0009-physics2d-system.md),
