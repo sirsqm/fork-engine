@@ -26,7 +26,7 @@ struct DecodedAudio {
     }
 };
 
-// Decodes 16-bit and 24-bit PCM WAV files.
+// Decodes PCM, float, and compressed WAV files.
 //
 // The parser is exposed separately from load() so it can be called on an
 // in-memory buffer: a test generates a tiny RIFF chunk and checks the decode
@@ -34,9 +34,12 @@ struct DecodedAudio {
 // `load` is the thin ResourceLoader wrapper the ResourceManager uses under the
 // "wav" scheme.
 //
-// Scope: PCM (`fmt` tag 1) and IEEE float (`fmt` tag 3) with 16 or 24 bit
-// integer samples, or 32-bit float samples. More bit depths and compressed
-// codecs are later work; a file outside this set returns an Error rather than
+// Scope: PCM (`fmt` tag 1), IEEE float (tag 3), and the compressed formats WAV
+// files actually carry - mu-law (tag 6), A-law (tag 7), and Microsoft IMA ADPCM
+// (tag 0x11) - with the bit depths each format defines. The companded and ADPCM
+// decoders are plain integer/table maths shared with the streaming path through
+// WavCodec.h, so they need no third-party decoder and are unit-testable on
+// hand-built blocks. A file outside this set returns an Error rather than
 // guessing.
 class WavLoader final : public ResourceLoader {
 public:

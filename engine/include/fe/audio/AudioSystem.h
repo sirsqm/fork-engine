@@ -6,10 +6,12 @@
 #include "fe/audio/AudioDevice.h"
 #include "fe/audio/AudioMixer.h"
 #include "fe/audio/AudioSource.h"
+#include "fe/audio/AudioStream.h"
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/systems/System.h"
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -56,6 +58,13 @@ public:
     // --- Configuration -----------------------------------------------------
     void set_device(AudioDevice* device) noexcept { device_ = device; }
     [[nodiscard]] AudioDevice* device() const noexcept { return device_; }
+
+    // The frame window a streaming source decodes per update, so a large
+    // request never materialises the whole sound. The mixer still consumes
+    // exactly the frames the frame's delta time needs; this bounds how much is
+    // decoded at once when that request is larger than the window.
+    void set_stream_block_frames(u32 frames) noexcept { stream_block_frames_ = frames == 0 ? 1 : frames; }
+    [[nodiscard]] u32 stream_block_frames() const noexcept { return stream_block_frames_; }
 
     // The sample rate the mixer runs at when no device is attached (or before
     // one is opened). When a device is attached its reported rate is used
@@ -119,15 +128,26 @@ public:
 
 private:
     // A voice plus the source it was created from, so the system can match them
-    // across frames and update settings that changed.
+    // across frames and update settings that changed. A streaming source also
+    // carries the open stream, so the decoded window survives across frames and
+    // the cursor advances with the mix.
     struct Entry {
         AudioSource* source = nullptr;
         Voice voice{};
+        std::shared_ptr<AudioStream> stream{};
+        std::string stream_path{};
+        std::vector<f32> stream_window{}; // scratch: the block decoded this frame
     };
+
+    // Rebuilds the entry's stream to match the source (opening or closing it as
+    // the `stream` flag or the clip path changes). Returns false when a stream
+    // was requested but could not be opened, so the source is treated as silent.
+    bool reconcile_stream(Entry& entry, const AudioSource& source);
 
     AudioDevice* device_ = nullptr;
     u32 sample_rate_ = 44100;
     u32 channels_ = 2;
+    u32 stream_block_frames_ = 4096;
 
     Vec3 listener_position_{};
     f32 master_gain_ = 1.0f;
