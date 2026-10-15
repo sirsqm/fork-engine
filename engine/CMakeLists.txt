@@ -71,6 +71,7 @@ set(FE_ENGINE_SOURCES
     src/mesh/GltfLoader.cpp
     src/scene3d/Camera3D.cpp
     src/scene3d/Scene3DTypes.cpp
+    src/debugdraw/DebugDraw.cpp
     src/audio/AudioDevice.cpp
     src/audio/AudioMixer.cpp
     src/audio/AudioSystem.cpp

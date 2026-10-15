@@ -206,8 +206,15 @@ is missing than ten roadmap items, and it is the precondition for a community.
       Oriented colliders, more joint types, and islands / sleeping remain,
       mirroring the 2D cuts; deferred behind the backend seam rather than chased
       to parity
-- [ ] Integration with the scene and the editor
-- [ ] Debug drawing
+- [x] Integration with the scene and the editor: the play schedule runs
+      `Physics3DSystem`, and the editor copies `Collider3D` / `RigidBody3D` into
+      the play scene, so a 3D scene plays with physics through the same path a
+      shipped game uses — see
+      [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)
+- [x] Debug drawing: a `debugdraw` module builds collider wireframes for a 2D or
+      a 3D scene (`DebugDrawList`) and a `DebugRenderer` draws them as a single
+      line list over the world camera, built on a new RHI line primitive — see
+      [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)
 
 ## M6 — Animation and audio
 

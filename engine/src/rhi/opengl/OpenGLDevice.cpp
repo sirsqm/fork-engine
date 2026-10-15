@@ -514,6 +514,8 @@ public:
         }
     }
 
+    void set_primitive_topology(PrimitiveTopology topology) override { topology_ = topology; }
+
     void bind_shader(Shader& shader) override {
         auto& gl_shader = static_cast<OpenGLShader&>(shader);
         gl_shader.bind();
@@ -559,7 +561,8 @@ public:
         if (index_count == 0) {
             return;
         }
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(index_count), GL_UNSIGNED_INT, nullptr);
+        const GLenum mode = topology_ == PrimitiveTopology::Lines ? GL_LINES : GL_TRIANGLES;
+        glDrawElements(mode, static_cast<GLsizei>(index_count), GL_UNSIGNED_INT, nullptr);
     }
 
     void read_pixels(u32 x, u32 y, u32 width, u32 height, std::span<u8> out) override {
@@ -578,6 +581,7 @@ private:
     RenderTarget* bound_target_ = nullptr;
     u32 default_framebuffer_width_ = 0;
     u32 default_framebuffer_height_ = 0;
+    PrimitiveTopology topology_ = PrimitiveTopology::Triangles;
     std::unordered_map<GLuint, VertexLayout> layouts_;
 };
 

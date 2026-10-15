@@ -18,6 +18,9 @@
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/RigidBody2D.h"
+#include "fe/physics3d/Collider3D.h"
+#include "fe/physics3d/Physics3DSystem.h"
+#include "fe/physics3d/RigidBody3D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/systems/FrameContext.h"
@@ -56,6 +59,26 @@ Node* add_falling_box(Scene& scene, f32 centre_y) {
     return node;
 }
 
+// A static 3D floor whose top face is at y = 0.
+void add_floor_3d(Scene& scene, f32 half_extent) {
+    Node* node = scene.create_node("Floor3D");
+    auto* collider = node->add_component<physics3d::Collider3D>();
+    collider->shape = physics3d::ShapeType3D::Box;
+    collider->half_extent = Vec3{half_extent, 0.5f, half_extent};
+    node->transform().position = Vec3{0.0f, -0.5f, 0.0f};
+}
+
+// A dynamic 3D sphere that starts high above the floor.
+Node* add_falling_sphere(Scene& scene, f32 centre_y) {
+    Node* node = scene.create_node("Ball");
+    auto* collider = node->add_component<physics3d::Collider3D>();
+    collider->shape = physics3d::ShapeType3D::Sphere;
+    collider->radius = 0.5f;
+    node->add_component<physics3d::RigidBody3D>()->mass = 1.0f;
+    node->transform().position = Vec3{0.0f, centre_y, 0.0f};
+    return node;
+}
+
 } // namespace
 
 TEST_CASE("the default play schedule includes the physics system") {
@@ -65,6 +88,7 @@ TEST_CASE("the default play schedule includes the physics system") {
     PlaySession session;
     REQUIRE_FALSE(session.start(authored));
     CHECK(session.schedule().find("Physics2DSystem") != nullptr);
+    CHECK(session.schedule().find("Physics3DSystem") != nullptr);
     CHECK(session.schedule().find("SpriteAnimationSystem") != nullptr);
 }
 
@@ -126,4 +150,67 @@ TEST_CASE("a body keeps falling while play advances, and the authored scene is u
 TEST_CASE("advancing a stopped session is reported as an error") {
     PlaySession session;
     CHECK(session.advance(step(1.0f / 60.0f)));
+}
+
+TEST_CASE("a 3D scene plays: the play copy simulates a falling sphere onto a static floor") {
+    Scene authored;
+    add_floor_3d(authored, 20.0f);
+    add_falling_sphere(authored, 6.0f);
+
+    // Register the copy factories exactly as EditorContext does, then drive the
+    // context's own play session so the whole editor path is used, including the
+    // 3D copy factories.
+    EditorContext context;
+    context.register_default_component_factories();
+    auto& session = context.play();
+    REQUIRE_FALSE(session.start(authored));
+
+    const Scene& play = session.play_scene();
+    const Node* ball = play.find_node_by_name("Ball");
+    REQUIRE(ball != nullptr);
+    // The 3D collider and body were copied into the play scene.
+    CHECK(ball->get_component<physics3d::Collider3D>() != nullptr);
+    CHECK(ball->get_component<physics3d::RigidBody3D>() != nullptr);
+
+    // Step two seconds of fixed 60 Hz frames.
+    for (int i = 0; i < 120; ++i) {
+        REQUIRE_FALSE(session.advance(step(1.0f / 60.0f)));
+    }
+
+    // The sphere's radius is 0.5, so resting on the floor puts its centre near
+    // y = 0.5. It fell from 6, so it moved a lot and did not tunnel through.
+    const f32 y = ball->transform().position.y;
+    CHECK(y < 1.0f);
+    CHECK(y > 0.4f);
+
+    // The authored scene is untouched: play simulates a copy.
+    CHECK(authored.find_node_by_name("Ball")->transform().position.y == doctest::Approx(6.0f));
+}
+
+TEST_CASE("a 3D and a 2D body in the same scene both fall, independently") {
+    Scene authored;
+    // A 2D floor and crate on the xy plane.
+    add_floor(authored, 20.0f);
+    add_falling_box(authored, 8.0f);
+    // A 3D floor and sphere, whose names do not collide with the 2D pair.
+    add_floor_3d(authored, 20.0f);
+    add_falling_sphere(authored, 8.0f);
+
+    EditorContext context;
+    context.register_default_component_factories();
+    auto& session = context.play();
+    REQUIRE_FALSE(session.start(authored));
+
+    for (int i = 0; i < 120; ++i) {
+        REQUIRE_FALSE(session.advance(step(1.0f / 60.0f)));
+    }
+
+    // Both bodies came to rest near their floor. The two systems are disjoint
+    // over the components they read, so neither disturbs the other.
+    const f32 crate_y = session.play_scene().find_node_by_name("Crate")->transform().position.y;
+    const f32 ball_y = session.play_scene().find_node_by_name("Ball")->transform().position.y;
+    CHECK(crate_y < 1.0f);
+    CHECK(crate_y > 0.4f);
+    CHECK(ball_y < 1.0f);
+    CHECK(ball_y > 0.4f);
 }
