@@ -38,6 +38,17 @@ public:
     // When several cameras exist, the renderer uses the first primary one.
     bool primary = true;
 
+    // Environment background: a vertical gradient drawn on a full-screen quad
+    // behind the geometry, from `background_bottom` at the horizon to
+    // `background_top` at the top of the frame. A vertical screen gradient is
+    // the cheapest environment that reads as a sky and needs no cubemap, which
+    // is the deliberate first cut of M4's "environment rendering" row. Set
+    // `background_enabled = false` for a flat clear instead, which is the
+    // behaviour every scene had before this existed.
+    bool background_enabled = false;
+    Vec3 background_top{0.32f, 0.52f, 0.85f};
+    Vec3 background_bottom{0.76f, 0.83f, 0.92f};
+
     // Builds the view-projection matrix for a viewport of the given pixel size,
     // using the owning node's world transform as the eye and orientation.
     [[nodiscard]] Mat4 view_projection(u32 viewport_width, u32 viewport_height) const noexcept;

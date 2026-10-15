@@ -207,6 +207,49 @@ void main() {
 }
 )glsl";
 
+// The environment background: a full-screen quad whose fragment colour is a
+// vertical gradient from `u_bottom_color` at the bottom of the frame to
+// `u_top_color` at the top. The quad's position is already in clip space, so no
+// camera matrix is needed and the gradient follows the screen rather than the
+// camera's pitch, which is the cheap, always-correct behaviour for a first cut.
+constexpr const char* kBackgroundVertexShaderSource = R"glsl(
+#version 330 core
+
+layout(location = 0) in vec2 a_position;
+layout(location = 1) in vec2 a_uv;
+
+out vec2 v_uv;
+
+void main() {
+    v_uv = a_uv;
+    gl_Position = vec4(a_position, 0.0, 1.0);
+}
+)glsl";
+
+constexpr const char* kBackgroundFragmentShaderSource = R"glsl(
+#version 330 core
+
+in vec2 v_uv;
+
+uniform vec3 u_top_color;
+uniform vec3 u_bottom_color;
+
+out vec4 frag_color;
+
+void main() {
+    frag_color = vec4(mix(u_bottom_color, u_top_color, v_uv.y), 1.0);
+}
+)glsl";
+
+// Two triangles covering clip space, UV (0,0) at the bottom-left so the gradient
+// runs bottom to top.
+constexpr std::array<f32, 16> kBackgroundQuadVertices = {
+    // position.xy   uv.xy
+    -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 1.0f,
+};
+
+constexpr std::array<u32, 6> kBackgroundQuadIndices = {0, 1, 2, 0, 2, 3};
+
 // The normal matrix is transpose(inverse(upper-left 3x3 of model)), so a
 // non-uniform scale does not skew normals. Returned in column-major order,
 // which is what the RHI uploads.
@@ -453,7 +496,8 @@ bool Renderer3D::refresh_cull_bvh(const std::vector<render::MeshInstance>& insta
     return true;
 }
 
-Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height) {
+Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                 const PostProcessSettings& settings) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(viewport_width > 0 && viewport_height > 0);
 
@@ -473,10 +517,6 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     std::vector<const Mesh*> meshes_seen;
     extract(scene, instances, &meshes_seen);
 
-    if (instances.empty()) {
-        return usize{0};
-    }
-
     // --- 2. Cull -----------------------------------------------------------
     // Reject instances whose world AABB lies wholly outside the view. The test is
     // conservative, so this can only save a draw. The frustum is built from the
@@ -486,7 +526,10 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     last_culled_ = static_cast<u32>(cull(instances, &frustum));
 
     // --- 3. Draw -----------------------------------------------------------
-    return draw(device, scene, view_projection, camera->eye(), instances, meshes_seen);
+    // The camera's background gradient and the post-processing chain are handled
+    // inside `draw_chain`, because both need the destination target bound.
+    return draw_chain(device, scene, view_projection, camera->eye(), *camera, instances, meshes_seen, settings,
+                      viewport_width, viewport_height);
 }
 
 Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
@@ -733,6 +776,134 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     });
 
     return static_cast<usize>(drawn);
+}
+
+Result<usize> Renderer3D::draw_chain(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
+                                     const Vec3& camera_position, const Camera3D& camera,
+                                     std::vector<render::MeshInstance>& instances,
+                                     const std::vector<const Mesh*>& meshes_seen, const PostProcessSettings& settings,
+                                     u32 width, u32 height) {
+    // Resolve the target the 3D pass should draw into and bind it *before* the
+    // background, so the gradient lands in the same image as the geometry: the
+    // caller's target when the chain is off, the off-screen target when it is on.
+    rhi::RenderTarget* caller_target = device.bound_render_target();
+    rhi::RenderTarget* pass_target = caller_target;
+    bool chained = false;
+    if (settings.enabled) {
+        if (Error target_error = ensure_scene_target(device, width, height); target_error) {
+            FE_LOG_ERROR("renderer3d: post-process target unavailable: %s", target_error.message().c_str());
+        } else if (Error shader_error = post_process_.initialize(device); shader_error) {
+            FE_LOG_ERROR("renderer3d: post-process shader unavailable: %s", shader_error.message().c_str());
+        } else {
+            pass_target = scene_target_.get();
+            chained = true;
+            device.bind_render_target(pass_target);
+            scene_target_->clear(rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+        }
+    }
+
+    // The background gradient is geometry-independent, so it draws even when the
+    // cull left nothing: an empty scene under a sky is a valid frame.
+    if (camera.background_enabled) {
+        if (Error error = ensure_background(device); error) {
+            FE_LOG_ERROR("renderer3d: background unavailable: %s", error.message().c_str());
+        } else {
+            draw_background(device, camera);
+        }
+    }
+
+    const Result<usize> drawn = draw(device, scene, view_projection, camera_position, instances, meshes_seen);
+
+    if (chained) {
+        // Restore the caller's target and grade the scene image into it. The
+        // source texture belongs to the off-screen target, so it is distinct from
+        // the destination's attachment and safe to sample.
+        device.bind_render_target(caller_target);
+        if (Error error = post_process_.apply(device, *scene_target_->color_texture(), settings); error) {
+            FE_LOG_ERROR("renderer3d: post-process pass failed: %s", error.message().c_str());
+        } else {
+            ++post_process_frames_;
+        }
+    }
+
+    return drawn;
+}
+
+Error Renderer3D::ensure_scene_target(rhi::Device& device, u32 width, u32 height) {
+    if (scene_target_ != nullptr && scene_target_width_ == width && scene_target_height_ == height) {
+        return Error::none();
+    }
+
+    rhi::RenderTargetDesc desc;
+    desc.name = "renderer3d_scene";
+    desc.width = width;
+    desc.height = height;
+    desc.depth = true; // The 3D pass depth-tests, so the off-screen image needs a depth buffer.
+    desc.sample_depth = false;
+    auto target = device.create_render_target(desc);
+    if (!target) {
+        return target.error();
+    }
+    scene_target_ = target.value();
+    scene_target_width_ = width;
+    scene_target_height_ = height;
+    return Error::none();
+}
+
+Error Renderer3D::ensure_background(rhi::Device& device) {
+    if (background_shader_ != nullptr) {
+        return Error::none();
+    }
+    if (background_attempted_) {
+        // A previous attempt failed; do not retry every frame.
+        return Error("background pass unavailable");
+    }
+    background_attempted_ = true;
+
+    rhi::ShaderDesc desc;
+    desc.name = "renderer3d_background";
+    desc.vertex_source = kBackgroundVertexShaderSource;
+    desc.fragment_source = kBackgroundFragmentShaderSource;
+    auto shader = device.create_shader(desc);
+    if (!shader) {
+        return shader.error();
+    }
+    background_shader_ = shader.value();
+
+    auto vertex_buffer = device.create_vertex_buffer(rhi::VertexLayout::position_uv(),
+                                                     static_cast<u32>(kBackgroundQuadVertices.size() * sizeof(f32)));
+    if (!vertex_buffer) {
+        return vertex_buffer.error();
+    }
+    background_quad_vertex_buffer_ = vertex_buffer.value();
+    background_quad_vertex_buffer_->update(std::span<const u8>(
+        reinterpret_cast<const u8*>(kBackgroundQuadVertices.data()), kBackgroundQuadVertices.size() * sizeof(f32)));
+
+    auto index_buffer = device.create_index_buffer(static_cast<u32>(kBackgroundQuadIndices.size()));
+    if (!index_buffer) {
+        return index_buffer.error();
+    }
+    background_quad_index_buffer_ = index_buffer.value();
+    background_quad_index_buffer_->update(std::span<const u8>(
+        reinterpret_cast<const u8*>(kBackgroundQuadIndices.data()), kBackgroundQuadIndices.size() * sizeof(u32)));
+
+    return Error::none();
+}
+
+void Renderer3D::draw_background(rhi::Device& device, const Camera3D& camera) {
+    FE_CHECK(background_shader_ != nullptr);
+
+    // A background fills the frame and must not occlude the geometry that follows,
+    // so it draws with no depth write and no depth test, and it does not blend.
+    device.set_depth_test(false);
+    device.set_blend_mode(rhi::BlendMode::None);
+    device.bind_shader(*background_shader_);
+    background_shader_->set_vec3("u_top_color", camera.background_top);
+    background_shader_->set_vec3("u_bottom_color", camera.background_bottom);
+    device.bind_vertex_buffer(*background_quad_vertex_buffer_);
+    device.bind_index_buffer(*background_quad_index_buffer_);
+    device.draw_indexed(static_cast<u32>(kBackgroundQuadIndices.size()));
+    ++background_draws_;
 }
 
 } // namespace fe::renderer3d

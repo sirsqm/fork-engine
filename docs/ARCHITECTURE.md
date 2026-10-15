@@ -85,7 +85,7 @@ everything  <-  runtime
 | `render` | The extraction seam: `render::SpriteInstance`/`MeshInstance`, the pure `extract`/`cull` steps both renderers share, and the world-AABB expansion culling uses (`docs/adr/0052-render-extraction-seam.md`) | core, scene, scene3d, mesh, resources |
 | `net` | The `Transport` seam (in-process loopback for tests, WebSocket planned), an authoritative `SessionServer` that orders every accepted edit, and the `SessionClient` a replica uses (`docs/adr/0049-net-transport-and-session-server.md`) | core, scene, serialization, session |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene, render |
-| `renderer3d` | 3D mesh rendering with a lit pass and directional shadow map | core, rhi, resources, scene, mesh, render |
+| `renderer3d` | 3D mesh rendering with a lit pass, directional shadow map, gradient environment, and an opt-in post-processing chain | core, rhi, resources, scene, mesh, render |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
 
 A new edge must point down this graph. Introducing an edge is an architectural
@@ -407,8 +407,9 @@ panel independent of the window: bind the target, draw, unbind, and blit
 `color_texture()`. A depth attachment is a renderbuffer by default; setting
 `RenderTargetDesc::sample_depth` makes it a texture instead, exposed through
 `depth_texture()`, which is what the directional shadow map needs. The seam is
-also where a future post-processing chain will attach, which is why it lives in
-`rhi` rather than in `Renderer2D`. `Device::begin_frame` always starts on the
+also what the 3D renderer's post-processing chain attaches to
+([ADR-0057](adr/0057-environment-and-post-processing.md)), which is why it lives
+in `rhi` rather than in `Renderer2D`. `Device::begin_frame` always starts on the
 window's default framebuffer, so a frame cannot leak into or out of a target.
 
 **`renderer2d::Renderer2D`** runs the extraction seam (section 5, below):
@@ -494,6 +495,24 @@ reports the depth-pass draw count.
 
 Batching, point/spot shadows, and a material graph are later work behind these
 same interfaces.
+
+**Environment and post-processing.** A camera can enable a full-screen gradient
+background (`background_enabled` with a top/bottom colour pair), drawn on a
+clip-space quad before the geometry with depth testing off, so it fills the frame
+without occluding or tinting anything ([ADR-0057](adr/0057-environment-and-post-processing.md)).
+It is a screen-space vertical gradient, the cheapest environment that reads as a
+sky and needs no cubemap; a cubemap sky is a later step behind the same
+`draw_background` call site.
+
+`render()` takes an optional `renderer3d::PostProcessSettings`. When enabled, the
+3D pass renders into a lazily created off-screen colour target and
+`renderer3d::PostProcess` grades that image - exposure, an optional Reinhard
+tonemap, and a vignette - into the caller's target. The window's default
+framebuffer cannot be sampled as a texture, so the off-screen target is what makes
+grading possible on the window at all. When the settings are disabled nothing
+changes: the pass draws straight to the caller's target and no target is
+allocated. `post_process_frames()` and `background_draws()` report that each pass
+ran, so a test proves submission without reading back pixels.
 
 ### The extraction seam
 
@@ -981,13 +1000,15 @@ Every milestone must build and pass its tests before the next one begins.
 ## 12. What is deliberately not here yet
 
 - The parts of 3D rendering beyond the forward lit pass and directional shadows:
-  batching, point/spot shadows, cascaded shadow maps, skeletal animation,
-  environment rendering and post-processing, and a material graph (see
+  batching, point/spot shadows, cascaded shadow maps, skeletal animation, a
+  cubemap/atmospheric sky (the gradient environment is in place), a multi-pass
+  effect stack (exposure/tonemap/vignette is in place), and a material graph (see
   [ADR-0010](adr/0010-3d-rendering-foundation.md),
   [ADR-0011](adr/0011-frustum-culling.md),
-  [ADR-0012](adr/0012-forward-lighting-model.md), and
-  [ADR-0014](adr/0014-directional-shadow-mapping.md)). The spatial hierarchy over
-  static geometry is in place and wired: `SpatialBvh` (ADR-0053) backs
+  [ADR-0012](adr/0012-forward-lighting-model.md),
+  [ADR-0014](adr/0014-directional-shadow-mapping.md), and
+  [ADR-0057](adr/0057-environment-and-post-processing.md)). The spatial hierarchy
+  over static geometry is in place and wired: `SpatialBvh` (ADR-0053) backs
   `Renderer3D`'s cull pass (ADR-0056).
 - 3D physics, and the parts of 2D physics not in the first cuts: continuous
   collision detection and a rotated broad-phase cell (see

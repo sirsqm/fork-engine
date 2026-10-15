@@ -85,6 +85,19 @@ struct VertexLayout {
         };
         return layout;
     }
+
+    [[nodiscard]] static VertexLayout position_uv() {
+        // vec2 clip-space position, vec2 uv - the full-screen quad format used
+        // by a background or post-processing pass. The position is already in
+        // clip space, so the pass needs no camera matrix.
+        VertexLayout layout;
+        layout.stride = 2 * 4 + 2 * 4;
+        layout.attributes = {
+            {0, VertexFormat::Float2, 0},
+            {1, VertexFormat::Float2, 8},
+        };
+        return layout;
+    }
 };
 
 enum class BlendMode : u8 {
