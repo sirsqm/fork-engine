@@ -5,6 +5,8 @@
 #include "fe/core/Log.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/RigidBody2D.h"
+#include "fe/physics3d/Collider3D.h"
+#include "fe/physics3d/RigidBody3D.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
@@ -97,6 +99,37 @@ void copy_rigid_body(const Node& source_node, Node& destination_node) {
     destination->affected_by_gravity = source->affected_by_gravity;
 }
 
+void copy_collider3d(const Node& source_node, Node& destination_node) {
+    const auto* source = source_node.get_component<physics3d::Collider3D>();
+    if (source == nullptr) {
+        return;
+    }
+    auto* destination = destination_node.add_component<physics3d::Collider3D>();
+    destination->shape = source->shape;
+    destination->half_extent = source->half_extent;
+    destination->radius = source->radius;
+    destination->restitution = source->restitution;
+    destination->friction = source->friction;
+}
+
+void copy_rigid_body3d(const Node& source_node, Node& destination_node) {
+    const auto* source = source_node.get_component<physics3d::RigidBody3D>();
+    if (source == nullptr) {
+        return;
+    }
+    auto* destination = destination_node.add_component<physics3d::RigidBody3D>();
+    destination->velocity = source->velocity;
+    destination->angular_velocity = source->angular_velocity;
+    destination->torque = source->torque;
+    destination->mass = source->mass;
+    destination->inertia = source->inertia;
+    destination->linear_damping = source->linear_damping;
+    destination->angular_damping = source->angular_damping;
+    destination->kinematic = source->kinematic;
+    destination->affected_by_gravity = source->affected_by_gravity;
+    destination->fixed_rotation = source->fixed_rotation;
+}
+
 } // namespace
 
 EditorContext::EditorContext() = default;
@@ -109,6 +142,10 @@ void EditorContext::register_default_component_factories() {
     // colliders and bodies (Physics2DSystem runs in the play schedule).
     play_.register_component_factory(physics2d::Collider2D::kTypeName, copy_collider);
     play_.register_component_factory(physics2d::RigidBody2D::kTypeName, copy_rigid_body);
+    // The 3D counterparts, so a 3D scene plays too (Physics3DSystem runs in the
+    // play schedule alongside the 2D one).
+    play_.register_component_factory(physics3d::Collider3D::kTypeName, copy_collider3d);
+    play_.register_component_factory(physics3d::RigidBody3D::kTypeName, copy_rigid_body3d);
 }
 
 Error EditorContext::new_scene(ResourceManager* resources) {

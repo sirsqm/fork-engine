@@ -98,6 +98,29 @@ struct VertexLayout {
         };
         return layout;
     }
+
+    [[nodiscard]] static VertexLayout position_color() {
+        // vec3 position, vec4 colour - the debug-line vertex format. A line list
+        // carries its own colour per endpoint so a wireframe can be tinted
+        // without a uniform per draw.
+        VertexLayout layout;
+        layout.stride = 3 * 4 + 4 * 4;
+        layout.attributes = {
+            {0, VertexFormat::Float3, 0},
+            {1, VertexFormat::Float4, 12},
+        };
+        return layout;
+    }
+};
+
+// How the bound index buffer's indices are assembled into primitives.
+//
+// Triangles is the default and what every existing pass uses; a debug line pass
+// binds Lines. Kept as device state rather than a draw parameter so the existing
+// `draw_indexed(index_count)` signature is unchanged.
+enum class PrimitiveTopology : u8 {
+    Triangles,
+    Lines,
 };
 
 enum class BlendMode : u8 {

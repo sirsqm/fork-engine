@@ -83,6 +83,7 @@ everything  <-  runtime
 | `pack` | Asset pack container, writer, and the runtime mount that reads a pack like a directory | core, resources |
 | `jobs` *(planned)* | Thread pool, `parallel_for`, and a task graph; consumed by systems and by render extraction | core |
 | `render` | The extraction seam: `render::SpriteInstance`/`MeshInstance`, the pure `extract`/`cull` steps both renderers share, and the world-AABB expansion culling uses (`docs/adr/0052-render-extraction-seam.md`) | core, scene, scene3d, mesh, resources |
+| `debugdraw` | Collider wireframes for a 2D or a 3D scene: a CPU-side `DebugDrawList` and a `DebugRenderer` that draws it as one line list (`docs/adr/0058-editor-physics3d-and-debug-draw.md`) | core, rhi, scene, physics2d, physics3d |
 | `net` | The `Transport` seam (in-process loopback for tests, WebSocket planned), an authoritative `SessionServer` that orders every accepted edit, and the `SessionClient` a replica uses (`docs/adr/0049-net-transport-and-session-server.md`) | core, scene, serialization, session |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene, render |
 | `renderer3d` | 3D mesh rendering with a lit pass, directional shadow map, gradient environment, and an opt-in post-processing chain | core, rhi, resources, scene, mesh, render |
@@ -315,6 +316,21 @@ third-party solver (Jolt) can replace it without touching gameplay or the editor
 See [ADR-0031](adr/0031-physics3d-and-backend-seam.md) for the seam and
 [ADR-0043](adr/0043-physics3d-angular-dynamics.md) for the angular cut.
 
+**In the editor**, play-in-editor runs both physics systems: `PlaySession`'s
+default schedule registers `Physics2DSystem` and `Physics3DSystem`, and
+`EditorContext` registers copy factories for `Collider2D`, `RigidBody2D`,
+`Collider3D`, and `RigidBody3D`, so an authored 2D or 3D scene simulates in play
+while the authored scene is untouched. See
+[ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md).
+
+**Debug drawing** is the `debugdraw` module: `DebugDrawList` collects world-space
+lines (collider wireframes for a 2D or a 3D scene) and `DebugRenderer` draws them
+as one line list over the world camera. It is a separate module, not a system,
+because `physics3d` depends on `systems` and a system naming a `Collider3D` would
+close a cycle. The pass uses a new RHI line primitive
+(`Device::set_primitive_topology`), which is inert for every existing pass. See
+[ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md).
+
 ### Audio as a module
 
 `audio` sits beside `physics2d` in the graph, not inside a renderer: sound is a
@@ -411,6 +427,14 @@ also what the 3D renderer's post-processing chain attaches to
 ([ADR-0057](adr/0057-environment-and-post-processing.md)), which is why it lives
 in `rhi` rather than in `Renderer2D`. `Device::begin_frame` always starts on the
 window's default framebuffer, so a frame cannot leak into or out of a target.
+
+**Primitive topology.** `Device::set_primitive_topology` chooses how the next
+indexed draw assembles its indices: `Triangles` (the default, what every
+existing pass uses) or `Lines`. It is device state rather than a parameter on
+`draw_indexed`, so the draw signature is unchanged and no existing pass is
+touched. A debug pass that draws a line list is the first user
+([ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)); a `VertexLayout::position_color`
+carries a per-vertex colour for it.
 
 **`renderer2d::Renderer2D`** runs the extraction seam (section 5, below):
 it extracts the scene's sprites into a flat array, culls it against the view
@@ -1010,13 +1034,18 @@ Every milestone must build and pass its tests before the next one begins.
   [ADR-0057](adr/0057-environment-and-post-processing.md)). The spatial hierarchy
   over static geometry is in place and wired: `SpatialBvh` (ADR-0053) backs
   `Renderer3D`'s cull pass (ADR-0056).
-- 3D physics, and the parts of 2D physics not in the first cuts: continuous
-  collision detection and a rotated broad-phase cell (see
+- The parts of physics not in the first cuts: continuous collision detection, a
+  rotated broad-phase cell, oriented 3D colliders, and 3D islands / sleeping.
+  3D physics is in place and integrated with the editor, and collider debug
+  drawing exists for both 2D and 3D scenes (see
   [ADR-0009](adr/0009-physics2d-system.md),
   [ADR-0013](adr/0013-physics2d-queries-events-angular.md),
   [ADR-0021](adr/0021-physics2d-joints.md),
-  [ADR-0023](adr/0023-physics2d-broadphase.md), and
-  [ADR-0037](adr/0037-physics2d-oriented-boxes-offsets.md)).
+  [ADR-0023](adr/0023-physics2d-broadphase.md),
+  [ADR-0037](adr/0037-physics2d-oriented-boxes-offsets.md),
+  [ADR-0031](adr/0031-physics3d-and-backend-seam.md),
+  [ADR-0043](adr/0043-physics3d-angular-dynamics.md), and
+  [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)).
 - The parts of audio not in the first cut: 3D positional attenuation, streaming
   and large-file playback, compressed codecs, and audio buses / mixing groups
   (see [ADR-0016](adr/0016-audio-module.md)).

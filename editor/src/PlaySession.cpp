@@ -4,6 +4,7 @@
 
 #include "fe/core/Log.h"
 #include "fe/physics2d/Physics2DSystem.h"
+#include "fe/physics3d/Physics3DSystem.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/systems/SpriteAnimationSystem.h"
@@ -22,6 +23,13 @@ void PlaySession::register_default_systems() {
     // significant (ADR-0008).
     if (schedule_.find("Physics2DSystem") == nullptr) {
         schedule_.add_system<physics2d::Physics2DSystem>();
+    }
+    // The 3D counterpart runs after the 2D one. The two are disjoint over the
+    // components they read (a node carries a Collider2D or a Collider3D, not
+    // both), so the order between them is not semantically significant; it is
+    // fixed so a frame's system list is deterministic and greppable.
+    if (schedule_.find("Physics3DSystem") == nullptr) {
+        schedule_.add_system<physics3d::Physics3DSystem>();
     }
 }
 

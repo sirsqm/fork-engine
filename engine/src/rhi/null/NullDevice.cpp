@@ -158,6 +158,7 @@ public:
     void set_viewport(u32, u32, u32, u32) override {}
     void set_blend_mode(BlendMode) override {}
     void set_depth_test(bool) override {}
+    void set_primitive_topology(PrimitiveTopology) override {}
     void bind_shader(Shader&) override {}
     void bind_vertex_buffer(Buffer&) override {}
     void bind_index_buffer(Buffer&) override {}

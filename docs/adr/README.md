@@ -63,6 +63,7 @@ rather than editing it.
 | [0055](0055-editor-profiler-panel.md) | An in-editor profiler panel fed by the core profiler | Accepted |
 | [0056](0056-renderer3d-spatial-cull.md) | A spatial-hierarchy cull in the 3D renderer | Accepted |
 | [0057](0057-environment-and-post-processing.md) | Environment rendering and a post-processing chain | Accepted |
+| [0058](0058-editor-physics3d-and-debug-draw.md) | 3D physics in the editor, and debug drawing | Accepted |
 
 ## Format
 

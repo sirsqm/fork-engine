@@ -63,6 +63,11 @@ public:
     virtual void set_blend_mode(BlendMode mode) = 0;
     virtual void set_depth_test(bool enabled) = 0;
 
+    // How the next indexed draw assembles its indices. Defaults to Triangles, so
+    // a pass that never calls this is unaffected. A debug-line pass binds Lines;
+    // it is the caller's job to set it back.
+    virtual void set_primitive_topology(PrimitiveTopology topology) = 0;
+
     // --- Binding and drawing ----------------------------------------------
     virtual void bind_shader(Shader& shader) = 0;
     virtual void bind_vertex_buffer(Buffer& buffer) = 0;
