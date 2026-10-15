@@ -6,6 +6,7 @@
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/mesh/Mesh.h"
+#include "fe/render/RenderExtract.h"
 #include "fe/rhi/Device.h"
 
 #include <array>
@@ -26,15 +27,16 @@ namespace renderer3d {
 
 // Draws a Scene's 3D content through the RHI.
 //
-// Responsibilities:
-//   * Walk the scene, collect mesh renderers, and pair each with its world
-//     transform.
-//   * Reject instances whose world-space bounds lie outside the camera frustum,
-//     so they never reach the GPU.
-//   * Cache GPU vertex/index buffers per mesh, uploading on first use and
-//     evicting buffers for meshes that are no longer alive.
-//   * Bind the lit shader once per frame and issue one indexed draw per visible
-//     mesh instance.
+// Responsibilities, in the order render() performs them:
+//   * Extract: walk the scene and emit a flat array of `render::MeshInstance`,
+//     each carrying its mesh's world-space AABB.
+//   * Cull: reject instances whose world AABB lies outside the camera frustum.
+//   * Draw: cache GPU vertex/index buffers per mesh, bind the lit shader, and
+//     issue one indexed draw per visible instance.
+//
+// The first two steps are the extraction seam (ADR-0017, ADR-0052) and are
+// public. Extraction also records every mesh seen (culled or not), which the
+// buffer sweep uses.
 //
 // Non-responsibilities: it does not own the window or the frame, does not
 // resolve the depth policy beyond enabling depth testing for its pass, and does
@@ -47,7 +49,7 @@ namespace renderer3d {
 // batching and material sorting are later revisions that do not change this
 // interface.
 //
-// Culling model: culling tests each mesh's world-space AABB against the six
+// Culling model: culling tests each instance's world-space AABB against the six
 // frustum planes and is conservative - a box that straddles a plane is kept - so
 // it can only save a draw, never hide a visible mesh. It is a flat pass, not a
 // spatial hierarchy: the renderer still visits every node. A tree over static
@@ -85,6 +87,29 @@ public:
     // Draw calls + culled instances is the number of drawable instances seen;
     // both are reported so a test can assert culling happened without guessing.
     [[nodiscard]] u32 last_culled() const noexcept { return last_culled_; }
+
+    // --- Extraction seam ---------------------------------------------------
+    // render() is these three steps in sequence. They are public so a caller
+    // (and a test) can run a step in isolation, and so the culling step can be
+    // handed a frustum of its own choosing.
+
+    // Step 1: collect the scene's drawable mesh instances into `out` (cleared
+    // first), and append every referenced mesh to `meshes_seen` (never cleared
+    // here) for the caller's buffer-liveness sweep. No GPU work.
+    void extract(const Scene& scene, std::vector<render::MeshInstance>& out,
+                 std::vector<const Mesh*>* meshes_seen) const;
+
+    // Step 2: drop instances whose world AABB lies wholly outside `frustum`; a
+    // null frustum keeps everything. Returns the number dropped. A pure function
+    // of `out`, so it is testable with no scene.
+    [[nodiscard]] static usize cull(std::vector<render::MeshInstance>& out, const Frustum* frustum);
+
+    // Step 3: acquire mesh buffers and issue the shadow and main passes over
+    // `instances`. `view_projection` and `camera_position` come from the active
+    // camera, which the caller has already resolved. Returns the number drawn.
+    [[nodiscard]] Result<usize> draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
+                                     const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
+                                     const std::vector<const Mesh*>& meshes_seen);
 
     // The number of point/spot lights forwarded to the shader in the last
     // frame, after the per-frame cap. Bounded by kMaxPointLights/kMaxSpotLights.

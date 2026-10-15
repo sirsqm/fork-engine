@@ -294,8 +294,11 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       `benchmarks/check_regression.py` compares against the committed baseline
       and fails past a coarse tolerance, and a dedicated CI job runs it
       ([ADR-0033](adr/0033-performance-regression-gate.md))
-- [ ] Render extraction: split both renderers into "extract a flat instance
-      list" and "issue draws" (the data-oriented seam)
+- [x] Render extraction: split both renderers into "extract a flat instance
+      list" and "issue draws" (the data-oriented seam) — a shared `render` module
+      holds `render::SpriteInstance`/`MeshInstance` and the pure extract/cull
+      steps; each renderer's `render()` is extract → cull → draw, and the draw
+      step does no culling ([ADR-0052](adr/0052-render-extraction-seam.md))
 - [ ] Job system: a `jobs` module (thread pool, `parallel_for`, task graph);
       `FrameContext` exposes it to systems
 - [ ] Parallel extraction and culling: chunk the instance array; output must be

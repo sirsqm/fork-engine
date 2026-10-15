@@ -222,32 +222,10 @@ void main() {
     return out;
 }
 
-// The world-space axis-aligned bounding box of a local AABB under `model`.
-//
-// Transforming the eight corners and taking the min/max is exact for an AABB
-// (the extremes of a linear map over a box occur at vertices) and cheap enough
-// for the handful of meshes a frame touches. The tighter alternative - fitting
-// an oriented box - buys very little here and complicates the frustum test.
-void expand_to_world_aabb(const Vec3& local_min, const Vec3& local_max, const Mat4& model, Vec3& out_min,
-                          Vec3& out_max) noexcept {
-    const std::array<Vec3, 8> corners = {
-        Vec3{local_min.x, local_min.y, local_min.z}, Vec3{local_max.x, local_min.y, local_min.z},
-        Vec3{local_min.x, local_max.y, local_min.z}, Vec3{local_max.x, local_max.y, local_min.z},
-        Vec3{local_min.x, local_min.y, local_max.z}, Vec3{local_max.x, local_min.y, local_max.z},
-        Vec3{local_min.x, local_max.y, local_max.z}, Vec3{local_max.x, local_max.y, local_max.z},
-    };
-    out_min = transform_point(model, corners[0]);
-    out_max = out_min;
-    for (usize i = 1; i < corners.size(); ++i) {
-        const Vec3 p = transform_point(model, corners[i]);
-        out_min.x = std::min(out_min.x, p.x);
-        out_min.y = std::min(out_min.y, p.y);
-        out_min.z = std::min(out_min.z, p.z);
-        out_max.x = std::max(out_max.x, p.x);
-        out_max.y = std::max(out_max.y, p.y);
-        out_max.z = std::max(out_max.z, p.z);
-    }
-}
+// The world-space AABB of a local AABB under `model` now lives in the shared
+// extraction seam (`fe/render/RenderExtract.h`), because extraction bakes it
+// into each `render::MeshInstance` and the culling pass is a pure function of
+// that array. See ADR-0052.
 
 // Builds a world-to-light-clip matrix for a directional shadow map that covers
 // the given world AABB.
@@ -404,6 +382,15 @@ Error Renderer3D::ensure_shadow_target(rhi::Device& device) {
     return Error::none();
 }
 
+void Renderer3D::extract(const Scene& scene, std::vector<render::MeshInstance>& out,
+                         std::vector<const Mesh*>* meshes_seen) const {
+    render::extract_meshes(scene, out, meshes_seen);
+}
+
+usize Renderer3D::cull(std::vector<render::MeshInstance>& out, const Frustum* frustum) {
+    return render::cull_meshes(out, frustum);
+}
+
 Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(viewport_width > 0 && viewport_height > 0);
@@ -419,42 +406,42 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
         return usize{0};
     }
 
-    // --- 1. Collect drawable instances -------------------------------------
-    struct Instance {
-        const MeshRenderer3D* renderer;
-        const Mesh* mesh;
-        Mat4 model;
-    };
-    std::vector<Instance> instances;
-
-    // Every mesh referenced this frame, including culled ones. The buffer sweep
-    // below keys off this, not off `instances`: a mesh that is merely off screen
-    // this frame must keep its GPU buffers, or it would re-upload every time it
-    // came back into view.
+    // --- 1. Extract --------------------------------------------------------
+    std::vector<render::MeshInstance> instances;
     std::vector<const Mesh*> meshes_seen;
-
-    scene.for_each_node([&](Node& node) {
-        const auto* renderer = node.get_component<MeshRenderer3D>();
-        if (renderer == nullptr || !renderer->has_mesh()) {
-            return;
-        }
-        const auto* mesh = dynamic_cast<const Mesh*>(renderer->mesh.get());
-        if (mesh == nullptr || mesh->index_count() == 0) {
-            return;
-        }
-        meshes_seen.push_back(mesh);
-        instances.push_back(Instance{renderer, mesh, node.world_matrix()});
-    });
+    extract(scene, instances, &meshes_seen);
 
     if (instances.empty()) {
         return usize{0};
     }
 
-    // --- 2. Frame constants -------------------------------------------------
+    // --- 2. Cull -----------------------------------------------------------
+    // Reject instances whose world AABB lies wholly outside the view. The test is
+    // conservative, so this can only save a draw. The frustum is built from the
+    // same matrix the draw uses, so the two can never disagree.
     const Mat4 view_projection = camera->view_projection(viewport_width, viewport_height);
-    const Vec3 camera_position = camera->eye();
+    const Frustum frustum = Frustum::from_view_projection(view_projection);
+    last_culled_ = static_cast<u32>(cull(instances, &frustum));
 
-    // --- Gather lights ------------------------------------------------------
+    // --- 3. Draw -----------------------------------------------------------
+    return draw(device, scene, view_projection, camera->eye(), instances, meshes_seen);
+}
+
+Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
+                               const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
+                               const std::vector<const Mesh*>& meshes_seen) {
+    FE_CHECK(shader_ != nullptr);
+
+    last_draw_calls_ = 0;
+    last_point_lights_ = 0;
+    last_spot_lights_ = 0;
+    last_shadow_casters_ = 0;
+
+    if (instances.empty()) {
+        return usize{0};
+    }
+
+    // --- Frame constants ----------------------------------------------------
     // Point and spot lights need their node's world position (and, for spots,
     // the node's forward direction), so they are collected here where the node
     // is still in hand. Brightness is intensity scaled by range, which is a
@@ -511,23 +498,6 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     last_point_lights_ = static_cast<u32>(point_lights.size());
     last_spot_lights_ = static_cast<u32>(spot_lights.size());
 
-    // --- 3. Frustum culling -------------------------------------------------
-    // Build the frustum once and reject instances whose world AABB lies wholly
-    // outside it. This is conservative (a straddling box is kept), so culling
-    // can only ever save a draw, never hide a visible mesh.
-    const Frustum frustum = Frustum::from_view_projection(view_projection);
-    std::erase_if(instances, [&](const Instance& instance) {
-        Vec3 world_min{};
-        Vec3 world_max{};
-        expand_to_world_aabb(instance.mesh->bounds_min(), instance.mesh->bounds_max(), instance.model, world_min,
-                             world_max);
-        if (frustum.intersects_aabb(world_min, world_max)) {
-            return false;
-        }
-        ++last_culled_;
-        return true;
-    });
-
     const DirectionalLight3D* light = find_directional_light(scene);
     const Vec3 light_direction = light != nullptr ? light->direction.normalized() : Vec3{0.0f, -1.0f, 0.0f};
     const Vec3 light_color = light != nullptr ? light->color : Vec3{1.0f, 1.0f, 1.0f};
@@ -548,11 +518,11 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
         Vec3 scene_min{};
         Vec3 scene_max{};
         bool bounds_valid = false;
-        for (const Instance& instance : instances) {
-            Vec3 world_min{};
-            Vec3 world_max{};
-            expand_to_world_aabb(instance.mesh->bounds_min(), instance.mesh->bounds_max(), instance.model, world_min,
-                                 world_max);
+        for (const render::MeshInstance& instance : instances) {
+            // The world AABB was computed once at extraction; the shadow fit
+            // reads it rather than re-expanding the mesh's local bounds.
+            const Vec3& world_min = instance.world_min;
+            const Vec3& world_max = instance.world_max;
             if (!bounds_valid) {
                 scene_min = world_min;
                 scene_max = world_max;
@@ -579,7 +549,7 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
             device.bind_shader(*shadow_shader_);
             shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
 
-            for (const Instance& instance : instances) {
+            for (const render::MeshInstance& instance : instances) {
                 auto gpu = acquire_mesh(device, *instance.mesh);
                 if (!gpu) {
                     continue;
@@ -660,7 +630,7 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     }
 
     // --- 5. Draw ------------------------------------------------------------
-    for (const Instance& instance : instances) {
+    for (const render::MeshInstance& instance : instances) {
         auto gpu = acquire_mesh(device, *instance.mesh);
         if (!gpu) {
             FE_LOG_ERROR("renderer3d: %s", gpu.error().message().c_str());

@@ -82,9 +82,10 @@ everything  <-  runtime
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
 | `pack` | Asset pack container, writer, and the runtime mount that reads a pack like a directory | core, resources |
 | `jobs` *(planned)* | Thread pool, `parallel_for`, and a task graph; consumed by systems and by render extraction | core |
+| `render` | The extraction seam: `render::SpriteInstance`/`MeshInstance`, the pure `extract`/`cull` steps both renderers share, and the world-AABB expansion culling uses (`docs/adr/0052-render-extraction-seam.md`) | core, scene, scene3d, mesh, resources |
 | `net` | The `Transport` seam (in-process loopback for tests, WebSocket planned), an authoritative `SessionServer` that orders every accepted edit, and the `SessionClient` a replica uses (`docs/adr/0049-net-transport-and-session-server.md`) | core, scene, serialization, session |
-| `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
-| `renderer3d` | 3D mesh rendering with a lit pass and directional shadow map | core, rhi, resources, scene, mesh |
+| `renderer2d` | Batched 2D rendering | core, rhi, resources, scene, render |
+| `renderer3d` | 3D mesh rendering with a lit pass and directional shadow map | core, rhi, resources, scene, mesh, render |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
 
 A new edge must point down this graph. Introducing an edge is an architectural
@@ -406,11 +407,13 @@ also where a future post-processing chain will attach, which is why it lives in
 `rhi` rather than in `Renderer2D`. `Device::begin_frame` always starts on the
 window's default framebuffer, so a frame cannot leak into or out of a target.
 
-**`renderer2d::Renderer2D`** walks a scene, collects sprites, sorts them into a
-stable draw order, builds a vertex/index stream in CPU memory, uploads it in
-batches, and issues one indexed draw per texture batch. Sprites that share a
-texture and layer collapse into a single draw call. A 1×1 white texture stands in
-for sprites without one, so an untextured sprite renders as a solid quad.
+**`renderer2d::Renderer2D`** runs the extraction seam (section 5, below):
+it extracts the scene's sprites into a flat array, culls it against the view
+frustum, sorts the survivors into a stable draw order, builds a vertex/index
+stream in CPU memory, uploads it in batches, and issues one indexed draw per
+texture batch. Sprites that share a texture and layer collapse into a single draw
+call. A 1×1 white texture stands in for sprites without one, so an untextured
+sprite renders as a solid quad.
 
 **3D** is a separate renderer with its own pass structure, sharing the same
 `rhi::Device` (see [ADR-0010](adr/0010-3d-rendering-foundation.md)). The 2D and
@@ -428,8 +431,9 @@ into one `Mesh` per primitive; it reads through `ResourceSource` like every othe
 loader, so a mounted pack is served unchanged
 ([ADR-0040](adr/0040-gltf-importer.md)).
 
-**`renderer3d::Renderer3D`** walks the scene, pairs each `MeshRenderer3D` with
-its node's world matrix, and issues one indexed draw per instance. It owns a
+**`renderer3d::Renderer3D`** runs the same seam: it extracts each
+`MeshRenderer3D` with its node's world matrix and the mesh's world-space AABB
+into a flat array, culls it, then issues one indexed draw per instance. It owns a
 buffer cache keyed by the mesh, uploading on first use and sweeping dead entries
 each frame, so a shared mesh is uploaded once. The pass is a single forward
 Blinn-Phong shader: albedo × (ambient + the sum of the light contributions),
@@ -455,12 +459,13 @@ owning node is still in hand — and the brightest are kept when a scene exceeds
 uniforms. Point and spot falloff reaches zero at the light's `range`, so a
 light's influence is finite.
 
-**Culling.** `Renderer3D` rejects instances whose world-space AABB lies wholly
-outside the camera frustum before they reach the GPU (ADR-0011). `core::Frustum`
-extracts the six planes from a view-projection matrix; the test is conservative
-(a box straddling a plane is kept), so it can only save a draw, never hide a
-visible mesh. It is a flat pass, not a spatial hierarchy — the leaf operation a
-BVH would call.
+**Culling.** Both renderers reject instances whose world-space AABB lies wholly
+outside the camera frustum, as the seam's culling step, before they reach the GPU
+(ADR-0011, ADR-0052). `core::Frustum` extracts the six planes from a
+view-projection matrix; the test is conservative (a box straddling a plane is
+kept), so it can only save a draw, never hide a visible instance. It is a flat
+pass over the extracted array, not a spatial hierarchy — the leaf operation a BVH
+would call. `last_culled()` reports how many instances the step dropped.
 
 **Shadows.** When the scene has a directional light, `Renderer3D` runs a
 depth-only pass before the main pass, rendering the culled instances into a
@@ -475,23 +480,36 @@ reports the depth-pass draw count.
 Batching, point/spot shadows, a spatial tree, and a material graph are later work
 behind these same interfaces.
 
-### The extraction seam (planned)
+### The extraction seam
 
-The renderers today walk the hierarchy and issue draws in the same pass. As the
-scene grows that is both cache-hostile and hard to parallelise, so the planned
-structure separates the two steps — see
-[ADR-0017](adr/0017-performance-strategy.md):
+Both renderers are structured as the extraction seam
+([ADR-0017](adr/0017-performance-strategy.md),
+[ADR-0052](adr/0052-render-extraction-seam.md)). `render()` is three steps, and
+the first two are public so a caller or a test can run one in isolation:
 
-- **Extract** — one walk of the hierarchy that emits a flat array of instances
-  (mesh or sprite, world matrix, material handle, visibility).
-- **Issue** — draws the flat array, after sorting, batching, culling, and
-  instancing have operated on it.
+- **Extract** — one walk of the hierarchy that fills a flat array of instances.
+  `render::SpriteInstance` carries the texture, the sprite component, the world
+  matrix, and the resolved quad size; `render::MeshInstance` carries the mesh,
+  its renderer component, the world matrix, and the mesh's world-space AABB.
+  Extraction does no GPU work. `Renderer3D::extract` also records every mesh seen
+  (culled or not), which its buffer-liveness sweep keys off.
+- **Cull** — a `static` function over that array that drops instances whose world
+  AABB lies wholly outside the frustum. It is a pure function of the array: the
+  world AABB is baked in at extraction, so culling needs neither the `Mesh` nor
+  the `Scene`. A null frustum culls nothing.
+- **Draw** — sort, build geometry, upload, and issue draws over the array it is
+  handed. It does no culling; that is a separate, explicit step.
+
+`render()` runs the steps in that order and builds the frustum from the same
+view-projection the draw uses, so culling and drawing can never disagree about
+what is on screen. `drawn + last_culled()` is the number of extracted instances.
 
 The flat array is the unit a job system chunks and the unit instancing and a
 render graph build on. The authoring model (the scene graph) and the processing
 model (the array) are deliberately different, and this seam is the only place
 they meet. It is the concrete form of the hybrid architecture
-([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md)) in the hot path.
+([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md)) in the hot path, and the
+prerequisite for the parallel culling and instancing still planned in M9.
 
 ### Camera selection
 
@@ -976,10 +994,11 @@ Every milestone must build and pass its tests before the next one begins.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`
   module and parallel extraction are planned in M9.
-- The performance work itself: the extraction seam and instancing are planned
-  in M9 (section 5 describes the extraction seam the rest depends on); the
-  profiler, the benchmark gate, and the frame arena (the `core` primitive, not
-  yet wired into the frame loop) are in place.
+- The performance work itself: the extraction seam is in place (section 5,
+  [ADR-0052](adr/0052-render-extraction-seam.md)); the profiler, the benchmark
+  gate, and the frame arena (the `core` primitive, not yet wired into the frame
+  loop) are in place; the job system, parallel culling, and instancing are still
+  planned in M9.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 10). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).

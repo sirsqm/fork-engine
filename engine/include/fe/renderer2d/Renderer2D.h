@@ -5,6 +5,7 @@
 #include "fe/core/Error.h"
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
+#include "fe/render/RenderExtract.h"
 #include "fe/rhi/Device.h"
 
 #include <memory>
@@ -22,10 +23,15 @@ namespace renderer2d {
 
 // Draws a Scene's 2D content through the RHI.
 //
-// Responsibilities:
-//   * Walk the scene, collect sprites, and sort them into a stable draw order.
-//   * Build a vertex/index stream in CPU memory and upload it in batches.
-//   * Issue one indexed draw per texture batch.
+// Responsibilities, in the order render() performs them:
+//   * Extract: walk the scene and emit a flat array of `render::SpriteInstance`.
+//   * Cull: drop sprites whose world AABB lies outside the view frustum.
+//   * Draw: sort the survivors into batches, build a vertex/index stream in CPU
+//     memory, upload it, and issue one indexed draw per texture batch.
+//
+// The first two steps are the extraction seam (ADR-0017, ADR-0052) and are
+// public, so a caller can extract and cull without drawing and a test can assert
+// on the array with no GPU.
 //
 // Non-responsibilities: it does not own the window, does not decide the
 // clear colour policy beyond asking the camera, and does not know how a texture
@@ -72,6 +78,30 @@ public:
     // example's on-screen statistics and for tests that assert batching.
     [[nodiscard]] u32 last_draw_calls() const noexcept { return last_draw_calls_; }
 
+    // The number of sprites dropped by frustum culling in the most recent
+    // render(). Reported so a test can prove culling happened, and so
+    // `drawn + last_culled()` is the number of extracted sprites.
+    [[nodiscard]] u32 last_culled() const noexcept { return last_culled_; }
+
+    // --- Extraction seam ---------------------------------------------------
+    // render() is these three steps in sequence. They are public so a caller
+    // (and a test) can run a step in isolation, and so the culling step can be
+    // handed a frustum of its own choosing.
+
+    // Step 1: collect the scene's drawable sprites into `out` (cleared first).
+    // No GPU work; the renderer's upload buffers are untouched.
+    void extract(const Scene& scene, std::vector<render::SpriteInstance>& out) const;
+
+    // Step 2: drop sprites whose quad-sized world AABB lies wholly outside
+    // `frustum`; a null frustum keeps everything. Returns the number dropped.
+    // A pure function of `out`, so it is testable with no scene.
+    [[nodiscard]] static usize cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum);
+
+    // Step 3: build geometry from `instances`, upload, and issue draws. Returns
+    // the number of sprites drawn. Does no culling; the caller has done it.
+    [[nodiscard]] Result<usize> draw(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                     std::vector<render::SpriteInstance>& instances);
+
     [[nodiscard]] u32 vertex_capacity() const noexcept { return vertex_capacity_; }
     [[nodiscard]] u32 index_capacity() const noexcept { return index_capacity_; }
 
@@ -97,7 +127,7 @@ private:
     };
 
     void ensure_capacity(rhi::Device& device, u32 vertex_count, u32 index_count);
-    void append_quad(const Sprite2D& sprite, const Mat4& world, const Vec2& size, const Vec2& pivot_offset);
+    void append_quad(const render::SpriteInstance& instance);
 
     rhi::ShaderRef shader_;
     rhi::BufferRef vertex_buffer_;
@@ -109,6 +139,7 @@ private:
     std::vector<u32> indices_;
     std::vector<Batch> batches_;
     u32 last_draw_calls_ = 0;
+    u32 last_culled_ = 0;
 
     // A 1x1 white texture used when a sprite has no texture assigned, so an
     // untextured sprite still renders as a solid coloured quad rather than

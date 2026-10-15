@@ -57,6 +57,7 @@ rather than editing it.
 | [0048](0048-replicated-operation-log.md) | The replicated operation log, local only | Accepted |
 | [0049](0049-net-transport-and-session-server.md) | The transport and the authoritative session server | Accepted |
 | [0051](0051-frame-arena.md) | A per-frame arena in `core` | Accepted |
+| [0052](0052-render-extraction-seam.md) | The render extraction seam | Accepted |
 
 ## Format
 

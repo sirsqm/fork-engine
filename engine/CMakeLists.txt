@@ -88,6 +88,7 @@ set(FE_ENGINE_SOURCES
     src/net/LoopbackNetwork.cpp
     src/net/SessionServer.cpp
     src/net/SessionClient.cpp
+    src/render/RenderExtract.cpp
     src/renderer2d/Renderer2D.cpp
     src/renderer3d/Renderer3D.cpp
     src/runtime/Engine.cpp
