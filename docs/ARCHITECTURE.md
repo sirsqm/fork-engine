@@ -65,7 +65,7 @@ everything  <-  runtime
 
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
-| `core` | Fixed-width types, math, `Error`/`Result`, logging, assertions, UUID, filesystem helpers, frame profiler | — |
+| `core` | Fixed-width types, math, `Error`/`Result`, logging, assertions, UUID, filesystem helpers, frame profiler, frame arena | — |
 | `platform` | Window creation, input, and the graphics context | core |
 | `rhi` | Graphics device abstraction and backend selection | core |
 | `resources` | Asset loading, caching, lifetime | core, rhi |
@@ -976,9 +976,10 @@ Every milestone must build and pass its tests before the next one begins.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`
   module and parallel extraction are planned in M9.
-- The performance work itself: the profiler, the extraction seam, the job
-  system, the frame arena, and instancing are planned in M9 (section 5 describes
-  the extraction seam the rest depends on).
+- The performance work itself: the extraction seam and instancing are planned
+  in M9 (section 5 describes the extraction seam the rest depends on); the
+  profiler, the benchmark gate, and the frame arena (the `core` primitive, not
+  yet wired into the frame loop) are in place.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 10). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).

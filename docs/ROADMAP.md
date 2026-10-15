@@ -300,7 +300,12 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       `FrameContext` exposes it to systems
 - [ ] Parallel extraction and culling: chunk the instance array; output must be
       identical to the serial path
-- [ ] Memory: a per-frame arena for transient data, with allocation counters
+- [ ] Memory: a per-frame arena for transient data, with allocation counters —
+      the `core` primitive has landed: `FrameArena` (bump allocate / `reset` /
+      `mark`+`restore` / `create<T>`) with allocation counters, and a test that
+      asserts the steady-state allocate/reset loop performs no heap allocation
+      ([ADR-0051](adr/0051-frame-arena.md)). Wiring it into the frame loop and
+      the render-extraction seam is the follow-on, so this stays open
 - [ ] GPU efficiency: instancing, material batching, and a render-graph seam for
       passes and post-processing
 - [ ] An in-editor profiler panel fed by the profiler data

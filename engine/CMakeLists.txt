@@ -30,6 +30,7 @@ set(FE_ENGINE_SOURCES
     src/core/Uuid.cpp
     src/core/FileSystem.cpp
     src/core/Profiler.cpp
+    src/core/FrameArena.cpp
     src/platform/InputState.cpp
     src/platform/NullWindow.cpp
     src/platform/Window.cpp
