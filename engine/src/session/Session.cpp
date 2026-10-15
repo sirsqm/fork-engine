@@ -25,6 +25,8 @@ Session::Session(ResourceManager* resources) : resources_(resources) {
     replica_id_ = Uuid::generate();
 }
 
+Session::Session(const ReplicaId& replica, ResourceManager* resources) : replica_id_(replica), resources_(resources) {}
+
 void Session::drop_redo_tail() {
     if (undo_count_ == 0) {
         return;

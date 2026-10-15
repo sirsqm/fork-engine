@@ -59,8 +59,8 @@ core, rhi, resources, scene, mesh  <-  renderer3d
 core, scene, systems, resources  <-  audio
 core, resources  <-  pack
 core, scene, serialization  <-  session
+core, scene, serialization, session  <-  net
 everything  <-  runtime
-core  <-  net                     (planned: collaborative editing)
 ```
 
 | Module | Responsibility | Depends on |
@@ -82,7 +82,7 @@ core  <-  net                     (planned: collaborative editing)
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
 | `pack` | Asset pack container, writer, and the runtime mount that reads a pack like a directory | core, resources |
 | `jobs` *(planned)* | Thread pool, `parallel_for`, and a task graph; consumed by systems and by render extraction | core |
-| `net` *(planned)* | Transport abstraction and the collaborative-editing session client | core |
+| `net` | The `Transport` seam (in-process loopback for tests, WebSocket planned), an authoritative `SessionServer` that orders every accepted edit, and the `SessionClient` a replica uses (`docs/adr/0049-net-transport-and-session-server.md`) | core, scene, serialization, session |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene |
 | `renderer3d` | 3D mesh rendering with a lit pass and directional shadow map | core, rhi, resources, scene, mesh |
 | `runtime` | `Engine` (subsystem lifetime), `Application` (frame loop) | all |
@@ -804,8 +804,14 @@ resolves concurrent property edits last-writer-wins per property; presence
 (cursors, selections, viewport cameras) rides alongside as ephemeral messages.
 The first steps are local and headless — two in-process replicas, no network —
 which also makes undo/redo more robust, so they earn their keep before any
-server exists. The `net` module is where the transport lives; nothing above it
-knows whether the peer is in-process or remote.
+server exists. The transport and the server have now landed on an in-process
+loopback ([ADR-0049](adr/0049-net-transport-and-session-server.md)): a
+`Transport` seam moves `Message`s, a `SessionServer` gives every accepted edit a
+global sequence number and broadcasts it, and a `SessionClient` applies only the
+server's order, so two clients converge by construction; last-writer-wins falls
+out of that single order. The WebSocket backend and optimistic local apply are
+the next changes behind the same seam. The `net` module is where the transport
+lives; nothing above it knows whether the peer is in-process or remote.
 
 ## 9. Scripting
 
@@ -976,8 +982,9 @@ Every milestone must build and pass its tests before the next one begins.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 10). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).
-- Collaborative editing: component identity, the operation model, and the
-  replicated log are in place; the session server and presence are planned in
-  M10 (section 8).
+- Collaborative editing: component identity, the operation model, the
+  replicated log, and the loopback transport with its authoritative session
+  server are in place; the WebSocket backend, optimistic local apply, and
+  presence are planned in M10 (section 8).
 
 These are sequenced in [`docs/ROADMAP.md`](ROADMAP.md).
