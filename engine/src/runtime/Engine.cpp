@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/runtime/Engine.h"
 
+#include "fe/anim/AnimationTypes.h"
 #include "fe/audio/AudioSystem.h"
 #include "fe/audio/AudioTypes.h"
 #include "fe/audio/WavLoader.h"
@@ -55,6 +56,7 @@ Error Engine::initialize(const Config& config) {
     // Make the engine's component types visible to the serializer, the
     // inspector, and any scene loaded later. Idempotent.
     reflect::register_builtin_types();
+    reflect::register_anim_types();
     reflect::register_physics_types();
     reflect::register_physics3d_types();
     reflect::register_scene3d_types();
