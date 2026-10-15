@@ -321,7 +321,11 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       the arena is the follow-on
 - [ ] GPU efficiency: instancing, material batching, and a render-graph seam for
       passes and post-processing
-- [ ] An in-editor profiler panel fed by the profiler data
+- [x] An in-editor profiler panel fed by the profiler data — `ProfilerPanel` +
+      `ProfilerPanelViewModel` in `editor`; the editor owns an optional
+      `core::Profiler`, brackets its own frame with it, and the panel draws the
+      latest `FrameReport` (totals, per-name scope breakdown, counters,
+      truncation) ([ADR-0055](adr/0055-editor-profiler-panel.md))
 
 ## M10 — Collaborative editing
 

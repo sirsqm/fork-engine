@@ -24,6 +24,7 @@ add_library(fork_editor_core STATIC
     src/ProjectSettings.cpp
     src/PlaySession.cpp
     src/PropertyEditor.cpp
+    src/ProfilerPanelViewModel.cpp
     src/Viewport.cpp
     src/Command.cpp
     src/Commands.cpp
@@ -48,6 +49,7 @@ add_library(fork_editor STATIC
     src/AssetBrowserPanel.cpp
     src/PlayPanel.cpp
     src/InspectorPanel.cpp
+    src/ProfilerPanel.cpp
     src/ViewportPanel.cpp
 )
 add_library(FE::editor ALIAS fork_editor)

@@ -7,6 +7,7 @@
 #include "fe/editor/HierarchyPanel.h"
 #include "fe/editor/InspectorPanel.h"
 #include "fe/editor/PlayPanel.h"
+#include "fe/editor/ProfilerPanel.h"
 #include "fe/editor/ViewportPanel.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
@@ -80,6 +81,12 @@ Error EditorHost::initialize() {
     ui_.add_panel(std::make_unique<InspectorPanel>());
     ui_.add_panel(std::make_unique<AssetBrowserPanel>());
     ui_.add_panel(std::make_unique<PlayPanel>());
+    ui_.add_panel(std::make_unique<ProfilerPanel>());
+
+    // The profiler panel always reads a profiler, so create it up front. It is
+    // created here rather than by the panel so the panel stays a pure reader and
+    // the object's lifetime is the document's.
+    context_.ensure_profiler();
 
     // The viewport renders through the embedded engine's device and 2D renderer,
     // and must release its off-screen target before the device shuts down.
@@ -108,6 +115,21 @@ void EditorHost::step() {
 
     handle_play_request();
 
+    // Install the editor's profiler for the frame, so the scopes the UI and the
+    // panels record land in it. The profiler panel reads the *previous* committed
+    // frame while drawing, which is the honest read-out: the frame being
+    // recorded is not finished yet.
+    Profiler* profiler = context_.profiler();
+    Profiler* previous_profiler = Profiler::current();
+    if (profiler != nullptr) {
+        Profiler::set_current(profiler);
+        if (Result<void> begun = profiler->begin_frame(); !begun) {
+            // A frame was already in progress (should not happen in this loop);
+            // record nothing rather than corrupt the ring.
+            FE_LOG_WARN("editor: profiler begin_frame failed: %s", begun.error().message().c_str());
+        }
+    }
+
     // One frame: clear once, draw the scene, then the UI over it. When playing,
     // the scene drawn is the play copy, and the engine's clock is advanced by
     // PlaySession::tick; otherwise the authored scene is drawn and no simulation
@@ -128,6 +150,13 @@ void EditorHost::step() {
 
     ui_.end_frame();
     engine_.device().end_frame();
+
+    if (profiler != nullptr) {
+        if (Result<void> ended = profiler->end_frame(); !ended) {
+            FE_LOG_WARN("editor: profiler end_frame failed: %s", ended.error().message().c_str());
+        }
+        Profiler::set_current(previous_profiler);
+    }
 
     ++frame_;
 }
