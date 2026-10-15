@@ -8,7 +8,7 @@
 namespace fe::net {
 
 SessionClient::SessionClient(const session::ReplicaId& replica, Transport& transport, ResourceManager* resources)
-    : session_(replica, resources), transport_(transport), resources_(resources) {}
+    : session_(replica, resources), transport_(transport) {}
 
 Error SessionClient::join() {
     Message message;

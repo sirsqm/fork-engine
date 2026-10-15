@@ -71,7 +71,6 @@ public:
 private:
     session::Session session_;
     Transport& transport_;
-    ResourceManager* resources_ = nullptr;
     usize last_applied_ = 0;
 };
 
