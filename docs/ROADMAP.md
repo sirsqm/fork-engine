@@ -148,13 +148,14 @@ is missing than ten roadmap items, and it is the precondition for a community.
       [ADR-0012](adr/0012-forward-lighting-model.md)
 - [x] Shadow mapping (single-cascade directional) — see
       [ADR-0014](adr/0014-directional-shadow-mapping.md)
-- [ ] A spatial hierarchy (BVH/octree) over static geometry — the `core`
-      primitive has landed: `SpatialBvh` builds a binned-SAH binary BVH over
-      world-space AABBs and answers frustum and box queries, reusing
-      `Frustum::intersects_aabb` as its leaf test, with the query checked against
-      a brute-force reference ([ADR-0053](adr/0053-spatial-bvh.md)). Wiring
-      `Renderer3D` to build and query a tree in place of its flat cull pass is
-      the follow-on, so this stays open
+- [x] A spatial hierarchy (BVH/octree) over static geometry — `SpatialBvh` in
+      `core` builds a binned-SAH binary BVH over world-space AABBs and answers
+      frustum and box queries, reusing `Frustum::intersects_aabb` as its leaf test,
+      with the query checked against a brute-force reference
+      ([ADR-0053](adr/0053-spatial-bvh.md)); `Renderer3D` now culls through a
+      cached tree, rebuilt only when an instance's world bounds change, and the
+      tree path is pinned to the flat reference `cull_flat` by a test that asserts
+      an identical visible set and order ([ADR-0056](adr/0056-renderer3d-spatial-cull.md))
 - [ ] Environment rendering and a post-processing chain
 - [x] A glTF importer — `GltfLoader` decodes `.gltf` (JSON) and `.glb`
       (binary) into a `Mesh` per primitive, reading through `ResourceSource` so a

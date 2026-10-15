@@ -79,6 +79,28 @@ struct MeshInstance {
     Vec3 world_max{};
 };
 
+// A key that identifies a mesh instance's static geometry across frames. A BVH
+// over static geometry is only worth rebuilding when the geometry actually
+// moved, so the renderer compares one of these per frame and rebuilds only on a
+// change. It is a value type on purpose: no scene, no node, no pointers into
+// engine state, so a test can build the key directly and assert on the rebuild
+// decision with no scene at all.
+//
+// Equality is exact, not approximate. A rebuild is cheap relative to a wrong
+// cull, so a float that changed by one ulp must count as a change.
+struct MeshInstanceKey {
+    const Mesh* mesh = nullptr;
+    Vec3 world_min{};
+    Vec3 world_max{};
+
+    [[nodiscard]] constexpr bool operator==(const MeshInstanceKey&) const noexcept = default;
+};
+
+// Builds the key for `instance`.
+[[nodiscard]] inline MeshInstanceKey instance_key(const MeshInstance& instance) noexcept {
+    return MeshInstanceKey{instance.mesh, instance.world_min, instance.world_max};
+}
+
 // Collects every drawable sprite in `scene` into `out` (cleared first). A sprite
 // is skipped when it has no texture or its texture is not a `Texture2D`, which
 // matches the pre-seam behaviour: an untextured sprite is an authoring state,
