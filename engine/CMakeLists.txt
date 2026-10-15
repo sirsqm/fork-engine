@@ -53,6 +53,9 @@ set(FE_ENGINE_SOURCES
     src/systems/System.cpp
     src/systems/SceneSchedule.cpp
     src/systems/SpriteAnimationSystem.cpp
+    src/anim/AnimationStateMachine.cpp
+    src/anim/AnimationStateMachineSystem.cpp
+    src/anim/AnimationTypes.cpp
     src/physics2d/BroadPhase.cpp
     src/physics2d/Geometry.cpp
     src/physics2d/IslandSolver.cpp

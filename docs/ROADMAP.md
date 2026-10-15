@@ -210,11 +210,11 @@ is missing than ten roadmap items, and it is the precondition for a community.
       `Physics3DSystem`, and the editor copies `Collider3D` / `RigidBody3D` into
       the play scene, so a 3D scene plays with physics through the same path a
       shipped game uses — see
-      [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)
+      [ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)
 - [x] Debug drawing: a `debugdraw` module builds collider wireframes for a 2D or
       a 3D scene (`DebugDrawList`) and a `DebugRenderer` draws them as a single
       line list over the world camera, built on a new RHI line primitive — see
-      [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)
+      [ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)
 
 ## M6 — Animation and audio
 
@@ -227,7 +227,13 @@ is missing than ten roadmap items, and it is the precondition for a community.
       large-file playback and compressed codecs are still to do
 - [ ] Tilemaps
 - [ ] Skeletal animation and skinning
-- [ ] Animation state machines
+- [x] Animation state machines — a named-state graph over the sprite animator:
+      states (a clip: first frame, frame count, fps, loop) and transitions (from,
+      to, a require-finished gate, and trigger conditions) in an
+      `AnimationStateMachine` component, advanced by
+      `AnimationStateMachineSystem`, which drives the node's `SpriteAnimator`
+      cell. Blend trees, continuous parameters, and skeletal states build on this
+      shape and remain ([ADR-0059](adr/0059-animation-state-machines.md))
 
 ## M7 — Scripting
 

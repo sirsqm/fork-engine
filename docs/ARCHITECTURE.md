@@ -50,6 +50,7 @@ core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
 core  <-  jobs  <-  systems
 core, scene, resources  <-  systems
+core, scene, systems, reflect  <-  anim
 core, scene, systems  <-  script
 core, scene, systems, reflect  <-  physics2d
 core, scene, systems, reflect  <-  physics3d
@@ -74,6 +75,7 @@ everything  <-  runtime
 | `serialization` | JSON persistence of scenes, driven by reflection, and the serializable `Operation` model (apply/inverse, `docs/adr/0047-local-operation-model.md`) | core, scene, resources, reflect |
 | `session` | The local, headless replicated log: `Session` holds a document and an ordered log of `Operation`s, two in-process replicas converge, and undo is log-based (`docs/adr/0048-replicated-operation-log.md`) | core, scene, serialization |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
+| `anim` | Animation state machines: `AnimationStateMachine` (a named-state graph over sprite clips) and `AnimationStateMachineSystem`, which advances each machine and drives the node's `SpriteAnimator` (`docs/adr/0059-animation-state-machines.md`) | core, scene, systems, reflect |
 | `script` | The language-agnostic gameplay seam: `Script`, `ScriptHost` (per-node instances keyed by stable node id), `ScriptRegistry`, and the `ScriptSystem` bridge. Header-only | core, scene, systems |
 | `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
 | `physics3d` | 3D collision shapes (box, sphere), a rigid-body simulation system (linear and angular: gravity, restitution, friction, damping, torque, inertia) with a uniform-grid broad phase, joints, queries, and contact events | core, scene, systems, reflect |
@@ -321,7 +323,7 @@ default schedule registers `Physics2DSystem` and `Physics3DSystem`, and
 `EditorContext` registers copy factories for `Collider2D`, `RigidBody2D`,
 `Collider3D`, and `RigidBody3D`, so an authored 2D or 3D scene simulates in play
 while the authored scene is untouched. See
-[ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md).
+[ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md).
 
 **Debug drawing** is the `debugdraw` module: `DebugDrawList` collects world-space
 lines (collider wireframes for a 2D or a 3D scene) and `DebugRenderer` draws them
@@ -329,7 +331,7 @@ as one line list over the world camera. It is a separate module, not a system,
 because `physics3d` depends on `systems` and a system naming a `Collider3D` would
 close a cycle. The pass uses a new RHI line primitive
 (`Device::set_primitive_topology`), which is inert for every existing pass. See
-[ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md).
+[ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md).
 
 ### Audio as a module
 
@@ -433,7 +435,7 @@ indexed draw assembles its indices: `Triangles` (the default, what every
 existing pass uses) or `Lines`. It is device state rather than a parameter on
 `draw_indexed`, so the draw signature is unchanged and no existing pass is
 touched. A debug pass that draws a line list is the first user
-([ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)); a `VertexLayout::position_color`
+([ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)); a `VertexLayout::position_color`
 carries a per-vertex colour for it.
 
 **`renderer2d::Renderer2D`** runs the extraction seam (section 5, below):
@@ -1045,7 +1047,7 @@ Every milestone must build and pass its tests before the next one begins.
   [ADR-0037](adr/0037-physics2d-oriented-boxes-offsets.md),
   [ADR-0031](adr/0031-physics3d-and-backend-seam.md),
   [ADR-0043](adr/0043-physics3d-angular-dynamics.md), and
-  [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)).
+  [ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)).
 - The parts of audio not in the first cut: 3D positional attenuation, streaming
   and large-file playback, compressed codecs, and audio buses / mixing groups
   (see [ADR-0016](adr/0016-audio-module.md)).
