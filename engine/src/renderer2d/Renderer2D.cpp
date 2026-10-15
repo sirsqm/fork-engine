@@ -4,9 +4,7 @@
 
 #include "fe/core/Assert.h"
 #include "fe/core/Log.h"
-#include "fe/resources/Texture2D.h"
 #include "fe/scene/Camera2D.h"
-#include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
 
@@ -56,21 +54,13 @@ void main() {
 }
 )glsl";
 
-// Draw-order key. Sorting by (texture, layer) groups equal textures together,
+// Draw-order key. Sorting by (layer, texture) groups equal textures together,
 // which is what turns many sprites into few draw calls. Layer is placed first
 // so that artist intent (what is in front) always wins over batching: a sprite
 // on a higher layer is never reordered behind a lower one to save a draw call.
-struct DrawItem {
-    rhi::Texture* texture;
-    i32 layer;
-    const Sprite2D* sprite;
-    Mat4 world;
-    Vec2 size;
-};
-
-[[nodiscard]] bool draw_order_less(const DrawItem& a, const DrawItem& b) noexcept {
-    if (a.layer != b.layer) {
-        return a.layer < b.layer;
+[[nodiscard]] bool draw_order_less(const render::SpriteInstance& a, const render::SpriteInstance& b) noexcept {
+    if (a.sprite->layer != b.sprite->layer) {
+        return a.sprite->layer < b.sprite->layer;
     }
     return a.texture < b.texture;
 }
@@ -184,17 +174,17 @@ Camera2D* Renderer2D::find_active_camera(Scene& scene) {
     return const_cast<Camera2D*>(find_active_camera(static_cast<const Scene&>(scene)));
 }
 
-void Renderer2D::append_quad(const Sprite2D& sprite, const Mat4& world, const Vec2& size, const Vec2& pivot_offset) {
+void Renderer2D::append_quad(const render::SpriteInstance& instance) {
+    const Sprite2D& sprite = *instance.sprite;
     const u32 base = static_cast<u32>(vertices_.size());
 
-    // Local quad corners, centred on the origin and then offset so the sprite
-    // can be positioned by its pivot. Corners go counter-clockwise.
-    const Vec2 half = size * 0.5f;
+    // Local quad corners, centred on the origin. Corners go counter-clockwise.
+    const Vec2 half = instance.size * 0.5f;
     const std::array<Vec2, 4> corners = {
-        Vec2{-half.x + pivot_offset.x, -half.y + pivot_offset.y},
-        Vec2{half.x + pivot_offset.x, -half.y + pivot_offset.y},
-        Vec2{half.x + pivot_offset.x, half.y + pivot_offset.y},
-        Vec2{-half.x + pivot_offset.x, half.y + pivot_offset.y},
+        Vec2{-half.x, -half.y},
+        Vec2{half.x, -half.y},
+        Vec2{half.x, half.y},
+        Vec2{-half.x, half.y},
     };
     const std::array<Vec2, 4> uvs = {
         Vec2{sprite.uv.x, sprite.uv.w},
@@ -204,7 +194,7 @@ void Renderer2D::append_quad(const Sprite2D& sprite, const Mat4& world, const Ve
     };
 
     for (usize i = 0; i < 4; ++i) {
-        const Vec3 world_pos = transform_point(world, Vec3{corners[i].x, corners[i].y, 0.0f});
+        const Vec3 world_pos = transform_point(instance.world, Vec3{corners[i].x, corners[i].y, 0.0f});
         vertices_.push_back(Vertex{Vec2{world_pos.x, world_pos.y}, sprite.color, uvs[i]});
     }
 
@@ -216,64 +206,83 @@ void Renderer2D::append_quad(const Sprite2D& sprite, const Mat4& world, const Ve
     indices_.push_back(base + 0);
 }
 
+void Renderer2D::extract(const Scene& scene, std::vector<render::SpriteInstance>& out) const {
+    render::extract_sprites(scene, out);
+}
+
+usize Renderer2D::cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum) {
+    return render::cull_sprites(out, frustum);
+}
+
+// The view-projection the pass draws with: the active camera's, or a pixel-space
+// fallback with the origin at the top-left when the scene has no camera. Also the
+// matrix a caller derives the culling frustum from, so culling and drawing agree.
+[[nodiscard]] static Mat4 sprite_view_projection(const Scene& scene, u32 viewport_width, u32 viewport_height) {
+    const Camera2D* camera = Renderer2D::find_active_camera(scene);
+    if (camera != nullptr) {
+        return camera->view_projection(viewport_width, viewport_height);
+    }
+    return Mat4::orthographic(0.0f, static_cast<f32>(viewport_width), static_cast<f32>(viewport_height), 0.0f, -1.0f,
+                              1.0f);
+}
+
 Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(vertex_buffer_ != nullptr);
     FE_CHECK(index_buffer_ != nullptr);
     FE_CHECK(viewport_width > 0 && viewport_height > 0);
 
-    // --- 1. Collect drawable sprites ---------------------------------------
-    std::vector<DrawItem> items;
+    // --- 1. Extract --------------------------------------------------------
+    std::vector<render::SpriteInstance> instances;
+    extract(scene, instances);
 
-    scene.for_each_node([&](Node& node) {
-        const auto* sprite = node.get_component<Sprite2D>();
-        if (sprite == nullptr || !sprite->has_texture()) {
-            // Untextured sprites are skipped rather than drawn as white quads;
-            // a sprite without a texture is an authoring state, not content.
-            return;
-        }
+    // --- 2. Cull -----------------------------------------------------------
+    // A sprite outside the view cannot contribute a pixel, so it never needs a
+    // quad, an index, or a draw. The test is conservative, so this can only save
+    // work. The frustum is built from the same matrix the draw uses, so the two
+    // steps can never disagree about what is on screen.
+    const Frustum frustum =
+        Frustum::from_view_projection(sprite_view_projection(scene, viewport_width, viewport_height));
+    last_culled_ = static_cast<u32>(cull(instances, &frustum));
 
-        const auto* texture = dynamic_cast<const Texture2D*>(sprite->texture.get());
-        if (texture == nullptr) {
-            return;
-        }
+    // --- 3. Draw -----------------------------------------------------------
+    return draw(device, scene, viewport_width, viewport_height, instances);
+}
 
-        // Resolve the draw size: explicit size, else the texture size.
-        Vec2 size = sprite->size;
-        if (size.x == 0.0f || size.y == 0.0f) {
-            size = Vec2{static_cast<f32>(texture->width()), static_cast<f32>(texture->height())};
-        }
+Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                               std::vector<render::SpriteInstance>& instances) {
+    FE_CHECK(shader_ != nullptr);
+    FE_CHECK(vertex_buffer_ != nullptr);
+    FE_CHECK(index_buffer_ != nullptr);
+    FE_CHECK(viewport_width > 0 && viewport_height > 0);
 
-        items.push_back(DrawItem{&texture->texture(), sprite->layer, sprite, node.world_matrix(), size});
-    });
-
-    // --- 2. Sort into batches ----------------------------------------------
-    std::sort(items.begin(), items.end(), draw_order_less);
+    // Sort into batches. The instance array is the sort unit; nothing here
+    // touches the scene.
+    std::sort(instances.begin(), instances.end(), draw_order_less);
 
     vertices_.clear();
     indices_.clear();
     batches_.clear();
 
-    // --- 3. Build geometry -------------------------------------------------
     rhi::Texture* current_texture = nullptr;
-    for (const DrawItem& item : items) {
-        if (batches_.empty() || current_texture != item.texture) {
-            batches_.push_back(Batch{item.texture, static_cast<u32>(indices_.size()), 0});
-            current_texture = item.texture;
+    for (const render::SpriteInstance& instance : instances) {
+        if (batches_.empty() || current_texture != instance.texture) {
+            batches_.push_back(Batch{instance.texture, static_cast<u32>(indices_.size()), 0});
+            current_texture = instance.texture;
         }
-        append_quad(*item.sprite, item.world, item.size, Vec2{0.0f, 0.0f});
+        append_quad(instance);
         batches_.back().index_count += 6;
     }
 
     last_draw_calls_ = 0;
-    const usize sprite_count = items.size();
+    const usize sprite_count = instances.size();
     if (vertices_.empty()) {
         return sprite_count;
     }
 
     ensure_capacity(device, static_cast<u32>(vertices_.size()), static_cast<u32>(indices_.size()));
 
-    // --- 4. Upload and draw -------------------------------------------------
+    // --- Upload and draw ---------------------------------------------------
     vertex_buffer_->update(
         std::span<const u8>(reinterpret_cast<const u8*>(vertices_.data()), vertices_.size() * sizeof(Vertex)));
     index_buffer_->update(
@@ -282,17 +291,7 @@ Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 vi
     device.set_blend_mode(rhi::BlendMode::Alpha);
     device.set_depth_test(false);
 
-    const Camera2D* camera = find_active_camera(scene);
-    Mat4 view_projection = Mat4::identity();
-    if (camera != nullptr) {
-        view_projection = camera->view_projection(viewport_width, viewport_height);
-    } else {
-        // No camera: fall back to a pixel-space orthographic view with the
-        // origin at the top-left, which is the most intuitive default for a
-        // scene that has not been set up yet.
-        view_projection = Mat4::orthographic(0.0f, static_cast<f32>(viewport_width), static_cast<f32>(viewport_height),
-                                             0.0f, -1.0f, 1.0f);
-    }
+    const Mat4 view_projection = sprite_view_projection(scene, viewport_width, viewport_height);
 
     device.bind_shader(*shader_);
     shader_->set_mat4("u_view_projection", view_projection);
