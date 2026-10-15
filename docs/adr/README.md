@@ -59,6 +59,7 @@ rather than editing it.
 | [0051](0051-frame-arena.md) | A per-frame arena in `core` | Accepted |
 | [0052](0052-render-extraction-seam.md) | The render extraction seam | Accepted |
 | [0053](0053-spatial-bvh.md) | A spatial BVH over static geometry in `core` | Accepted |
+| [0054](0054-frame-loop-arena.md) | The frame arena in the frame loop | Accepted |
 
 ## Format
 

@@ -8,6 +8,7 @@ namespace fe {
 
 class InputState;
 class ResourceManager;
+class FrameArena;
 
 // What a system is told about the frame it is running in.
 //
@@ -33,6 +34,14 @@ struct FrameContext {
     // check it (or disable itself) rather than assume a keyboard exists. The
     // edge state has already been advanced for the frame when a system sees it.
     InputState* input = nullptr;
+
+    // The frame's transient arena. Nullable: a tool or a test that builds no
+    // per-frame scratch runs the schedule with no arena, and a system must
+    // null-check it rather than assume one exists. When present it is reset once
+    // per frame by the runtime, before the systems run, so anything a system
+    // allocates from it is valid for that frame only: a pointer into the arena
+    // must not outlive the frame (ADR-0017, ADR-0051, ADR-0053).
+    FrameArena* arena = nullptr;
 };
 
 } // namespace fe
