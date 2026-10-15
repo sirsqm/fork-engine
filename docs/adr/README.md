@@ -62,6 +62,7 @@ rather than editing it.
 | [0054](0054-frame-loop-arena.md) | The frame arena in the frame loop | Accepted |
 | [0055](0055-editor-profiler-panel.md) | An in-editor profiler panel fed by the core profiler | Accepted |
 | [0056](0056-renderer3d-spatial-cull.md) | A spatial-hierarchy cull in the 3D renderer | Accepted |
+| [0057](0057-environment-and-post-processing.md) | Environment rendering and a post-processing chain | Accepted |
 
 ## Format
 

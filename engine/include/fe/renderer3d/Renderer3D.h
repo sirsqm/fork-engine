@@ -8,6 +8,7 @@
 #include "fe/core/Types.h"
 #include "fe/mesh/Mesh.h"
 #include "fe/render/RenderExtract.h"
+#include "fe/renderer3d/PostProcess.h"
 #include "fe/rhi/Device.h"
 
 #include <array>
@@ -82,8 +83,11 @@ public:
     //
     // Returns the number of mesh instances drawn. A return value of 0 is valid
     // (a scene with no 3D content, or no camera).
-    [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width,
-                                       u32 viewport_height);
+    //
+    // `settings` opts into the post-processing chain. With `settings.enabled`
+    // false this is the pre-chain behaviour exactly.
+    [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                       const PostProcessSettings& settings = {});
 
     [[nodiscard]] u32 last_draw_calls() const noexcept { return last_draw_calls_; }
     [[nodiscard]] usize cached_mesh_count() const noexcept { return buffers_.size(); }
@@ -129,6 +133,20 @@ public:
     [[nodiscard]] Result<usize> draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
                                      const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
                                      const std::vector<const Mesh*>& meshes_seen);
+
+    // The post-processing chain this renderer drives. Exposed so a caller can
+    // inspect `pass_count()` and so tests can assert the chain ran.
+    [[nodiscard]] PostProcess& post_process() noexcept { return post_process_; }
+
+    // The number of frames in which the post-processing chain drew. A subset of
+    // the frames `render` ran, since the chain is opt-in.
+    [[nodiscard]] u32 post_process_frames() const noexcept { return post_process_frames_; }
+
+    // The number of background gradient passes drawn over the lifetime of this
+    // renderer. Reported so a test can prove the environment pass ran without
+    // reading back pixels (the 3D pass resets `last_draw_calls_`, so the
+    // background cannot be counted there).
+    [[nodiscard]] u32 background_draws() const noexcept { return background_draws_; }
 
     // The number of point/spot lights forwarded to the shader in the last
     // frame, after the per-frame cap. Bounded by kMaxPointLights/kMaxSpotLights.
@@ -229,6 +247,48 @@ private:
     // Rebuilds `cull_bvh_` from `instances` when their keys differ from the
     // cached ones. Returns true when a rebuild happened.
     bool refresh_cull_bvh(const std::vector<render::MeshInstance>& instances);
+
+    // Runs the 3D pass, optionally wrapping it in the post-processing chain. When
+    // `settings.enabled` is false this is `draw()`; when it is true the pass
+    // renders into an off-screen colour target and the chain grades that image
+    // into the caller's target. `width`/`height` are the viewport size.
+    //
+    // The camera's gradient background (when enabled) is drawn here, after the
+    // destination target is bound, so it lands in whichever image the pass draws
+    // into and is graded along with the geometry.
+    [[nodiscard]] Result<usize> draw_chain(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
+                                           const Vec3& camera_position, const Camera3D& camera,
+                                           std::vector<render::MeshInstance>& instances,
+                                           const std::vector<const Mesh*>& meshes_seen,
+                                           const PostProcessSettings& settings, u32 width, u32 height);
+
+    // Ensures the off-screen colour target matches `width`x`height`, creating it
+    // on first use and recreating it on a size change. Returns an Error if the
+    // device rejects it.
+    [[nodiscard]] Error ensure_scene_target(rhi::Device& device, u32 width, u32 height);
+
+    // Draws the camera's gradient background on a full-screen quad, before the
+    // geometry, using the now-current viewport size for the gradient axis.
+    void draw_background(rhi::Device& device, const Camera3D& camera);
+
+    // The background pass' shader and quad, created lazily the first time a camera
+    // enables `background_enabled`, so a scene that never asks for a background
+    // never pays for them.
+    [[nodiscard]] Error ensure_background(rhi::Device& device);
+
+    rhi::ShaderRef background_shader_;
+    rhi::BufferRef background_quad_vertex_buffer_;
+    rhi::BufferRef background_quad_index_buffer_;
+    bool background_attempted_ = false;
+
+    // The post-processing chain, and the off-screen target the 3D pass renders
+    // into when the chain is enabled.
+    PostProcess post_process_;
+    rhi::RenderTargetRef scene_target_;
+    u32 scene_target_width_ = 0;
+    u32 scene_target_height_ = 0;
+    u32 post_process_frames_ = 0;
+    u32 background_draws_ = 0;
 
     // Reused across frames to avoid per-frame allocation. Each holds one vec4
     // per light in a fixed-size array, packed as the shader expects:

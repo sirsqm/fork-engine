@@ -10,6 +10,7 @@
 
 #include "fe/mesh/Mesh.h"
 #include "fe/platform/Window.h"
+#include "fe/renderer3d/PostProcess.h"
 #include "fe/renderer3d/Renderer3D.h"
 #include "fe/rhi/Device.h"
 #include "fe/scene/Node.h"
@@ -137,6 +138,32 @@ void add_camera_and_key_light(Scene& scene) {
     return Pixel{pixels[0], pixels[1], pixels[2], pixels[3]};
 }
 
+// Renders `scene` through a Renderer3D with the given post-processing settings
+// and reads a pixel at (x, y), origin top-left. Returns the pixel and leaves the
+// renderer's counters in `renderer` for the caller to assert on.
+[[nodiscard]] Pixel render_with_settings(GraphicsContext3D& context, renderer3d::Renderer3D& renderer,
+                                         const Scene& scene, u32 width, u32 height, u32 x, u32 y,
+                                         const renderer3d::PostProcessSettings& settings) {
+    context.window->poll_events();
+    context.window->swap_buffers();
+
+    rhi::ClearColor clear{};
+    if (const Camera3D* camera = renderer3d::Renderer3D::find_active_camera(scene); camera != nullptr) {
+        clear = rhi::ClearColor{camera->clear_r, camera->clear_g, camera->clear_b, camera->clear_a};
+    }
+
+    context.device->begin_frame(width, height, clear);
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, width, height, settings);
+    REQUIRE(result);
+
+    std::vector<u8> pixels(static_cast<usize>(width) * height * 4U, 0);
+    context.device->read_pixels(x, y, 1, 1, std::span<u8>(pixels.data(), pixels.size()));
+
+    context.device->end_frame();
+    return Pixel{pixels[0], pixels[1], pixels[2], pixels[3]};
+}
+
 } // namespace
 
 TEST_CASE("renderer3d draws a lit mesh covering the centre of the view") {
@@ -188,6 +215,124 @@ TEST_CASE("renderer3d reports the number of instances drawn") {
     // The shared mesh is uploaded once, not per instance.
     CHECK(renderer.cached_mesh_count() == 1);
     context.device->end_frame();
+}
+
+TEST_CASE("renderer3d draws a camera's gradient background") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    auto* camera = camera_node->add_component<Camera3D>();
+    camera->background_enabled = true;
+    camera->background_top = Vec3{0.0f, 0.0f, 1.0f};    // Blue at the top.
+    camera->background_bottom = Vec3{1.0f, 0.0f, 0.0f}; // Red at the bottom.
+
+    const u32 width = 64;
+    const u32 height = 64;
+    context.device->begin_frame(width, height, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, width, height);
+    REQUIRE(result);
+
+    std::vector<u8> pixels(static_cast<usize>(width) * height * 4U, 0);
+    context.device->read_pixels(0, 0, width, height, std::span<u8>(pixels.data(), pixels.size()));
+    const auto at = [&](u32 x, u32 y) {
+        const usize i = (static_cast<usize>(y) * width + x) * 4U;
+        return Pixel{pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]};
+    };
+
+    // read_pixels is bottom-up, so row 0 is the bottom of the frame.
+    const Pixel bottom = at(width / 2, 1);
+    const Pixel top = at(width / 2, height - 2);
+
+    CHECK(bottom.r > 200);
+    CHECK(bottom.b < 60);
+    CHECK(top.b > 200);
+    CHECK(top.r < 60);
+    CHECK(renderer.background_draws() == 1);
+
+    context.device->end_frame();
+}
+
+TEST_CASE("the post-processing chain grades the frame when enabled") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    auto* camera = camera_node->add_component<Camera3D>();
+    camera->background_enabled = true;
+    // A flat mid-grey background makes the grading arithmetic deterministic.
+    camera->background_top = Vec3{0.5f, 0.5f, 0.5f};
+    camera->background_bottom = Vec3{0.5f, 0.5f, 0.5f};
+
+    renderer3d::Renderer3D renderer;
+
+    renderer3d::PostProcessSettings off;
+    off.enabled = false;
+    const Pixel plain = render_with_settings(context, renderer, scene, 64, 64, 32, 32, off);
+    CHECK(renderer.post_process_frames() == 0);
+    CHECK(renderer.post_process().pass_count() == 0);
+
+    renderer3d::PostProcessSettings on;
+    on.enabled = true;
+    on.exposure = 0.5f;
+    on.tonemap = false;
+    on.vignette = 0.0f;
+    const Pixel graded = render_with_settings(context, renderer, scene, 64, 64, 32, 32, on);
+
+    CHECK(renderer.post_process_frames() == 1);
+    CHECK(renderer.post_process().pass_count() == 1);
+    // Half exposure halves the grey; the tonemap is off so the relationship is
+    // linear and the centre is unaffected by the (disabled) vignette.
+    CHECK(graded.r < plain.r);
+    const int expected = static_cast<int>(plain.r) / 2;
+    const int diff = static_cast<int>(graded.r) - expected;
+    CHECK((diff < 6 && diff > -6));
+}
+
+TEST_CASE("a vignette darkens the corners but not the centre") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    auto* camera = camera_node->add_component<Camera3D>();
+    camera->background_enabled = true;
+    camera->background_top = Vec3{0.5f, 0.5f, 0.5f};
+    camera->background_bottom = Vec3{0.5f, 0.5f, 0.5f};
+
+    renderer3d::Renderer3D renderer;
+
+    renderer3d::PostProcessSettings on;
+    on.enabled = true;
+    on.exposure = 1.0f;
+    on.tonemap = false;
+    on.vignette = 0.9f;
+
+    // Sample the bottom-left corner and the centre in two renders, keeping the
+    // renderer (and therefore the chain) alive across both.
+    const Pixel corner = render_with_settings(context, renderer, scene, 64, 64, 2, 2, on);
+    const Pixel centre = render_with_settings(context, renderer, scene, 64, 64, 32, 32, on);
+
+    CHECK(corner.r < centre.r);
+    CHECK(centre.r > 100);
+    CHECK(corner.r < 60);
+    CHECK(renderer.post_process_frames() == 2);
 }
 
 TEST_CASE("renderer3d draws nothing without a camera") {

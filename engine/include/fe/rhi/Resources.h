@@ -83,9 +83,8 @@ public:
 //
 // This is what lets the editor render a scene into a panel instead of the
 // window: bind the target, draw, unbind, and blit color_texture() into the
-// panel. It is also the seam a future post-processing chain and a 3D shadow
-// pass will use, which is why it lives in the RHI rather than in the 2D
-// renderer.
+// panel. It is also the seam the 3D shadow pass and the post-processing chain
+// use, which is why it lives in the RHI rather than in the 2D renderer.
 //
 // Lifecycle: a target and its textures are owned by whoever holds the
 // RenderTargetRef. Like every GPU resource they must be released before the

@@ -156,7 +156,10 @@ is missing than ten roadmap items, and it is the precondition for a community.
       cached tree, rebuilt only when an instance's world bounds change, and the
       tree path is pinned to the flat reference `cull_flat` by a test that asserts
       an identical visible set and order ([ADR-0056](adr/0056-renderer3d-spatial-cull.md))
-- [ ] Environment rendering and a post-processing chain
+- [x] Environment rendering and a post-processing chain — a camera-driven
+      full-screen gradient background, and an opt-in exposure/tonemap/vignette
+      chain over an off-screen colour target; see
+      [ADR-0057](adr/0057-environment-and-post-processing.md)
 - [x] A glTF importer — `GltfLoader` decodes `.gltf` (JSON) and `.glb`
       (binary) into a `Mesh` per primitive, reading through `ResourceSource` so a
       mounted pack works unchanged; see [ADR-0040](adr/0040-gltf-importer.md)
