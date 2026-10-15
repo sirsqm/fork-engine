@@ -158,9 +158,13 @@ public:
 };
 ```
 
-`FrameContext` carries `delta_time`, `elapsed_time`, and a nullable
-`ResourceManager*`, so a system reads everything it needs from the frame rather
-than from globals -- which is what lets it run headlessly in a test.
+`FrameContext` carries `delta_time`, `elapsed_time`, and nullable pointers to the
+frame's `ResourceManager`, `InputState`, and `FrameArena`, so a system reads
+everything it needs from the frame rather than from globals -- which is what lets
+it run headlessly in a test. The arena is the frame's transient buffer: the loop
+resets it once per frame before the systems run, so a system can build scratch
+data (a flat list, an extraction array) with no per-frame heap churn
+([ADR-0054](adr/0054-frame-loop-arena.md)).
 
 The schedule is a plain ordered list. It is **not** a job graph: systems run in
 registration order, on one thread, with no declared read/write sets. That is a
@@ -1000,9 +1004,12 @@ Every milestone must build and pass its tests before the next one begins.
   module and parallel extraction are planned in M9.
 - The performance work itself: the extraction seam is in place (section 5,
   [ADR-0052](adr/0052-render-extraction-seam.md)); the profiler, the benchmark
-  gate, and the frame arena (the `core` primitive, not yet wired into the frame
-  loop) are in place; the job system, parallel culling, and instancing are still
-  planned in M9.
+  gate, and the frame arena are in place -- the `core` primitive
+  ([ADR-0051](adr/0051-frame-arena.md)) and its wiring into the frame loop, which
+  owns one arena, resets it each frame, and hands it to systems through
+  `FrameContext` ([ADR-0054](adr/0054-frame-loop-arena.md)); the job system,
+  parallel culling, instancing, and moving the extraction seam onto the arena are
+  still planned in M9.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 10). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).

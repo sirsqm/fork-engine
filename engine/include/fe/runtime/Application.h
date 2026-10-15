@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/core/FrameArena.h"
 #include "fe/core/Profiler.h"
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Scene.h"
 #include "fe/systems/SceneSchedule.h"
 
+#include <memory>
 #include <string>
 
 namespace fe {
@@ -85,6 +87,29 @@ public:
         headless_frames_ = frame_count;
     }
 
+    // --- Per-frame arena ---------------------------------------------------
+    // The application owns one FrameArena and resets it once per frame, before
+    // the systems run, then hands it to every system through FrameContext::arena.
+    // Systems build their transient data (scratch lists, extraction arrays) from
+    // it instead of the heap, which removes the per-frame malloc/free churn
+    // ADR-0017 names (ADR-0051, ADR-0053).
+    //
+    // The arena is created in run(), sized from the config, and destroyed with
+    // the application; before run() and after it returns, arena() is null. The
+    // default capacity is generous enough that a typical frame never overflows;
+    // a system that allocates a large, data-dependent amount should still treat a
+    // null from FrameArena::allocate as an expected, recoverable condition.
+    //
+    // Disable it with set_frame_arena_bytes(0) for a run that wants the exact
+    // pre-arena behaviour (systems get a null arena).
+    void set_frame_arena_bytes(usize bytes) noexcept { frame_arena_bytes_ = bytes; }
+
+    // The frame's arena, or null when it is disabled or the loop has not started.
+    // A system reaches this through FrameContext::arena; this accessor is for the
+    // application itself and for tests.
+    [[nodiscard]] FrameArena* arena() noexcept { return frame_arena_.get(); }
+    [[nodiscard]] const FrameArena* arena() const noexcept { return frame_arena_.get(); }
+
 protected:
     // --- Hooks -------------------------------------------------------------
     // Called once, after the engine is up and before the first frame. Return an
@@ -112,6 +137,15 @@ private:
     Scene scene_;
     SceneSchedule schedule_;
     Profiler profiler_;
+    // One arena for the frame, created in run() and reset before the systems run.
+    // Null before run() starts and after it returns.
+    std::unique_ptr<FrameArena> frame_arena_;
+    // Default capacity for the per-frame arena. 1 MiB holds the transient data of
+    // a frame (scratch lists, extraction arrays) with room to spare; a frame that
+    // needs more has grown past what a bump allocator should serve and should say
+    // so by overflowing, which the caller sees as a null from allocate().
+    static constexpr usize kDefaultFrameArenaBytes = 1u << 20;
+    usize frame_arena_bytes_ = kDefaultFrameArenaBytes;
     bool profiling_enabled_ = true;
     bool exit_requested_ = false;
     bool headless_ = false;

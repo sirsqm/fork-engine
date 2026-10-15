@@ -25,6 +25,15 @@ int Application::run() {
         return 1;
     }
 
+    // Create the frame's arena once, before the loop, and keep it for the run.
+    // It is sized from the config; a capacity of 0 leaves it null, so systems see
+    // a null arena and the run behaves exactly as it did before the arena
+    // existed. One allocation for the whole run, not one per frame (ADR-0051).
+    if (frame_arena_bytes_ > 0) {
+        frame_arena_ = std::make_unique<FrameArena>(frame_arena_bytes_);
+        FE_LOG_INFO("frame arena: %zu bytes", frame_arena_bytes_);
+    }
+
     FE_LOG_INFO("entering main loop (%s)", headless_ ? "headless" : "interactive");
 
     // Install the application's profiler on this thread for the whole run, so
@@ -64,11 +73,22 @@ int Application::run() {
             // Run the user's systems for this frame. This is the whole execution
             // model: after the per-frame hook, before rendering, in the order the
             // systems were added. Each system is timed by the schedule.
+            //
+            // Reset the frame arena first: everything a system allocated from it
+            // last frame is dead by definition (nothing may outlive the frame), so
+            // the whole buffer is reclaimed in one pointer move before this
+            // frame's systems allocate. Resetting before the systems run, not
+            // after, means a system can allocate and the last system's data is
+            // still valid while it runs.
+            if (frame_arena_ != nullptr) {
+                frame_arena_->reset();
+            }
             FrameContext frame;
             frame.delta_time = engine_.delta_time();
             frame.elapsed_time = engine_.elapsed_time();
             frame.resources = &engine_.resources();
             frame.input = &engine_.input();
+            frame.arena = frame_arena_.get();
             schedule_.update(frame, scene_);
         }
 
@@ -102,6 +122,11 @@ int Application::run() {
     }
 
     on_stop();
+
+    // Release the frame arena with the loop. It holds only trivially
+    // destructible frame data, so it needs no scene/device ordering like the
+    // scene does below; it just must not outlive the run it belongs to.
+    frame_arena_.reset();
 
     // Release the scene *before* the graphics device and window. Scene
     // components can own GPU-backed resources (a Sprite2D holds a Texture2D),
