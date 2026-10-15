@@ -27,6 +27,39 @@ namespace {
 
 AudioSystem::AudioSystem(AudioDevice* device) : device_(device) {}
 
+bool AudioSystem::reconcile_stream(Entry& entry, const AudioSource& source) {
+    // A stream is only meaningful when the source opts in and its clip resource
+    // has a path a WAV stream can open. Everything else (no clip, an in-memory
+    // clip with no file, streaming off) closes any open stream and lets the
+    // ordinary clip voice handle it: if the stream cannot be opened the source
+    // falls back to its already-loaded clip rather than going silent.
+    const bool wants = source.stream && source.clip != nullptr && !source.clip->path().empty();
+    if (!wants) {
+        entry.stream.reset();
+        entry.stream_path.clear();
+        entry.stream_window.clear();
+        return false;
+    }
+
+    // Reopen only when the underlying path changed, so the read cursor (kept in
+    // the voice's position) survives a per-frame update. The stream's own format
+    // is the authority on its rate and channels, exactly as a clip's is.
+    const std::string& path = source.clip->path();
+    if (entry.stream != nullptr && entry.stream_path == path) {
+        return true;
+    }
+    auto opened = WavStream::open(path);
+    if (!opened) {
+        entry.stream.reset();
+        entry.stream_path.clear();
+        return false;
+    }
+    entry.stream = std::shared_ptr<AudioStream>(std::move(opened.value()));
+    entry.stream_path = path;
+    entry.stream_window.clear();
+    return true;
+}
+
 u32 AudioSystem::sample_rate() const noexcept {
     if (device_ != nullptr && device_->is_open()) {
         return device_->format().sample_rate;
@@ -117,6 +150,12 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
             entry.voice.playing = source->play_on_start && clip != nullptr;
         }
 
+        // Decide whether this source plays streamed or fully loaded, opening or
+        // closing the stream to match. A streaming source is driven by the
+        // stream branch in the mix below; the clip path is what a fully loaded
+        // source uses.
+        const bool streaming = reconcile_stream(entry, *source);
+
         // Apply the source's current settings every frame, so an inspector tweak
         // is audible on the next update with no extra plumbing.
         entry.voice.gain = source->gain;
@@ -125,6 +164,7 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         entry.voice.spatial = source->spatial;
         entry.voice.min_distance = source->min_distance;
         entry.voice.max_distance = source->max_distance;
+        entry.voice.stream_channels = streaming ? entry.stream->format().channels : 0;
         // Position comes from the node's world transform, never a transform of
         // the source's own. Computed fresh each frame so a moving node attenuates
         // correctly.
@@ -144,13 +184,17 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         // An explicit play() restarts the source from the top and clears the
         // transient request. This is how a gameplay system fires a one-shot cue
         // again (a brick breaking) after the first shot already ended: the voice
-        // is rewound and marked unfinished, so it audibly replays.
+        // is rewound and marked unfinished, so it audibly replays. A streaming
+        // source rewinds its cursor the same way.
         if (source->play_requested) {
             source->play_requested = false;
             if (entry.voice.clip != nullptr) {
                 entry.voice.position = 0.0;
                 entry.voice.finished = false;
                 entry.voice.playing = true;
+                if (entry.stream != nullptr) {
+                    static_cast<void>(entry.stream->seek(0));
+                }
             }
         }
 
@@ -159,16 +203,20 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
 
     const u32 frames = frames_for(context.delta_time, sample_rate());
 
-    // Flatten into a contiguous voice array for the pure mixer. This is once per
-    // frame over a handful of voices, so the copy back is not worth avoiding
-    // with a strided view.
+    // Flatten the non-streaming voices into a contiguous array for the pure
+    // mixer. A streaming voice is not in it: its samples are decoded on demand
+    // rather than read from a clip, so it is mixed separately below. This is
+    // once per frame over a handful of voices, so the copy back is not worth
+    // avoiding with a strided view.
     std::vector<Voice> voices;
     voices.reserve(entries_.size());
     for (const Entry& entry : entries_) {
-        voices.push_back(entry.voice);
+        if (entry.stream == nullptr) {
+            voices.push_back(entry.voice);
+        }
     }
 
-    if (frames > 0 && !voices.empty()) {
+    if (frames > 0 && (!voices.empty() || !entries_.empty())) {
         MixParams params;
         params.listener_position = listener_position_;
         params.buses = buses_.empty() ? nullptr : buses_.data();
@@ -178,6 +226,37 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         mix_buffer_.resize(static_cast<usize>(frames) * channels_);
         last_peak_ =
             mix_voices(voices.data(), voices.size(), mix_buffer_.data(), frames, channels_, sample_rate(), params);
+
+        // Streaming voices are added on top of the clip sum. Each decodes the
+        // window its own rate needs (bounded by stream_block_frames_), then
+        // resamples to the output rate with the same nearest-sample rule the
+        // clip path uses, so the two are audibly consistent.
+        for (Entry& entry : entries_) {
+            if (entry.stream == nullptr || !entry.voice.playing || entry.voice.finished) {
+                continue;
+            }
+            const AudioFormat stream_format = entry.stream->format();
+            const f64 ratio = static_cast<f64>(stream_format.sample_rate) / static_cast<f64>(sample_rate());
+            const u64 wanted = static_cast<u64>(static_cast<f64>(frames) * ratio) + 2u;
+            const u32 request = static_cast<u32>(std::min<u64>(wanted, stream_block_frames_));
+
+            entry.stream_window.clear();
+            const u32 got = entry.stream->read(request, entry.stream_window);
+            if (got == 0) {
+                if (entry.voice.loop) {
+                    static_cast<void>(entry.stream->seek(0));
+                    continue;
+                }
+                entry.voice.finished = true;
+                continue;
+            }
+
+            const f32 stream_peak = add_streamed_voice(entry.voice, entry.stream_window.data(), got, frames,
+                                                       mix_buffer_.data(), channels_, ratio, params);
+            last_peak_ = std::max(last_peak_, stream_peak);
+            entry.voice.position = static_cast<f64>(entry.stream->position());
+        }
+
         peak_max_ = std::max(peak_max_, last_peak_);
         mixed_frames_ += frames;
 
@@ -189,9 +268,13 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
     }
 
     // Copy the advanced state (read positions, finished flags) back so the next
-    // frame resumes where this one stopped.
-    for (usize i = 0; i < entries_.size(); ++i) {
-        entries_[i].voice = voices[i];
+    // frame resumes where this one stopped. Streaming entries are matched by
+    // pointer, since only the non-streaming ones were in `voices`.
+    usize voice_index = 0;
+    for (Entry& entry : entries_) {
+        if (entry.stream == nullptr) {
+            entry.voice = voices[voice_index++];
+        }
     }
 }
 

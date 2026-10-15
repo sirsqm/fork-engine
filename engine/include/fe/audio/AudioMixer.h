@@ -63,6 +63,13 @@ struct Voice {
     // diagnostics and metering. 1 when the voice is non-positional.
     f32 attenuation = 1.0f;
 
+    // --- Streaming ---------------------------------------------------------
+    // The channel count of the decoded samples for a streaming voice (a voice
+    // whose frames come from an AudioStream rather than an AudioClip). Zero for
+    // an ordinary clip voice, where the clip carries its own channel count.
+    // Consulted only by add_streamed_voice, so a clip voice is unaffected.
+    u32 stream_channels = 0;
+
     // --- Bus routing -------------------------------------------------------
     // The bus this voice routes to: an index into MixParams::buses, or kNoBus
     // when the voice is on no group bus (its contribution is scaled by the
@@ -123,6 +130,35 @@ struct MixParams {
 // channel. Channels beyond a multi-channel clip wrap, which is a well-defined
 // answer for a layout mismatch rather than an out-of-range read.
 [[nodiscard]] f32 clip_sample(const AudioClip& clip, u64 frame, u32 out_channel) noexcept;
+
+// The output-channel sample for `frame` of an interleaved block of
+// `source_channels`. The same rule clip_sample applies to a clip: mono is
+// up-mixed to every output channel, and a multi-channel block maps each output
+// channel onto the block's channels in order. Used by a streaming voice, whose
+// samples come from an AudioStream rather than an AudioClip.
+[[nodiscard]] f32 block_sample(const f32* samples, u32 source_channels, u64 frame, u32 out_channel) noexcept;
+
+// The gain a voice's samples are scaled by before the master bus: its own gain,
+// its distance attenuation (1 for a non-positional voice), and the gain of the
+// bus it routes to. Factored out so a clip voice and a streaming voice are
+// scaled by exactly the same rule, and a change to the rule cannot drift between
+// them. As a side effect it records the attenuation it applied on `voice`, which
+// is the value the diagnostics expose.
+[[nodiscard]] f32 voice_level(Voice& voice, const MixParams& params) noexcept;
+
+// Adds one streaming voice's already-decoded interleaved samples to `output`,
+// which is *not* cleared and must already hold the clip voices' contribution:
+// mix_voices applies the master gain over the whole sum, so a streaming voice is
+// added after it and carries the master gain itself. `source_frames` frames were
+// decoded from the stream at its own rate; `frames` output frames are added,
+// reading source frame `(u64)(f * ratio)` for output frame `f`, where
+// `ratio = stream_rate / output_rate` - the same nearest-sample resampling
+// mix_voices applies to a clip. Samples are scaled by voice_level() and the
+// master gain. The stream cursor is owned by the caller, so nothing is advanced
+// here. Returns the peak absolute sample in `output` after the addition, for the
+// caller's metering.
+[[nodiscard]] f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 frames, f32* output,
+                                     u32 out_channels, f64 ratio, const MixParams& params = {}) noexcept;
 
 // Mixes `voice_count` voices into `output` and advances their read positions.
 //

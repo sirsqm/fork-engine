@@ -223,8 +223,11 @@ is missing than ten roadmap items, and it is the precondition for a community.
       backend, `AudioClip` + `WavLoader`, `AudioSource`, and `AudioSystem` with a
       pure mixer — see [ADR-0016](adr/0016-audio-module.md)
 - [~] Audio refinements: 3D positional attenuation and audio buses / mixing
-      groups — see [ADR-0034](adr/0034-audio-attenuation-buses.md). Streaming /
-      large-file playback and compressed codecs are still to do
+      groups — see [ADR-0034](adr/0034-audio-attenuation-buses.md)
+- [x] Streaming / large-file playback and compressed codecs: mu-law, A-law, and
+      IMA ADPCM decoding in `WavLoader`, and a pull-based `AudioStream` /
+      `WavStream` a source opts into with `AudioSource::stream` — see
+      [ADR-0060](adr/0060-compressed-audio-and-streaming.md)
 - [ ] Tilemaps
 - [ ] Skeletal animation and skinning
 - [x] Animation state machines — a named-state graph over the sprite animator:

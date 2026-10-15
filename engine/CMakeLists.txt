@@ -77,6 +77,7 @@ set(FE_ENGINE_SOURCES
     src/debugdraw/DebugDraw.cpp
     src/audio/AudioDevice.cpp
     src/audio/AudioMixer.cpp
+    src/audio/AudioStream.cpp
     src/audio/AudioSystem.cpp
     src/audio/WavLoader.cpp
     src/audio/AudioTypes.cpp

@@ -32,6 +32,17 @@ public:
     // scene can be authored before its assets exist.
     std::shared_ptr<Resource> clip;
 
+    // When true the source plays its clip *streamed*: the system decodes a
+    // bounded window on demand through an AudioStream instead of holding the
+    // whole decoded clip in memory. This is the model for a long sound (music,
+    // ambience) whose decoded PCM should never be fully resident. It changes only
+    // where the samples come from; gain, pitch, spatialisation and bus routing
+    // are applied by the same rule as for a fully loaded clip. Default false, so
+    // an existing scene is unaffected and every sound is a fully decoded clip
+    // until it opts in. Only meaningful when the clip's resource has a path that
+    // resolves to a decodable stream.
+    bool stream = false;
+
     // Linear gain. 0 is silent and 1 is the clip at its recorded level. Not
     // clamped here; the mixer applies it as-is so a scene can author an
     // intentional boost, and the output is not clipped by the engine.

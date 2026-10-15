@@ -42,6 +42,57 @@ f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexc
     return ((1.0f / distance) - (1.0f / max_distance)) / span;
 }
 
+f32 block_sample(const f32* samples, u32 source_channels, u64 frame, u32 out_channel) noexcept {
+    if (samples == nullptr || source_channels == 0) {
+        return 0.0f;
+    }
+    const u32 source_channel = source_channels == 1 ? 0 : out_channel % source_channels;
+    return samples[frame * source_channels + source_channel];
+}
+
+f32 voice_level(Voice& voice, const MixParams& params) noexcept {
+    voice.attenuation = 1.0f;
+    if (voice.spatial) {
+        const Vec3 offset = voice.world_position - params.listener_position;
+        voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
+    }
+    return voice.gain * voice.attenuation * params.bus_gain(voice.bus);
+}
+
+f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 frames, f32* output, u32 out_channels,
+                       f64 ratio, const MixParams& params) noexcept {
+    if (samples == nullptr || output == nullptr || source_frames == 0 || frames == 0 || out_channels == 0) {
+        return 0.0f;
+    }
+    // The level is resolved exactly as a clip voice's is, then the master gain is
+    // applied here because mix_voices already folded it into the sum these
+    // samples are added to.
+    const f32 level = voice_level(voice, params) * params.master_gain;
+    const u32 source_channels = voice.stream_channels == 0 ? out_channels : voice.stream_channels;
+    if (ratio <= 0.0) {
+        ratio = 1.0;
+    }
+
+    for (u32 f = 0; f < frames; ++f) {
+        const u64 source_frame = static_cast<u64>(static_cast<f64>(f) * ratio);
+        if (source_frame >= source_frames) {
+            // The decoded block ran out before the output request did; the rest
+            // of this voice's contribution is silence.
+            break;
+        }
+        const usize base = static_cast<usize>(f) * out_channels;
+        for (u32 c = 0; c < out_channels; ++c) {
+            output[base + c] += block_sample(samples, source_channels, source_frame, c) * level;
+        }
+    }
+
+    f32 peak = 0.0f;
+    for (usize i = 0; i < static_cast<usize>(frames) * out_channels; ++i) {
+        peak = std::max(peak, std::abs(output[i]));
+    }
+    return peak;
+}
+
 f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 out_channels, u32 output_sample_rate,
                const MixParams& params) {
     if (output == nullptr || frames == 0 || out_channels == 0) {
@@ -70,12 +121,7 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
         // zero (a muted bus, a silent source, a voice past its cutoff) still
         // advances the read position through the normal path below, so unmuting
         // resumes at the right place rather than replaying from where it stopped.
-        voice.attenuation = 1.0f;
-        if (voice.spatial) {
-            const Vec3 offset = voice.world_position - params.listener_position;
-            voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
-        }
-        const f32 level = voice.gain * voice.attenuation * params.bus_gain(voice.bus);
+        const f32 level = voice_level(voice, params);
 
         const AudioClip& clip = *voice.clip;
         const u64 clip_frames = clip.frame_count();
