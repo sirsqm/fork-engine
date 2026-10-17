@@ -49,6 +49,13 @@ namespace fs {
 // Creates a directory and all missing parents. Returns an Error on failure.
 [[nodiscard]] Error create_directories(std::string_view path);
 
+// Copies a regular file to `destination`, creating parent directories as
+// needed and overwriting an existing file. The source's permission bits are
+// carried over, so a copy of an executable is itself executable - which is what
+// an export step that copies a runtime beside its pack depends on. Returns an
+// Error when the source cannot be read or the destination cannot be written.
+[[nodiscard]] Error copy_file(std::string_view source, std::string_view destination);
+
 // Returns the parent directory of a path, or "" if there is none.
 [[nodiscard]] std::string parent_path(std::string_view path);
 

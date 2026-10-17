@@ -318,8 +318,13 @@ use, not merely that the editor runs on several OSes. Plan and trade-offs:
       transparently as from disk ([ADR-0030](adr/0030-asset-pack-format.md))
 - [ ] `fork_pack` tooling polish: reachability (pack only what the startup scene
       references), compression, and streaming a large pack
-- [ ] Export templates: a prebuilt runtime per desktop target and a `fork
-      export` path that assembles a runnable build from a project
+- [x] The export path: `fork_player` mounts a pack and runs the game loop, and
+      `fork_export` assembles a runnable build (the player, a fresh pack, and a
+      manifest) from a project ([ADR-0064](adr/0064-export-runtime-and-player.md)).
+      The runtime is generic and driven by the pack, so export has no compiler in
+      it. The exported build is exercised end to end in CI.
+- [ ] Per-desktop-target runtimes and app packaging: a prebuilt `fork_player`
+      for each OS, cross-compilation, and platform app bundles (`.app`, MSI)
 - [ ] Desktop parity: macOS and Windows backends brought to parity with Linux
 - [ ] Web target: Emscripten/WASM build with a WebGL2 backend (the cheapest
       proof that the abstraction holds)

@@ -107,6 +107,22 @@ jobs:
           xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_editor_shell --project examples/demo_project --headless --frames 3
           xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_editor_shell --project examples/demo_project --headless --frames 3
 
+      - name: Export the demo project and play it (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          # The whole shipping path in one step (ADR-0064): fork_export turns a
+          # project into a pack, a runtime, and a manifest; fork_player mounts
+          # that pack and runs the scene. If either half breaks, this fails.
+          ./build/bin/fork_export --project examples/demo_project --out /tmp/fork_export_smoke --module ./build/bin/fe_test_module_a.so
+          test -x /tmp/fork_export_smoke/fork_player
+          test -f /tmp/fork_export_smoke/fork.export.json
+          test -f /tmp/fork_export_smoke/game.fepack
+          test -f /tmp/fork_export_smoke/fe_test_module_a.so
+          # Run the exported build the way a player would: from its own directory,
+          # through its manifest, with no loose project files left behind.
+          (cd /tmp/fork_export_smoke && ./fork_player --export . --headless 30)
+          (cd /tmp/fork_export_smoke && ./fork_player --export . --headless 10 --render)
+
   # The performance regression gate
   # (docs/adr/0033-performance-regression-gate.md): a Release build runs the
   # benchmark over a fixed scene and compares its frame-time p50 against the

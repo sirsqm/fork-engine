@@ -75,6 +75,10 @@ endif()
 # built with the engine (the examples ride on the same switch).
 if(FE_BUILD_EXAMPLES)
   add_subdirectory(tools/pack)
+  # The runtime and the export step (ADR-0064): a project becomes a pack plus
+  # the player that mounts it.
+  add_subdirectory(tools/player)
+  add_subdirectory(tools/export)
 endif()
 
 if(FE_BUILD_EDITOR)

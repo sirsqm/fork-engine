@@ -69,6 +69,7 @@ rather than editing it.
 | [0061](0061-cpp-gameplay-modules-hot-reload.md) | C++ gameplay modules and hot reload | Accepted |
 | [0062](0062-tilemaps.md) | Tilemaps | Accepted |
 | [0063](0063-reflection-backed-script-properties.md) | Reflection-backed script properties and script persistence | Accepted |
+| [0064](0064-export-runtime-and-player.md) | Export: a runtime that plays a pack | Accepted |
 
 ## Format
 

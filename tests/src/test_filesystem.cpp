@@ -123,3 +123,40 @@ TEST_CASE("is_absolute follows the host platform's path syntax") {
     CHECK(fs::is_absolute("/usr/local/assets"));
 #endif
 }
+
+TEST_CASE("copy_file copies bytes and carries the executable bit") {
+    TempDir dir("copy");
+    const std::string source = dir.file("runtime");
+    REQUIRE_FALSE(fs::write_binary_file(source, "ELF-ish", 7));
+
+    // Make the source executable, then copy it: a copied runtime must stay one,
+    // which is what an export step that copies the player depends on.
+    std::filesystem::permissions(source, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
+
+    const std::string destination = dir.file("out/runtime");
+    REQUIRE_FALSE(fs::copy_file(source, destination));
+
+    auto bytes = fs::read_binary_file(destination);
+    REQUIRE(bytes);
+    CHECK(std::string(bytes.value().begin(), bytes.value().end()) == "ELF-ish");
+
+    const auto perms = std::filesystem::status(destination).permissions();
+    CHECK((perms & std::filesystem::perms::owner_exec) != std::filesystem::perms::none);
+
+    // A missing source is an error, not an empty destination.
+    CHECK(fs::copy_file(dir.file("absent"), dir.file("out/absent")));
+}
+
+TEST_CASE("copy_file overwrites an existing destination") {
+    TempDir dir("copy_overwrite");
+    const std::string source = dir.file("new");
+    const std::string destination = dir.file("old");
+    REQUIRE_FALSE(fs::write_binary_file(source, "new", 3));
+    REQUIRE_FALSE(fs::write_binary_file(destination, "old-longer", 10));
+
+    REQUIRE_FALSE(fs::copy_file(source, destination));
+
+    auto bytes = fs::read_binary_file(destination);
+    REQUIRE(bytes);
+    CHECK(std::string(bytes.value().begin(), bytes.value().end()) == "new");
+}

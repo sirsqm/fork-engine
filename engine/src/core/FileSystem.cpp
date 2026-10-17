@@ -121,6 +121,31 @@ Error create_directories(std::string_view path) {
     return Error::none();
 }
 
+Error copy_file(std::string_view source, std::string_view destination) {
+    const stdfs::path from = to_native(source);
+    const stdfs::path to = to_native(destination);
+
+    std::error_code ec;
+    if (!stdfs::is_regular_file(from, ec)) {
+        return Error("cannot copy: '" + std::string(source) + "' is not a regular file");
+    }
+    if (to.has_parent_path()) {
+        stdfs::create_directories(to.parent_path(), ec);
+        if (ec) {
+            return Error("could not create directory for " + std::string(destination) + ": " + ec.message());
+        }
+    }
+
+    // Copy the permission bits with the bytes, so a copied executable stays one.
+    // Overwrite an existing file so a re-export replaces the previous build.
+    stdfs::copy_file(from, to, stdfs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        return Error("could not copy '" + std::string(source) + "' to '" + std::string(destination) +
+                     "': " + ec.message());
+    }
+    return Error::none();
+}
+
 std::string parent_path(std::string_view path) {
     return to_utf8(to_native(path).parent_path());
 }
