@@ -4,6 +4,7 @@
 
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
+#include "fe/serialization/ScriptBinding.h"
 
 #include <memory>
 #include <string>
@@ -36,11 +37,14 @@ namespace scene {
 // Version 2 stores them as stable asset GUIDs ("guid:<uuid>"), which survive a
 // file move. Version 3 gives every component a stable `Uuid` in the document
 // (`"id"`), the counterpart of the node id that has been written since version
-// 1; older documents load with ids assigned at creation. The reader migrates
-// version-1 documents at load time. See
-// docs/adr/0020-resource-identity-guid-sidecar.md and
+// 1; older documents load with ids assigned at creation. Version 4 adds a
+// per-node `"scripts"` array, which records the gameplay behaviour bound to a
+// node and its reflected properties (ADR-0063); a document written without a
+// script binding present has no such array, and an older document loads with
+// every node unscripted. The reader migrates version-1 documents at load time.
+// See docs/adr/0020-resource-identity-guid-sidecar.md and
 // docs/adr/0045-component-identity.md.
-inline constexpr i32 kFormatVersion = 3;
+inline constexpr i32 kFormatVersion = 4;
 
 // Serialises `scene` to a JSON string.
 //
@@ -48,20 +52,33 @@ inline constexpr i32 kFormatVersion = 3;
 // referenced asset, the reference is written as a stable "guid:" key; otherwise
 // it is written as the loader's path-derived key. A null manager therefore
 // produces the version-1 reference shape, which still loads.
-[[nodiscard]] Result<std::string> to_json(const Scene& scene, const ResourceManager* resources = nullptr);
+//
+// `scripts` may be null. When it is provided, each node's bound behaviour and
+// its reflected properties are written as a "scripts" array (ADR-0063); when it
+// is null, no node carries a "scripts" array and the document is the same one
+// the serializer produced before scripts were persisted.
+[[nodiscard]] Result<std::string> to_json(const Scene& scene, const ResourceManager* resources = nullptr,
+                                          const ScriptBinding* scripts = nullptr);
 
 // Deserialises a scene from a JSON string. On success `out_scene` is replaced.
 // `resources` may be null; when provided, resource references are resolved
 // through it so a loaded scene comes back fully formed.
 //
+// `scripts` may be null. When it is provided, each node's "scripts" array is
+// read back through it and the behaviours are attached once the scene is
+// complete (ADR-0063).
+//
 // A version-1 document (path-derived references) is migrated: each reference is
 // looked up in the manager's asset database and rewritten to a "guid:" key. A
 // version-1 document with a reference that has no asset entry is reported as an
 // error rather than loaded with a silently broken reference.
-[[nodiscard]] Error from_json(std::string_view text, Scene& out_scene, ResourceManager* resources = nullptr);
+[[nodiscard]] Error from_json(std::string_view text, Scene& out_scene, ResourceManager* resources = nullptr,
+                              ScriptBinding* scripts = nullptr);
 
-[[nodiscard]] Error save(const Scene& scene, std::string_view path, const ResourceManager* resources = nullptr);
-[[nodiscard]] Error load(std::string_view path, Scene& out_scene, ResourceManager* resources = nullptr);
+[[nodiscard]] Error save(const Scene& scene, std::string_view path, const ResourceManager* resources = nullptr,
+                         const ScriptBinding* scripts = nullptr);
+[[nodiscard]] Error load(std::string_view path, Scene& out_scene, ResourceManager* resources = nullptr,
+                         ScriptBinding* scripts = nullptr);
 
 } // namespace scene
 } // namespace serialization

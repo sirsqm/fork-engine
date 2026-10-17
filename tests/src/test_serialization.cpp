@@ -182,7 +182,7 @@ TEST_CASE("the document records a format and version") {
     auto text = serialization::scene::to_json(scene);
     REQUIRE(text);
     CHECK(text.value().find("\"format\": \"fork_scene\"") != std::string::npos);
-    CHECK(text.value().find("\"format_version\": 3") != std::string::npos);
+    CHECK(text.value().find("\"format_version\": 4") != std::string::npos);
 }
 
 TEST_CASE("loading rejects a document that is not a fork scene") {

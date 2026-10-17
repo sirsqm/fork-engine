@@ -4,6 +4,7 @@
 
 #include "fe/core/Types.h"
 #include "fe/script/Script.h"
+#include "fe/script/ScriptDesc.h"
 
 #include <functional>
 #include <memory>
@@ -40,13 +41,24 @@ public:
     // name replaces the earlier one, so re-running a test in the same process
     // is well defined.
     void register_script(std::string name, Factory factory) {
-        for (auto& entry : entries_) {
-            if (entry.name == name) {
-                entry.factory = std::move(factory);
+        register_desc(ScriptDesc{std::move(name), std::move(factory), {}});
+    }
+
+    // Registers (or replaces) a behaviour from a full description, including the
+    // reflected properties that make its fields visible to the inspector and the
+    // serializer (ADR-0063). A description with no factory is rejected, because
+    // nothing could then be constructed from the name.
+    void register_desc(ScriptDesc desc) {
+        if (!desc.is_valid()) {
+            return;
+        }
+        for (auto& entry : descs_) {
+            if (entry.name == desc.name) {
+                entry = std::move(desc);
                 return;
             }
         }
-        entries_.push_back(Entry{std::move(name), std::move(factory)});
+        descs_.push_back(std::move(desc));
     }
 
     // Convenience for a concrete Script type with a default constructor.
@@ -59,9 +71,20 @@ public:
     // Constructs a default instance of the named behaviour, or nullptr if the
     // name is not registered.
     [[nodiscard]] std::unique_ptr<Script> create(std::string_view name) const {
-        for (const auto& entry : entries_) {
+        for (const auto& entry : descs_) {
             if (entry.name == name) {
                 return entry.factory ? entry.factory() : nullptr;
+            }
+        }
+        return nullptr;
+    }
+
+    // The description of the named behaviour, or nullptr. This is what the
+    // inspector and the serializer read to learn a script's properties.
+    [[nodiscard]] const ScriptDesc* find(std::string_view name) const noexcept {
+        for (const auto& entry : descs_) {
+            if (entry.name == name) {
+                return &entry;
             }
         }
         return nullptr;
@@ -71,43 +94,31 @@ public:
     // true if a registration was removed. A module loader uses this to forget
     // the behaviours a module provided when that module is dropped (ADR-0061).
     bool remove_script(std::string_view name) {
-        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+        for (auto it = descs_.begin(); it != descs_.end(); ++it) {
             if (it->name == name) {
-                entries_.erase(it);
+                descs_.erase(it);
                 return true;
             }
         }
         return false;
     }
 
-    [[nodiscard]] bool contains(std::string_view name) const noexcept {
-        for (const auto& entry : entries_) {
-            if (entry.name == name) {
-                return true;
-            }
-        }
-        return false;
-    }
+    [[nodiscard]] bool contains(std::string_view name) const noexcept { return find(name) != nullptr; }
 
-    [[nodiscard]] usize script_count() const noexcept { return entries_.size(); }
+    [[nodiscard]] usize script_count() const noexcept { return descs_.size(); }
 
     // Every registered behaviour name, in registration order.
     [[nodiscard]] std::vector<std::string> names() const {
         std::vector<std::string> out;
-        out.reserve(entries_.size());
-        for (const auto& entry : entries_) {
+        out.reserve(descs_.size());
+        for (const auto& entry : descs_) {
             out.push_back(entry.name);
         }
         return out;
     }
 
 private:
-    struct Entry {
-        std::string name;
-        Factory factory;
-    };
-
-    std::vector<Entry> entries_;
+    std::vector<ScriptDesc> descs_;
 };
 
 } // namespace fe

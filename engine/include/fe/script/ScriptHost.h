@@ -157,6 +157,26 @@ public:
 
     [[nodiscard]] usize script_count() const noexcept { return scripts_.size(); }
 
+    // A live binding, for a consumer that enumerates what is scripted. The host
+    // still owns the script; the view borrows it and is valid until the next
+    // attach, detach, or clear. The scene serializer reads this to persist which
+    // node runs which behaviour (ADR-0063).
+    struct BindingView {
+        Uuid node_id;
+        Script* script = nullptr;
+    };
+
+    // Every live binding, in update order. Ordered so a document written twice
+    // from the same host is identical.
+    [[nodiscard]] std::vector<BindingView> bindings() const {
+        std::vector<BindingView> out;
+        out.reserve(scripts_.size());
+        for (const Entry& entry : scripts_) {
+            out.push_back(BindingView{entry.node_id, entry.script.get()});
+        }
+        return out;
+    }
+
     // The node a script is bound to, or nullptr. The scene owns the node; the
     // host only reports the binding. A module loader uses this to rebind a script
     // after a hot reload (ADR-0061).

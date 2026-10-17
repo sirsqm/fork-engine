@@ -22,8 +22,11 @@ class Node;
 //     frame by a ScriptHost. It exists so a game can add "this door opens when
 //     the player has the key" without editing the engine.
 //
-// A Script is not reflection-serialized and not a component: components are
-// engine data (ADR-0002, ADR-0005), scripts are game code. The seam is
+// A Script is not a component: components are engine data (ADR-0002, ADR-0005),
+// scripts are game code. Its fields are still reflected -- a registered
+// ScriptDesc lists them the same way a component's TypeDesc does, so they
+// persist and appear in the inspector (ADR-0063) -- but the script itself is
+// owned by a ScriptHost, not stored in the scene. The seam is
 // language-agnostic (ADR-0044): nothing here names C++, and a second language
 // would implement this interface rather than change it.
 //

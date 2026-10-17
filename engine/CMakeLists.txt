@@ -12,6 +12,7 @@
 #   core, scene, resources  <-  systems
 #   core, scene, systems  <-  script
 #   core, scene, systems, platform  <-  script (the module loader; see ADR-0061)
+#   core, scene, systems, serialization  <-  script (script binding persistence; see ADR-0063)
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, reflect  <-  physics3d
 #   core, scene, systems, resources  <-  audio
@@ -91,6 +92,7 @@ set(FE_ENGINE_SOURCES
     src/pack/PackWriter.cpp
     src/pack/PackSource.cpp
     src/serialization/Json.cpp
+    src/serialization/PropertyJson.cpp
     src/serialization/SceneSerializer.cpp
     src/serialization/Operation.cpp
     src/session/Session.cpp
@@ -105,6 +107,7 @@ set(FE_ENGINE_SOURCES
     src/runtime/Engine.cpp
     src/runtime/Application.cpp
     src/script/ScriptLibrary.cpp
+    src/script/ScriptBinding.cpp
 )
 
 add_library(fork_engine STATIC ${FE_ENGINE_SOURCES})

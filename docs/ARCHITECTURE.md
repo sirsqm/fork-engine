@@ -926,11 +926,15 @@ point:
   It is per-node (so the editor can attach it), but it is *driven* by a system,
   so execution still belongs to the schedule.
 
-A script is not reflection-serialized and not a component: components are engine
-data ([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md),
+A script is not a component: components are engine data
+([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md),
 [ADR-0005](adr/0005-reflection-and-serialization.md)); scripts are game code.
 Keeping them separate is what stops the per-node `update()` model ADR-0002
-rejected from returning through the component system.
+rejected from returning through the component system. A script's *fields* are
+still reflected — a registered `ScriptDesc` lists them exactly as a component's
+`TypeDesc` does — so they persist and appear in the inspector, but the script
+instance itself is owned by a `ScriptHost`, not stored in the scene
+([ADR-0063](adr/0063-reflection-backed-script-properties.md)).
 
 The module is `script` (`engine/include/fe/script/`). Its seam headers are
 header-only and depend only on `core`, `scene`, and `systems`; the module loader
@@ -972,11 +976,17 @@ one, so no instance ever outlives the code it runs
 ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic file
 watching is editor work and is not part of this cut.
 
+**Landed since**: reflection-backed script bindings. A registered `ScriptDesc`
+exposes a script's fields to the inspector and the serializer, and
+`serialization::ScriptBinding` — implemented by `fe::script::ScriptBinding` —
+persists which behaviour runs on which node and with what property values
+([ADR-0063](adr/0063-reflection-backed-script-properties.md)). A saved scene now
+comes back scripted.
+
 **Not in this cut** (named so they are planned, not forgotten): automatic
-file-watching on reload, reflection-backed bindings that expose a script's
-properties to the inspector and serializer, and editor integration and
-debugging. These are the remaining M7 rows; the seam they attach to is the one
-above and does not change to accommodate them.
+file-watching on reload, drawing script properties in the inspector panel, and
+editor integration and debugging. These are the remaining M7 rows; the seam they
+attach to is the one above and does not change to accommodate them.
 
 
 ## 10. Platform layer
@@ -1089,9 +1099,12 @@ Every milestone must build and pass its tests before the next one begins.
   per map (see [ADR-0062](adr/0062-tilemaps.md)).
 - The scripting seam and the C++ path exist (section 9,
   [ADR-0044](adr/0044-scripting-seam.md)): C++ gameplay modules load and
-  hot-reload through `ScriptLibrary` ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)).
-  What is not here yet is automatic file-watching on reload,
-  reflection-backed script bindings, editor integration, debugging, and any
+  hot-reload through `ScriptLibrary`
+  ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)), and a script's
+  reflected properties persist through the scene serializer
+  ([ADR-0063](adr/0063-reflection-backed-script-properties.md)).
+  What is not here yet is automatic file-watching on reload, drawing script
+  properties in the inspector panel, editor integration, debugging, and any
   embedded or custom language. These are the remaining M7 rows, and none of them
   changes the seam.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI

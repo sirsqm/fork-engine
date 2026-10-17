@@ -277,8 +277,9 @@ is the expensive one, and it waits.
       by destroying the live scripts first and rebinding them to the new code
       ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic
       file-watching is editor work and remains
-- [ ] Reflection-backed bindings, so a script's exposed properties flow through
+- [x] Reflection-backed bindings, so a script's exposed properties flow through
       the existing reflection and serialization path
+      ([ADR-0063](adr/0063-reflection-backed-script-properties.md))
 - [ ] Editor integration (attach, inspect, hot reload)
 - [ ] Debugging support
 - [ ] *(Deferred)* An embedded language (Lua/Wren) or a custom engine language,

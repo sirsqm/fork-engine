@@ -91,10 +91,13 @@ per-node-`update()` model in through the back door that ADR-0002 closed.
 
 `Script` is therefore a **sibling of `System`, not a component**. It is per-node
 (so a designer can attach it in the editor), but it is driven by a system (so
-execution stays owned by the schedule), and it is not reflection-serialized
-*code*. The two concepts stay separate: components are engine data, scripts are
-gameplay behaviour, and the host is the only thing that binds a script to a
-node.
+execution stays owned by the schedule), and it is not a component. The two
+concepts stay separate: components are engine data, scripts are gameplay
+behaviour, and the host is the only thing that binds a script to a node. A
+script's *fields* are still reflected and serialized — a registered `ScriptDesc`
+lists them, and the scene serializer persists them through a
+`ScriptBinding` seam — but the instance stays game code
+([ADR-0063](0063-reflection-backed-script-properties.md)).
 
 ### The failures are contained and reported
 
