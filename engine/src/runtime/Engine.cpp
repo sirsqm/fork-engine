@@ -17,6 +17,7 @@
 #include "fe/renderer3d/Renderer3D.h"
 #include "fe/resources/ImageLoader.h"
 #include "fe/resources/Texture2DLoader.h"
+#include "fe/scene/TilemapTypes.h"
 #include "fe/scene3d/Scene3DTypes.h"
 #include "fe/version/Version.h"
 
@@ -56,6 +57,7 @@ Error Engine::initialize(const Config& config) {
     // Make the engine's component types visible to the serializer, the
     // inspector, and any scene loaded later. Idempotent.
     reflect::register_builtin_types();
+    reflect::register_tilemap_types();
     reflect::register_anim_types();
     reflect::register_physics_types();
     reflect::register_physics3d_types();

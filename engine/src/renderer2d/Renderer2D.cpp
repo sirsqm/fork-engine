@@ -6,7 +6,6 @@
 #include "fe/core/Log.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Scene.h"
-#include "fe/scene/Sprite2D.h"
 
 #include <algorithm>
 #include <array>
@@ -59,8 +58,8 @@ void main() {
 // so that artist intent (what is in front) always wins over batching: a sprite
 // on a higher layer is never reordered behind a lower one to save a draw call.
 [[nodiscard]] bool draw_order_less(const render::SpriteInstance& a, const render::SpriteInstance& b) noexcept {
-    if (a.sprite->layer != b.sprite->layer) {
-        return a.sprite->layer < b.sprite->layer;
+    if (a.layer != b.layer) {
+        return a.layer < b.layer;
     }
     return a.texture < b.texture;
 }
@@ -175,7 +174,6 @@ Camera2D* Renderer2D::find_active_camera(Scene& scene) {
 }
 
 void Renderer2D::append_quad(const render::SpriteInstance& instance) {
-    const Sprite2D& sprite = *instance.sprite;
     const u32 base = static_cast<u32>(vertices_.size());
 
     // Local quad corners, centred on the origin. Corners go counter-clockwise.
@@ -187,15 +185,15 @@ void Renderer2D::append_quad(const render::SpriteInstance& instance) {
         Vec2{-half.x, half.y},
     };
     const std::array<Vec2, 4> uvs = {
-        Vec2{sprite.uv.x, sprite.uv.w},
-        Vec2{sprite.uv.z, sprite.uv.w},
-        Vec2{sprite.uv.z, sprite.uv.y},
-        Vec2{sprite.uv.x, sprite.uv.y},
+        Vec2{instance.uv.x, instance.uv.w},
+        Vec2{instance.uv.z, instance.uv.w},
+        Vec2{instance.uv.z, instance.uv.y},
+        Vec2{instance.uv.x, instance.uv.y},
     };
 
     for (usize i = 0; i < 4; ++i) {
         const Vec3 world_pos = transform_point(instance.world, Vec3{corners[i].x, corners[i].y, 0.0f});
-        vertices_.push_back(Vertex{Vec2{world_pos.x, world_pos.y}, sprite.color, uvs[i]});
+        vertices_.push_back(Vertex{Vec2{world_pos.x, world_pos.y}, instance.color, uvs[i]});
     }
 
     indices_.push_back(base + 0);
@@ -207,7 +205,12 @@ void Renderer2D::append_quad(const render::SpriteInstance& instance) {
 }
 
 void Renderer2D::extract(const Scene& scene, std::vector<render::SpriteInstance>& out) const {
+    // Sprites and tiles share one array and one draw path: a tile is a textured
+    // quad, so the only difference is where its world matrix and UV come from.
+    // Filling one array is also what lets the layer sort order a map and the
+    // sprites over it together.
     render::extract_sprites(scene, out);
+    render::extract_tiles(scene, out);
 }
 
 usize Renderer2D::cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum) {

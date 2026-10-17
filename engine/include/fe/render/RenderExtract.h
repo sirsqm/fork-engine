@@ -14,6 +14,7 @@ class Mesh;
 class MeshRenderer3D;
 class Scene;
 class Sprite2D;
+class Tilemap;
 
 namespace rhi {
 class Texture;
@@ -49,19 +50,36 @@ namespace render {
 
 // One sprite's resolved draw state. The renderer does not hold the `Sprite2D`
 // past extraction for anything but the fields the draw needs; every value a draw
-// reads is either copied here or reachable from `sprite` (which the scene owns
-// and which outlives the frame).
+// reads is copied here.
+//
+// A tile from a `Tilemap` produces one of these too: a tile *is* a textured
+// quad, so the map reuses the sprite draw path rather than adding a second one.
+// The copied fields are what make that possible -- the draw step never has to
+// ask which component produced an instance.
 struct SpriteInstance {
     // The GPU texture to bind. Never null in an extracted array: a sprite with
     // no texture, or a texture that is not a `Texture2D`, is skipped.
     rhi::Texture* texture = nullptr;
-    // The sprite component, kept for `layer` (the primary sort key) and `color`.
+    // The sprite component, kept for provenance (tests and debugging). The draw
+    // reads the resolved fields below, not this.
     const Sprite2D* sprite = nullptr;
-    // The owning node's world matrix.
+    // The tilemap component, when this instance is a tile rather than a sprite.
+    // Null for a sprite; `sprite` is null for a tile.
+    const Tilemap* tilemap = nullptr;
+    // The owning node's world matrix, already composed with the tile's own cell
+    // offset for a tilemap instance.
     Mat4 world{};
     // The quad size in world units, resolved from the sprite's explicit size or,
-    // when the sprite asked for the texture size, from the texture.
+    // when the sprite asked for the texture size, from the texture. For a tile
+    // this is the tileset's tile size.
     Vec2 size{};
+    // The UV sub-rectangle to sample. Resolved at extraction so a tile's cell
+    // and a sprite's atlas cell reach the draw step the same way.
+    Vec4 uv{0.0f, 0.0f, 1.0f, 1.0f};
+    // The tint multiplied with the sampled texel.
+    Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    // Render order within the 2D pass. Higher values draw on top.
+    i32 layer = 0;
 };
 
 // One mesh instance's resolved draw state.
@@ -106,6 +124,17 @@ struct MeshInstanceKey {
 // matches the pre-seam behaviour: an untextured sprite is an authoring state,
 // not content.
 void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out);
+
+// Appends every non-empty tile of every `Tilemap` in `scene` to `out`. Unlike
+// extract_sprites this does *not* clear: a tilemap and the sprites above it
+// belong in one array so the layer sort orders them together. Pass an array
+// already filled by extract_sprites, or an empty one for tiles alone.
+//
+// Each tile becomes one `SpriteInstance` whose `world` is the map node's world
+// matrix composed with the cell's local offset, and whose `uv` is the tile's
+// cell in the tileset. A map with no texture, an empty grid, or a zero tile size
+// contributes nothing.
+void extract_tiles(const Scene& scene, std::vector<SpriteInstance>& out);
 
 // Collects every drawable mesh instance in `scene` into `out` (cleared first).
 // Each referenced mesh is also appended to `meshes_seen` (never cleared here),

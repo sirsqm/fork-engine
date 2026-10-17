@@ -23,6 +23,7 @@
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/Tilemap.h"
 #include "fe/systems/FrameContext.h"
 
 #include <cmath>
@@ -213,4 +214,44 @@ TEST_CASE("a 3D and a 2D body in the same scene both fall, independently") {
     CHECK(crate_y > 0.4f);
     CHECK(ball_y < 1.0f);
     CHECK(ball_y > 0.4f);
+}
+
+// ---------------------------------------------------------------------------
+// The play copy carries a tilemap, so a level authored in the editor is present
+// when the play session runs rather than silently vanishing.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the play copy carries an authored tilemap") {
+    Scene authored;
+    add_floor(authored, 10.0f);
+
+    Node* node = authored.create_node("Ground");
+    auto* map = node->add_component<Tilemap>();
+    map->columns = 4;
+    map->rows = 2;
+    map->tile_size = Vec2{16.0f, 16.0f};
+    map->layer = -1;
+    map->resize(3, 2);
+    map->set(0, 0, 1);
+    map->set(2, 1, 6);
+
+    EditorContext context;
+    context.register_default_component_factories();
+    auto& session = context.play();
+    REQUIRE_FALSE(session.start(authored));
+
+    const Node* play_node = session.play_scene().find_node_by_name("Ground");
+    REQUIRE(play_node != nullptr);
+    const auto* play_map = play_node->get_component<Tilemap>();
+    REQUIRE(play_map != nullptr);
+
+    // The whole grid came across, not just its dimensions.
+    CHECK(play_map->width == 3);
+    CHECK(play_map->height == 2);
+    CHECK(play_map->columns == 4);
+    CHECK(play_map->rows == 2);
+    CHECK(play_map->layer == -1);
+    CHECK(play_map->at(0, 0) == 1);
+    CHECK(play_map->at(1, 0) == Tilemap::kEmpty);
+    CHECK(play_map->at(2, 1) == 6);
 }

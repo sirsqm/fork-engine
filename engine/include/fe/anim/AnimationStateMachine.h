@@ -46,7 +46,7 @@ namespace fe {
 // values a document authors inline; a scene carries them through the JSON
 // `components` array the same way any other component does, and the component
 // serializes its own graph through to_json/from_json below, which the scene
-// serializer round-trips. See ADR-0058.
+// serializer round-trips. See ADR-0059.
 
 // One state of an animation state machine.
 //

@@ -19,7 +19,7 @@
 // the graph is exposed as a single String property holding the component's own
 // compact JSON. The scene serializer round-trips it like any other string, and
 // the component parses it in its setter. The inspector shows it as a text box;
-// a dedicated graph editor is a follow-up, tracked in ADR-0058.
+// a dedicated graph editor is a follow-up, tracked in ADR-0059.
 
 namespace fe::reflect {
 namespace {

@@ -50,6 +50,8 @@ set(FE_ENGINE_SOURCES
     src/scene/Scene.cpp
     src/scene/Camera2D.cpp
     src/scene/Components.cpp
+    src/scene/Tilemap.cpp
+    src/scene/TilemapTypes.cpp
     src/reflect/Registry.cpp
     src/reflect/ComponentTypes.cpp
     src/systems/System.cpp

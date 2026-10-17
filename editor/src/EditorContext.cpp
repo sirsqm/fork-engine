@@ -12,6 +12,7 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Sprite2D.h"
 #include "fe/scene/SpriteAnimator.h"
+#include "fe/scene/Tilemap.h"
 #include "fe/serialization/SceneSerializer.h"
 
 #include <memory>
@@ -70,6 +71,26 @@ void copy_animator(const Node& source_node, Node& destination_node) {
     destination->playing = source->playing;
     destination->loop = source->loop;
     destination->current_frame = source->current_frame;
+}
+
+void copy_tilemap(const Node& source_node, Node& destination_node) {
+    const auto* source = source_node.get_component<Tilemap>();
+    if (source == nullptr) {
+        return;
+    }
+    auto* destination = destination_node.add_component<Tilemap>();
+    destination->texture = source->texture;
+    destination->columns = source->columns;
+    destination->rows = source->rows;
+    destination->tile_size = source->tile_size;
+    destination->color = source->color;
+    destination->layer = source->layer;
+    destination->width = source->width;
+    destination->height = source->height;
+    // The grid is a variable-length list, so it is copied rather than assigned
+    // field by field. Nothing in the play session mutates the authored map, so a
+    // copy is correct and keeps the two independent.
+    destination->cells = source->cells;
 }
 
 void copy_collider(const Node& source_node, Node& destination_node) {
@@ -138,6 +159,9 @@ void EditorContext::register_default_component_factories() {
     play_.register_component_factory(Camera2D::kTypeName, copy_camera);
     play_.register_component_factory(Sprite2D::kTypeName, copy_sprite);
     play_.register_component_factory(SpriteAnimator::kTypeName, copy_animator);
+    // A tilemap copies too, so a level authored in the editor is present when
+    // the play session runs rather than silently vanishing.
+    play_.register_component_factory(Tilemap::kTypeName, copy_tilemap);
     // Physics components copy too, so a play session simulates the authored
     // colliders and bodies (Physics2DSystem runs in the play schedule).
     play_.register_component_factory(physics2d::Collider2D::kTypeName, copy_collider);

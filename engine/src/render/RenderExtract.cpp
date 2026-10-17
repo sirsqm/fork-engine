@@ -7,6 +7,7 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene/Tilemap.h"
 #include "fe/scene3d/MeshRenderer3D.h"
 
 #include <algorithm>
@@ -64,7 +65,63 @@ void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out) {
             size = Vec2{static_cast<f32>(texture->width()), static_cast<f32>(texture->height())};
         }
 
-        out.push_back(SpriteInstance{&texture->texture(), sprite, node.world_matrix(), size});
+        SpriteInstance instance;
+        instance.texture = &texture->texture();
+        instance.sprite = sprite;
+        instance.world = node.world_matrix();
+        instance.size = size;
+        instance.uv = sprite->uv;
+        instance.color = sprite->color;
+        instance.layer = sprite->layer;
+        out.push_back(instance);
+    });
+}
+
+void extract_tiles(const Scene& scene, std::vector<SpriteInstance>& out) {
+    scene.for_each_node([&](Node& node) {
+        const auto* map = node.get_component<Tilemap>();
+        if (map == nullptr || map->empty()) {
+            return;
+        }
+        // A tile is drawn from the same texture type a sprite is, so an
+        // unrecognised texture is skipped for the same reason.
+        const auto* texture = dynamic_cast<const Texture2D*>(map->texture.get());
+        if (texture == nullptr) {
+            return;
+        }
+        // A zero-size tile would produce a degenerate quad; an authoring mistake
+        // should draw nothing rather than a line of zero-area triangles.
+        if (map->tile_size.x == 0.0f || map->tile_size.y == 0.0f) {
+            return;
+        }
+
+        const Mat4 node_world = node.world_matrix();
+
+        for (u32 y = 0; y < map->height; ++y) {
+            for (u32 x = 0; x < map->width; ++x) {
+                const i32 tile = map->at(x, y);
+                if (tile == Tilemap::kEmpty) {
+                    continue;
+                }
+
+                // Cell (0, 0) is the map's top-left, +X right and +Y down, so the
+                // map spans x in [0, width * tile.x] and y in [-height * tile.y, 0]
+                // in the node's local space. Centring each tile within its cell
+                // puts the cell's centre at (x + 0.5) tiles across.
+                const f32 local_x = (static_cast<f32>(x) + 0.5f) * map->tile_size.x;
+                const f32 local_y = -(static_cast<f32>(y) + 0.5f) * map->tile_size.y;
+
+                SpriteInstance instance;
+                instance.texture = &texture->texture();
+                instance.tilemap = map;
+                instance.world = node_world * Mat4::translation(Vec3{local_x, local_y, 0.0f});
+                instance.size = map->tile_size;
+                instance.uv = map->tile_uv(tile);
+                instance.color = map->color;
+                instance.layer = map->layer;
+                out.push_back(instance);
+            }
+        }
     });
 }
 

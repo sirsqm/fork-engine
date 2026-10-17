@@ -210,11 +210,11 @@ is missing than ten roadmap items, and it is the precondition for a community.
       `Physics3DSystem`, and the editor copies `Collider3D` / `RigidBody3D` into
       the play scene, so a 3D scene plays with physics through the same path a
       shipped game uses — see
-      [ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)
+      [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)
 - [x] Debug drawing: a `debugdraw` module builds collider wireframes for a 2D or
       a 3D scene (`DebugDrawList`) and a `DebugRenderer` draws them as a single
       line list over the world camera, built on a new RHI line primitive — see
-      [ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)
+      [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)
 
 ## M6 — Animation and audio
 
@@ -228,7 +228,18 @@ is missing than ten roadmap items, and it is the precondition for a community.
       IMA ADPCM decoding in `WavLoader`, and a pull-based `AudioStream` /
       `WavStream` a source opts into with `AudioSource::stream` — see
       [ADR-0060](adr/0060-compressed-audio-and-streaming.md)
-- [ ] Tilemaps
+- [x] Tilemaps — a `Tilemap` component holds a grid of tile indices over a
+      tileset texture (`columns` x `rows`, `tile_size`, tint, layer). Cell
+      (0, 0) is the map's top-left and +Y goes down, the convention every tile
+      editor uses; `kEmpty` draws nothing, so a sparse map is cheap. Extraction
+      emits one `render::SpriteInstance` per non-empty cell into the *same*
+      array the sprites fill, so a tile reuses the sprite draw path, the shared
+      cull, and the `(layer, texture)` batcher — a 100x100 level is one
+      component and one draw call per texture, not ten thousand nodes. The grid
+      persists as the component's own compact JSON through the `grid` reflection
+      property, the trade `AnimationStateMachine` already made
+      ([ADR-0062](adr/0062-tilemaps.md)). Tile collisions, mixed tile sizes, and
+      a dedicated tile editor remain
 - [ ] Skeletal animation and skinning
 - [x] Animation state machines — a named-state graph over the sprite animator:
       states (a clip: first frame, frame count, fps, loop) and transitions (from,

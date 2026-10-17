@@ -71,7 +71,7 @@ everything  <-  runtime
 | `platform` | Window creation, input, the graphics context, and dynamic libraries (`DynamicLibrary`; `docs/adr/0061-cpp-gameplay-modules-hot-reload.md`) | core |
 | `rhi` | Graphics device abstraction and backend selection | core |
 | `resources` | Asset loading, caching, lifetime | core, rhi |
-| `scene` | Node/component hierarchy, transforms | core |
+| `scene` | Node/component hierarchy, transforms, and the 2D authoring components (`Camera2D`, `Sprite2D`, `SpriteAnimator`, `Tilemap`) | core, resources |
 | `reflect` | Component property descriptions and the type registry | core, scene, resources |
 | `serialization` | JSON persistence of scenes, driven by reflection, and the serializable `Operation` model (apply/inverse, `docs/adr/0047-local-operation-model.md`) | core, scene, resources, reflect |
 | `session` | The local, headless replicated log: `Session` holds a document and an ordered log of `Operation`s, two in-process replicas converge, and undo is log-based (`docs/adr/0048-replicated-operation-log.md`) | core, scene, serialization |
@@ -447,6 +447,13 @@ texture batch. Sprites that share a texture and layer collapse into a single dra
 call. A 1×1 white texture stands in for sprites without one, so an untextured
 sprite renders as a solid quad.
 
+**Tilemaps** draw through that same path. `Tilemap` is a grid of tile indices
+over a tileset texture; extraction emits one `SpriteInstance` per non-empty cell
+into the same array the sprites fill, so a tile is a quad, a tile is culled by
+the sprite quad test, and a map batches with the sprites by `(layer, texture)`. A
+100×100 level is one component and one draw call per texture per layer, not ten
+thousand nodes ([ADR-0062](adr/0062-tilemaps.md)).
+
 **3D** is a separate renderer with its own pass structure, sharing the same
 `rhi::Device` (see [ADR-0010](adr/0010-3d-rendering-foundation.md)). The 2D and
 3D paths are not forced into one abstraction; they have different data and
@@ -549,8 +556,14 @@ Both renderers are structured as the extraction seam
 the first two are public so a caller or a test can run one in isolation:
 
 - **Extract** — one walk of the hierarchy that fills a flat array of instances.
-  `render::SpriteInstance` carries the texture, the sprite component, the world
-  matrix, and the resolved quad size; `render::MeshInstance` carries the mesh,
+  `render::SpriteInstance` carries the texture, the resolved quad size, the UV
+  sub-rectangle, the tint, the layer, and the world matrix — every value a draw
+  reads, resolved here so the draw step never reaches back into the scene. Its
+  `sprite` and `tilemap` pointers record which component it came from (exactly
+  one is non-null), for provenance only. `Renderer2D::extract` fills one array
+  from both sources: `extract_sprites`, then `extract_tiles`, which turns every
+  non-empty cell of every `Tilemap` into one instance
+  ([ADR-0062](adr/0062-tilemaps.md)). `render::MeshInstance` carries the mesh,
   its renderer component, the world matrix, and the mesh's world-space AABB.
   Extraction does no GPU work. `Renderer3D::extract` also records every mesh seen
   (culled or not), which its buffer-liveness sweep keys off.
@@ -1071,7 +1084,9 @@ Every milestone must build and pass its tests before the next one begins.
 - The editor's asset browser, 3D viewport, scripting workflow, and project
   settings (the editor shell, hierarchy, inspector, 2D viewport,
   play-in-editor, and undo/redo exist; see section 8).
-- Tilemaps, particles, animation clips and state machines.
+- The parts of 2D authoring beyond tilemaps: particles, tile collisions,
+  mixed tile sizes and tile flags (flip/rotate), and multiple tilemap layers
+  per map (see [ADR-0062](adr/0062-tilemaps.md)).
 - The scripting seam and the C++ path exist (section 9,
   [ADR-0044](adr/0044-scripting-seam.md)): C++ gameplay modules load and
   hot-reload through `ScriptLibrary` ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)).
