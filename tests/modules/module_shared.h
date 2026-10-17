@@ -11,9 +11,19 @@
 #include "fe/core/Types.h"
 #include "fe/scene/Node.h"
 #include "fe/script/Script.h"
+#include "fe/script/ScriptModuleApi.h"
 #include "fe/systems/FrameContext.h"
 
 #include <string_view>
+
+// The probe counters each image exports are resolved by name through
+// `DynamicLibrary`, exactly like the module ABI's own entry point. That is a
+// dynamic lookup, so the symbol must be *exported*, not merely defined: on
+// Windows a plain `extern "C"` definition stays internal to the image and
+// `GetProcAddress` returns null, which is why this uses the module ABI's own
+// export macro rather than a second, weaker one. The engine defines the macro
+// for the same reason (ADR-0061); the fixtures inherit it.
+#define FE_TEST_MODULE_PROBE_EXPORT FE_SCRIPT_MODULE_EXPORT
 
 namespace fe_test_module {
 

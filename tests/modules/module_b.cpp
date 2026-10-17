@@ -37,11 +37,12 @@ fe::Error SpinScript::update(const fe::FrameContext& context) {
 } // namespace fe_test_module
 
 // Counters the test reads out of the loaded image to prove which code ran.
-extern "C" fe::u32 fe_module_tick_count() {
+// Exported, not merely defined: the test resolves them by name at runtime.
+FE_TEST_MODULE_PROBE_EXPORT fe::u32 fe_module_tick_count() {
     return g_ticks;
 }
 
-extern "C" fe::u32 fe_module_attach_count() {
+FE_TEST_MODULE_PROBE_EXPORT fe::u32 fe_module_attach_count() {
     return g_attaches;
 }
 
