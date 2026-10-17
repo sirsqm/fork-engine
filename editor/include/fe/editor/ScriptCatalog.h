@@ -5,10 +5,13 @@
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
+#include "fe/reflect/Value.h"
 #include "fe/script/Script.h"
 #include "fe/script/ScriptHost.h"
 #include "fe/script/ScriptRegistry.h"
+#include "fe/serialization/ScriptTarget.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -38,7 +41,12 @@ namespace editor {
 // `script::ScriptBinding` built over this catalog's host and registry to the
 // scene serializer, so a scene saved from the editor records the behaviours and
 // a scene loaded into it comes back scripted (ADR-0063).
-class ScriptCatalog {
+//
+// The catalog also implements `serialization::ScriptTarget`, the seam the
+// operation model uses to read and write a live script's properties. That is
+// what lets a script property edit be an ordinary serializable operation - and
+// so undoable - without the operation model depending on the script module.
+class ScriptCatalog : public serialization::ScriptTarget {
 public:
     ScriptCatalog() = default;
 
@@ -78,12 +86,9 @@ public:
     [[nodiscard]] Script* script(const Uuid& node_id) noexcept { return host_.script(node_id); }
     [[nodiscard]] const Script* script(const Uuid& node_id) const noexcept { return host_.script(node_id); }
 
-    // The behaviour name bound to the node, or "" when it has none. This is what
-    // the inspector shows as the node's current behaviour.
-    [[nodiscard]] std::string behaviour_of(const Uuid& node_id) const {
-        const Script* bound = host_.script(node_id);
-        return bound == nullptr ? std::string{} : std::string(bound->name());
-    }
+    // The behaviour name bound to the node, or "" when it has none, is the
+    // `behaviour_of` override below (the inspector shows it as the node's
+    // current behaviour).
 
     // The description of the node's behaviour, or nullptr. The inspector reads
     // this to draw the behaviour's reflected properties.
@@ -93,6 +98,45 @@ public:
     }
 
     [[nodiscard]] usize script_count() const noexcept { return host_.script_count(); }
+
+    // --- serialization::ScriptTarget ---------------------------------------
+    // The operation model's view of a live script: which behaviour a node runs,
+    // and a property read/write by reflected path. A read or write on an
+    // unscripted node, or on a path that does not resolve, reports absence rather
+    // than guessing.
+
+    [[nodiscard]] std::string behaviour_of(const Uuid& node_id) const override {
+        const Script* bound = host_.script(node_id);
+        return bound == nullptr ? std::string{} : std::string(bound->name());
+    }
+
+    [[nodiscard]] std::optional<reflect::Value> read(const Uuid& node_id,
+                                                     const std::vector<std::string>& path) const override {
+        const Script* bound = host_.script(node_id);
+        const ScriptDesc* desc = desc_of(node_id);
+        if (bound == nullptr || desc == nullptr) {
+            return std::nullopt;
+        }
+        const reflect::Property* property = reflect::resolve_property(desc->properties, path);
+        if (property == nullptr) {
+            return std::nullopt;
+        }
+        return reflect::read_property(*property, bound);
+    }
+
+    [[nodiscard]] bool write(const Uuid& node_id, const std::vector<std::string>& path,
+                             const reflect::Value& value) override {
+        Script* bound = host_.script(node_id);
+        const ScriptDesc* desc = desc_of(node_id);
+        if (bound == nullptr || desc == nullptr) {
+            return false;
+        }
+        const reflect::Property* property = reflect::resolve_property(desc->properties, path);
+        if (property == nullptr) {
+            return false;
+        }
+        return reflect::write_property(*property, bound, value);
+    }
 
     // Drops every binding. Called before a different scene is loaded into the
     // document, so no script outlives the nodes it was bound to.

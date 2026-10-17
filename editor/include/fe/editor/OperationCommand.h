@@ -16,6 +16,10 @@ namespace fe {
 class Scene;
 class ResourceManager;
 
+namespace serialization {
+class ScriptTarget;
+}
+
 namespace editor {
 
 // The editor's `Command` form of a serializable `Operation`.
@@ -41,7 +45,13 @@ public:
     // `resources` is borrowed and may be null (the headless case): a
     // `SetResource` operation cannot resolve without it and is a no-op, and a
     // `SetProperty` operation never needs it.
-    explicit OperationCommand(serialization::Operation operation, ResourceManager* resources = nullptr);
+    //
+    // `scripts` is the same seam for a `SetScriptProperty` operation: it is the
+    // live script host a script property edit reaches, and may be null when no
+    // script host is in play, in which case such an operation is a no-op. It must
+    // outlive the command (the editor's catalog does).
+    explicit OperationCommand(serialization::Operation operation, ResourceManager* resources = nullptr,
+                              serialization::ScriptTarget* scripts = nullptr);
     ~OperationCommand() override;
 
     void execute(Scene& scene) override;
@@ -57,6 +67,7 @@ public:
 private:
     serialization::Operation operation_;
     ResourceManager* resources_ = nullptr;
+    serialization::ScriptTarget* scripts_ = nullptr;
 
     // The inverse of the current operation, computed on the first execute.
     serialization::Operation inverse_;

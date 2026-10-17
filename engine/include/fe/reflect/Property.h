@@ -119,5 +119,26 @@ struct Property {
     [[nodiscard]] bool is_group() const noexcept { return value_kind == ValueKind::Group; }
 };
 
+// Resolves a member path within a property list: a single name for a leaf, or a
+// member path for a group ("color", "r"). Returns nullptr when it does not
+// resolve.
+//
+// This is the one place a reflected path is walked, so the serializer, the
+// operation model, and any other consumer agree on what "color.r" names. It is a
+// free function rather than a method on a type because the scene serializer
+// resolves a component's properties and a script's properties through the same
+// code, and neither owns the other.
+[[nodiscard]] const Property* resolve_property(const std::vector<Property>& properties,
+                                               const std::vector<std::string>& path);
+
+// Reads a property's current value from the owning object, or an empty optional
+// when the property has no getter. A convenience over calling the getter
+// directly, so a caller does not have to guard for an unregistered accessor.
+[[nodiscard]] std::optional<Value> read_property(const Property& property, const void* object);
+
+// Writes a value to a property of the owning object. Returns false when the
+// property has no setter or the setter refused the value.
+[[nodiscard]] bool write_property(const Property& property, void* object, const Value& value);
+
 } // namespace reflect
 } // namespace fe

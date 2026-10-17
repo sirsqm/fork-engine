@@ -135,6 +135,14 @@ TEST_CASE("every operation kind round-trips through JSON unchanged") {
     resource.property_name = "texture";
     resource.reference = "tex:assets/hero.png";
     check_round_trip(resource);
+
+    Operation script;
+    script.kind = OperationKind::SetScriptProperty;
+    script.node_id = Uuid::generate();
+    script.name = "PatrolScript";
+    script.path = {"speed"};
+    script.value = static_cast<f64>(2.5);
+    check_round_trip(script);
 }
 
 TEST_CASE("a value's kind is preserved, so an int is not read back as a float") {

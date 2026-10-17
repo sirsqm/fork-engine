@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fe {
 
@@ -164,6 +165,20 @@ public:
     // every structural command can change. Returns true when the command was
     // applied. Coalescing is handled by the stack.
     bool execute(std::unique_ptr<Command> command);
+
+    // Routes an edit of a gameplay script's property through the command stack
+    // as a serializable `SetScriptProperty` operation, so it is undoable and
+    // coalesces with the previous edit of the same field exactly as a component
+    // property does. `path` is the property's path within the behaviour's
+    // described properties; `behaviour` is the behaviour the node is expected to
+    // run, recorded so the operation is a no-op if the node's script changes.
+    //
+    // The script host is reached through this context's `ScriptCatalog`, which
+    // implements the `serialization::ScriptTarget` seam, so the operation model
+    // stays independent of the script module. Returns true when the command was
+    // executed.
+    bool edit_script_property(const Uuid& node_id, const std::string& behaviour, const std::vector<std::string>& path,
+                              const reflect::Value& value);
 
     // Undoes/redoes the last command and refreshes the hierarchy. Returns false
     // when there is nothing to undo/redo. Both are refused while play is

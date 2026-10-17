@@ -57,8 +57,9 @@ void restore_captured(Scene& scene, const Operation& op, serialization::AppliedO
 
 } // namespace
 
-OperationCommand::OperationCommand(Operation operation, ResourceManager* resources)
-    : operation_(std::move(operation)), resources_(resources) {}
+OperationCommand::OperationCommand(Operation operation, ResourceManager* resources,
+                                   serialization::ScriptTarget* scripts)
+    : operation_(std::move(operation)), resources_(resources), scripts_(scripts) {}
 
 OperationCommand::~OperationCommand() = default;
 
@@ -73,7 +74,7 @@ void OperationCommand::execute(Scene& scene) {
     if (!is_create_like(operation_.kind) && !is_delete_like(operation_.kind) && !has_inverse_) {
         // A modify: its inverse is read from the document once, before the first
         // forward apply, so undo restores the state this edit started from.
-        if (Result<Operation> inv = serialization::inverse(operation_, scene); inv) {
+        if (Result<Operation> inv = serialization::inverse(operation_, scene, scripts_); inv) {
             inverse_ = inv.value();
             has_inverse_ = true;
         }
@@ -81,17 +82,17 @@ void OperationCommand::execute(Scene& scene) {
 
     if (is_delete_like(operation_.kind)) {
         // The forward edit removes an object; keep it so undo can restore it.
-        (void)serialization::apply(operation_, scene, resources_, &captured_);
+        (void)serialization::apply(operation_, scene, resources_, &captured_, scripts_);
     } else {
-        (void)serialization::apply(operation_, scene, resources_, nullptr);
+        (void)serialization::apply(operation_, scene, resources_, nullptr, scripts_);
     }
 }
 
 void OperationCommand::undo(Scene& scene) {
     if (is_create_like(operation_.kind)) {
         // Undoing a create removes the object it made; keep it to redo.
-        if (Result<Operation> inv = serialization::inverse(operation_, scene); inv) {
-            (void)serialization::apply(inv.value(), scene, resources_, &captured_);
+        if (Result<Operation> inv = serialization::inverse(operation_, scene, scripts_); inv) {
+            (void)serialization::apply(inv.value(), scene, resources_, &captured_, scripts_);
             has_capture_ = true;
         }
         return;
@@ -102,7 +103,7 @@ void OperationCommand::undo(Scene& scene) {
         return;
     }
     if (has_inverse_) {
-        (void)serialization::apply(inverse_, scene, resources_, nullptr);
+        (void)serialization::apply(inverse_, scene, resources_, nullptr, scripts_);
     }
 }
 
@@ -124,6 +125,8 @@ std::string_view OperationCommand::label() const noexcept {
         return "Set Property";
     case OperationKind::SetResource:
         return "Set Resource";
+    case OperationKind::SetScriptProperty:
+        return "Set Script Property";
     }
     return "Edit";
 }
@@ -152,6 +155,22 @@ std::string OperationCommand::coalesce_key() const {
         key += operation_.component_id.to_string();
         key += ':';
         key += operation_.property_name;
+        return key;
+    }
+    case OperationKind::SetScriptProperty: {
+        // A script has no component id; the behaviour name plus the path is what
+        // identifies the field, so two gestures on the same script property merge
+        // and two different scripts never do.
+        std::string key = operation_.node_id.to_string();
+        key += '@';
+        key += operation_.name;
+        key += ':';
+        for (usize i = 0; i < operation_.path.size(); ++i) {
+            if (i > 0) {
+                key += '.';
+            }
+            key += operation_.path[i];
+        }
         return key;
     }
     default:

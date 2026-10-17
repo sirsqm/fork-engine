@@ -51,17 +51,32 @@ constexpr const char* kAssetDragPayload = "FE_ASSET_REF";
 // records its own property *path* relative to the component (a leaf name, or a
 // member path for a group), so one `SetProperty` operation covers every field
 // of every type via the registry (docs/adr/0047-local-operation-model.md).
+//
+// The same struct also targets a gameplay script: when `script` is non-null the
+// edit goes through a `SetScriptProperty` operation naming the node's behaviour
+// instead of a component id, so a script's reflected fields are edited by the
+// same widgets and are just as undoable (ADR-0063).
 struct EditContext {
     EditorContext* context = nullptr;
     Uuid node_id{};
     Uuid component_id{};
+    // Set when the rows describe a gameplay script rather than a component. The
+    // script pointer is the object the property accessors read and write; the
+    // behaviour name is recorded in the operation so it is a no-op if the node's
+    // script changes.
+    Script* script = nullptr;
+    std::string behaviour;
 };
 
-// Applies an edit as a serializable `SetProperty` operation, so it is undoable
-// and coalesces with the previous edit of the same property. `path` is the full
-// path from the component to the edited property.
+// Applies an edit as a serializable operation, so it is undoable and coalesces
+// with the previous edit of the same property. `path` is the full path from the
+// component (or script) to the edited property.
 void commit(EditContext& edit, const std::vector<std::string>& path, const Value& value) {
     if (edit.context == nullptr) {
+        return;
+    }
+    if (edit.script != nullptr) {
+        edit.context->edit_script_property(edit.node_id, edit.behaviour, path, value);
         return;
     }
     serialization::Operation op;
@@ -187,6 +202,16 @@ void draw_resource_row(const Property& property, void* component, EditContext& e
     if (property.resource && !property.resource->type_name.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("(%s)", property.resource->type_name.c_str());
+    }
+
+    // A script's resource reference is shown but not edited: writing one needs a
+    // `SetResource` operation naming a component id, which a script does not
+    // have. The value is still visible, and the script's other fields remain
+    // editable, so this is a display-only gap rather than a broken row.
+    if (edit.script != nullptr) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", current.empty() ? "(unset)" : current.c_str());
+        return;
     }
 
     ResourceManager* resources = edit.context != nullptr ? edit.context->resources() : nullptr;
@@ -458,16 +483,20 @@ void InspectorPanel::draw(EditorContext& context) {
         }
         if (const ScriptDesc* desc = catalog.desc_of(node->id())) {
             if (Script* script = catalog.script(node->id())) {
-                // Property values are shown read-only this cut. Editing a script
-                // property needs an undoable operation that names a script
-                // rather than a component id, which the operation model does not
-                // have yet; until then a row that looks editable but is not
-                // would be worse than a row that plainly is not. See
-                // docs/adr/0063-reflection-backed-script-properties.md.
+                // A script's fields are drawn by the same widgets a component's
+                // are, through an EditContext that names the script instead of a
+                // component id. An edit becomes a `SetScriptProperty` operation,
+                // so it is undoable and coalesces like any other property edit
+                // (ADR-0047, ADR-0063).
+                EditContext edit;
+                edit.context = &context;
+                edit.node_id = node->id();
+                edit.script = script;
+                edit.behaviour = bound;
+
+                std::vector<std::string> empty_path;
                 for (const Property& property : desc->properties) {
-                    ImGui::Text("%s", property.name.c_str());
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("%s", format_value(property.getter(script)).c_str());
+                    draw_row(property, script, edit, fields_, empty_path);
                 }
             }
         }

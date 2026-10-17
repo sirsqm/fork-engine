@@ -3,6 +3,7 @@
 #include "fe/editor/EditorContext.h"
 
 #include "fe/core/Log.h"
+#include "fe/editor/OperationCommand.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/physics3d/Collider3D.h"
@@ -285,6 +286,17 @@ bool EditorContext::execute(std::unique_ptr<Command> command) {
     // the alternative is a stale panel.
     refresh_hierarchy();
     return true;
+}
+
+bool EditorContext::edit_script_property(const Uuid& node_id, const std::string& behaviour,
+                                         const std::vector<std::string>& path, const reflect::Value& value) {
+    serialization::Operation op;
+    op.kind = serialization::OperationKind::SetScriptProperty;
+    op.node_id = node_id;
+    op.name = behaviour;
+    op.path = path;
+    op.value = value;
+    return execute(std::make_unique<OperationCommand>(std::move(op), resources(), &scripts_));
 }
 
 bool EditorContext::undo() {

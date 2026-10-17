@@ -8,6 +8,7 @@
 #include "fe/scene/Component.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/serialization/ScriptTarget.h"
 
 #include <nlohmann/json.hpp>
 
@@ -86,27 +87,11 @@ void attach_node(Scene& scene, std::unique_ptr<Node> node, const Uuid& parent_id
     return static_cast<usize>(-1);
 }
 
-// The property named by `path` within `type`: a single name for a leaf, or a
-// member path for a group ("color", "r"). Returns nullptr when it does not
-// resolve.
-[[nodiscard]] const reflect::Property* resolve_property(const reflect::TypeDesc& type,
-                                                        const std::vector<std::string>& path) {
-    const reflect::Property* current = nullptr;
-    const std::vector<reflect::Property>* level = &type.properties;
-    for (const std::string& name : path) {
-        current = nullptr;
-        for (const reflect::Property& candidate : *level) {
-            if (candidate.name == name) {
-                current = &candidate;
-                break;
-            }
-        }
-        if (current == nullptr) {
-            return nullptr;
-        }
-        level = &current->members;
-    }
-    return current;
+// The property named by `path` within a component type. Delegates to the shared
+// resolver so a component path and a script path are walked by the same code.
+[[nodiscard]] const reflect::Property* resolve_component_property(const reflect::TypeDesc& type,
+                                                                  const std::vector<std::string>& path) {
+    return reflect::resolve_property(type.properties, path);
 }
 
 // --- value <-> JSON --------------------------------------------------------
@@ -187,6 +172,8 @@ const char* to_string(OperationKind kind) noexcept {
         return "set_property";
     case OperationKind::SetResource:
         return "set_resource";
+    case OperationKind::SetScriptProperty:
+        return "set_script_property";
     }
     return "rename_node";
 }
@@ -195,7 +182,7 @@ bool operation_kind_from_string(std::string_view text, OperationKind& out) noexc
     const OperationKind kinds[] = {
         OperationKind::CreateNode,  OperationKind::DeleteNode,   OperationKind::ReparentNode,
         OperationKind::RenameNode,  OperationKind::AddComponent, OperationKind::RemoveComponent,
-        OperationKind::SetProperty, OperationKind::SetResource,
+        OperationKind::SetProperty, OperationKind::SetResource,  OperationKind::SetScriptProperty,
     };
     for (const OperationKind kind : kinds) {
         if (text == to_string(kind)) {
@@ -249,6 +236,12 @@ std::string to_json(const Operation& op) {
         j["component_id"] = op.component_id.to_string();
         j["property_name"] = op.property_name;
         j["reference"] = op.reference;
+        break;
+    case OperationKind::SetScriptProperty:
+        j["node_id"] = op.node_id.to_string();
+        j["behaviour"] = op.name;
+        j["path"] = op.path;
+        j["value"] = value_to_json(op.value);
         break;
     }
     return j.dump();
@@ -355,6 +348,25 @@ Error from_json(std::string_view text, Operation& out) {
         out.property_name = j.at("property_name").get<std::string>();
         out.reference = j.value("reference", std::string{});
         break;
+    case OperationKind::SetScriptProperty:
+        if (Error error = parse_uuid(j, "node_id", out.node_id); error) {
+            return error;
+        }
+        if (!j.contains("behaviour") || !j.at("behaviour").is_string()) {
+            return Error("operation: set_script_property requires a string 'behaviour'");
+        }
+        out.name = j.at("behaviour").get<std::string>();
+        if (!j.contains("path") || !j.at("path").is_array()) {
+            return Error("operation: set_script_property requires a 'path' array");
+        }
+        out.path = j.at("path").get<std::vector<std::string>>();
+        if (!j.contains("value")) {
+            return Error("operation: set_script_property requires a 'value'");
+        }
+        if (Error error = value_from_json(j.at("value"), out.value); error) {
+            return error;
+        }
+        break;
     }
     return Error::none();
 }
@@ -364,7 +376,8 @@ AppliedObjects::AppliedObjects() = default;
 AppliedObjects::AppliedObjects(AppliedObjects&&) noexcept = default;
 AppliedObjects& AppliedObjects::operator=(AppliedObjects&&) noexcept = default;
 
-Error apply(const Operation& op, Scene& scene, ResourceManager* resources, AppliedObjects* captured) {
+Error apply(const Operation& op, Scene& scene, ResourceManager* resources, AppliedObjects* captured,
+            ScriptTarget* scripts) {
     reflect::Registry& registry = reflect::Registry::instance();
 
     switch (op.kind) {
@@ -448,7 +461,7 @@ Error apply(const Operation& op, Scene& scene, ResourceManager* resources, Appli
         if (type == nullptr) {
             break;
         }
-        const reflect::Property* property = resolve_property(*type, op.path);
+        const reflect::Property* property = resolve_component_property(*type, op.path);
         if (property == nullptr || !property->setter) {
             break;
         }
@@ -478,11 +491,25 @@ Error apply(const Operation& op, Scene& scene, ResourceManager* resources, Appli
         }
         break;
     }
+    case OperationKind::SetScriptProperty: {
+        // Scripts are not components: they live in a host reached through the
+        // ScriptTarget seam. A missing target, a node that is gone, an unscripted
+        // node, or a node whose behaviour changed since the edit was recorded all
+        // make this a no-op, matching the component policy.
+        if (scripts == nullptr || scene.find_node(op.node_id) == nullptr) {
+            break;
+        }
+        if (scripts->behaviour_of(op.node_id) != op.name) {
+            break;
+        }
+        (void)scripts->write(op.node_id, op.path, op.value);
+        break;
+    }
     }
     return Error::none();
 }
 
-Result<Operation> inverse(const Operation& op, const Scene& scene) {
+Result<Operation> inverse(const Operation& op, const Scene& scene, ScriptTarget* scripts) {
     reflect::Registry& registry = reflect::Registry::instance();
 
     switch (op.kind) {
@@ -544,7 +571,7 @@ Result<Operation> inverse(const Operation& op, const Scene& scene) {
         if (type == nullptr) {
             return Error("operation: cannot invert a property write of an unregistered type");
         }
-        const reflect::Property* property = resolve_property(*type, op.path);
+        const reflect::Property* property = resolve_component_property(*type, op.path);
         if (property == nullptr || !property->getter) {
             return Error("operation: cannot invert a property write with no getter");
         }
@@ -586,6 +613,29 @@ Result<Operation> inverse(const Operation& op, const Scene& scene) {
             }
         }
         return Error("operation: cannot invert a resource write on a non-resource property");
+    }
+    case OperationKind::SetScriptProperty: {
+        // The inverse reads the script's current value, so it needs the seam. A
+        // caller that applies a script edit without one (a headless replay) can
+        // apply the edit but not invert it, which is exactly the component case
+        // when a target is missing.
+        if (scripts == nullptr) {
+            return Error("operation: cannot invert a script property write without a script target");
+        }
+        if (scripts->behaviour_of(op.node_id) != op.name) {
+            return Error("operation: cannot invert a script property write on a node that runs another behaviour");
+        }
+        std::optional<reflect::Value> previous = scripts->read(op.node_id, op.path);
+        if (!previous.has_value()) {
+            return Error("operation: cannot invert a script property write with no readable value");
+        }
+        Operation inv;
+        inv.kind = OperationKind::SetScriptProperty;
+        inv.node_id = op.node_id;
+        inv.name = op.name;
+        inv.path = op.path;
+        inv.value = std::move(previous.value());
+        return inv;
     }
     }
     return Error("operation: unknown kind");

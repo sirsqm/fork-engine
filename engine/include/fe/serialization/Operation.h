@@ -21,6 +21,11 @@ class ResourceManager;
 
 namespace serialization {
 
+// The seam through which a script-property operation reaches a scene's live
+// gameplay scripts, without this module depending on the script module
+// (see ScriptTarget.h).
+class ScriptTarget;
+
 // A serializable edit to a scene: the transmitted, replayable form of an editor
 // command.
 //
@@ -34,14 +39,15 @@ namespace serialization {
 //
 // See docs/adr/0047-local-operation-model.md.
 enum class OperationKind : u8 {
-    CreateNode,      // make a node with a known id under a parent at an index
-    DeleteNode,      // remove a node and its subtree
-    ReparentNode,    // move a node under a new parent at an index
-    RenameNode,      // set a node's name
-    AddComponent,    // attach a default-constructed component with a known id
-    RemoveComponent, // detach a component
-    SetProperty,     // write one reflected property, resolved through the registry
-    SetResource,     // set a resource-reference property through the manager
+    CreateNode,        // make a node with a known id under a parent at an index
+    DeleteNode,        // remove a node and its subtree
+    ReparentNode,      // move a node under a new parent at an index
+    RenameNode,        // set a node's name
+    AddComponent,      // attach a default-constructed component with a known id
+    RemoveComponent,   // detach a component
+    SetProperty,       // write one reflected property, resolved through the registry
+    SetResource,       // set a resource-reference property through the manager
+    SetScriptProperty, // write one reflected property of a node's gameplay script
 };
 
 // The wire name of a kind ("create_node", ...). Stable; the reader rejects an
@@ -69,13 +75,15 @@ struct Operation {
     usize index = 0;
 
     // CreateNode/RenameNode: the node name. AddComponent: the registered type name.
+    // SetScriptProperty: the behaviour name the operation expects the node to run.
     std::string name;
     // SetProperty/SetResource: the property name (a single name for a leaf).
     std::string property_name;
-    // SetProperty: the path within the component's TypeDesc, a single name for a
-    // leaf or a member path for a group ("color", "r").
+    // SetProperty/SetScriptProperty: the path within the component's TypeDesc (a
+    // single name for a leaf or a member path for a group), or within a script's
+    // described properties.
     std::vector<std::string> path;
-    // SetProperty: the value to write.
+    // SetProperty/SetScriptProperty: the value to write.
     reflect::Value value{};
     // SetResource: the reference to resolve ("" clears the slot).
     std::string reference;
@@ -118,16 +126,26 @@ struct AppliedObjects {
 // target is absent does nothing (no error): the local editor has no other
 // replica to be inconsistent with, and this matches the commands it replaces.
 //
+// `scripts` may be null; a SetScriptProperty against a null target is a no-op
+// for the same reason, so a headless replay that carries no script host still
+// applies every other operation. It is the seam the operation model uses to
+// reach a scene's live gameplay scripts without depending on the script module
+// (see ScriptTarget.h).
+//
 // When `captured` is non-null, a delete-like operation stores the removed
 // object there instead of destroying it.
 [[nodiscard]] Error apply(const Operation& op, Scene& scene, ResourceManager* resources = nullptr,
-                          AppliedObjects* captured = nullptr);
+                          AppliedObjects* captured = nullptr, ScriptTarget* scripts = nullptr);
 
 // The operation that undoes `op` against the current `scene`, computed from the
 // document rather than from any captured state. Returns an error for
 // `DeleteNode` and `RemoveComponent`: their inverse is the object they removed,
 // which is not a single operation, so the caller holds it (see `AppliedObjects`).
-[[nodiscard]] Result<Operation> inverse(const Operation& op, const Scene& scene);
+//
+// `scripts` is the same seam `apply` takes; a SetScriptProperty is inverted by
+// reading the script's current value, so a null target makes it un-invertible
+// (an error), exactly as a missing component does.
+[[nodiscard]] Result<Operation> inverse(const Operation& op, const Scene& scene, ScriptTarget* scripts = nullptr);
 
 // Re-attaches the object `captured` holds, undoing a `DeleteNode` (its node) or
 // a `RemoveComponent` (its component). The counterpart of the capture sink: an
