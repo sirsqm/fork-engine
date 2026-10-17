@@ -303,8 +303,10 @@ jobs:
   # Only the engine tests run, deliberately. TSan instruments every thread, so
   # the GL binaries -- which pull in Mesa/llvmpipe, GLFW and X11 and spawn their
   # own driver threads -- report races entirely inside third-party code, the same
-  # way the ASan job excludes their leaks. The engine tests need no display, so
-  # this job installs no X11/Wayland packages and runs no xvfb.
+  # way the ASan job excludes their leaks. The X11/Wayland dev packages are
+  # installed only because GLFW's CMake requires their headers to configure; no
+  # display, xvfb, or GL package is needed, because the engine tests never open a
+  # window.
   # ---------------------------------------------------------------------------
   threadsanitizer:
     name: Linux / GCC / Debug + TSan
@@ -315,10 +317,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install ccache
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ccache
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev ccache
 
       - name: Cache ccache
         uses: actions/cache@v4
