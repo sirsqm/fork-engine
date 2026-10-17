@@ -100,8 +100,11 @@ part of the shipping path rather than an editor feature
 - **No per-target templates.** The output runs on the machine that built it. A
   prebuilt runtime per OS, cross-compilation, and platform app packaging
   (`.app`, `.apk`, Emscripten) remain M8 work.
-- **No reachability pruning.** `PackWriter` packs the whole asset tree; packing
-  only what the startup scene references is a separate roadmap item.
+- **No reachability pruning.** `PackWriter` packs the whole asset tree by
+  default; packing only what the startup scene references is
+  [ADR-0065](0065-pack-reachability-pruning.md), which adds an opt-in `--prune`
+  to `fork_pack` and `fork_export`. It is not the default, and it does not follow
+  a packed asset's own references (see that record's "not done").
 - **No module discovery.** A module is copied because it was named, not because
   a scene references a behaviour it provides. Inferring the module set from a
   scene's bindings is a possible later refinement, not a correctness need: a
@@ -122,10 +125,10 @@ part of the shipping path rather than an editor feature
   later become "the same player, built for another OS" instead of a new design.
 - A game whose gameplay lives in C++ modules is fully described by the export
   directory: the manifest records the modules, the player loads them before it
-  reads the scene, and the behaviours a scene binds resolve against them. What is
-  *not* yet described is a game that ships assets referenced only by runtime code
-  rather than by the scene; reachability pruning is the roadmap item that closes
-  that.
+  reads the scene, and the behaviours a scene binds resolve against them. What was
+  *not* described was a game that ships assets referenced only by runtime code
+  rather than by the scene; [ADR-0065](0065-pack-reachability-pruning.md) adds the
+  opt-in pruning that closes the common case of it.
 
 ## Alternatives considered
 

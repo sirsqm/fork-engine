@@ -5,12 +5,13 @@
 #include "fe/core/FileSystem.h"
 
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace fe::pack {
 
 Result<PackFile> PackWriter::build(const AssetDatabase& assets, std::string_view startup_scene_path,
-                                   std::string_view scene_key) {
+                                   std::string_view scene_key, const PackOptions& options) {
     if (assets.root().empty()) {
         return Error("pack: the asset database has no root; nothing to pack");
     }
@@ -25,8 +26,23 @@ Result<PackFile> PackWriter::build(const AssetDatabase& assets, std::string_view
     //
     // Sidecars (".meta") are metadata, not assets: the scheme and id they hold
     // are already on the entry, so they are not packed.
+    //
+    // When pruning, only the paths the caller listed are packed. The set is
+    // normalized once so the per-file test is a hash lookup rather than a scan
+    // of the include list.
+    std::unordered_set<std::string> included;
+    if (options.prune) {
+        included.reserve(options.include.size() * 2 + 1);
+        for (const std::string& path : options.include) {
+            included.insert(fs::normalize(path));
+        }
+    }
+
     for (const std::string& relative : fs::list_files_recursive(assets.root())) {
         if (fs::extension(relative) == ".meta") {
+            continue;
+        }
+        if (options.prune && !included.contains(fs::normalize(relative))) {
             continue;
         }
         auto bytes = fs::read_binary_file(fs::join(assets.root(), relative));
@@ -61,8 +77,8 @@ Result<PackFile> PackWriter::build(const AssetDatabase& assets, std::string_view
 }
 
 Error PackWriter::write(std::string_view pack_path, const AssetDatabase& assets, std::string_view startup_scene_path,
-                        std::string_view scene_key) {
-    auto built = build(assets, startup_scene_path, scene_key);
+                        std::string_view scene_key, const PackOptions& options) {
+    auto built = build(assets, startup_scene_path, scene_key, options);
     if (!built) {
         return built.error();
     }

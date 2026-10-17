@@ -122,6 +122,11 @@ jobs:
           # through its manifest, with no loose project files left behind.
           (cd /tmp/fork_export_smoke && ./fork_player --export . --headless 30)
           (cd /tmp/fork_export_smoke && ./fork_player --export . --headless 10 --render)
+          # Pruning (ADR-0065) still produces a playable build: only the scene's
+          # referenced assets are packed, so the demo's README and project file
+          # are dropped, and the player runs from the pruned pack just the same.
+          ./build/bin/fork_export --project examples/demo_project --out /tmp/fork_export_pruned --prune
+          (cd /tmp/fork_export_pruned && ./fork_player --export . --headless 30)
 
   # The performance regression gate
   # (docs/adr/0033-performance-regression-gate.md): a Release build runs the

@@ -7,8 +7,33 @@
 #include "fe/resources/AssetDatabase.h"
 
 #include <string_view>
+#include <vector>
 
 namespace fe::pack {
+
+// How much of the asset tree to pack.
+//
+// The default packs everything, which is the behaviour every existing caller
+// had. Pruning ships only what the startup scene references (plus anything the
+// caller lists), so a build does not carry the whole project's art for one level
+// (docs/adr/0065-pack-reachability-pruning.md).
+//
+// The writer stays scene-agnostic: it does not parse the scene. The caller
+// resolves the scene's references (through
+// `serialization::scene::collect_resource_references`) and any asset a game
+// references only from code, and passes them here.
+struct PackOptions {
+    // When false (default), pack every file under the asset root, exactly as
+    // before pruning existed. When true, pack only the startup scene and the
+    // paths listed in `include`.
+    bool prune = false;
+
+    // Root-relative paths to pack when pruning. A path is matched against the
+    // tree's own relative paths, so a caller passes what it read from a scene
+    // ("assets/hero.png") without re-deriving the join. Ignored when `prune` is
+    // false.
+    std::vector<std::string> include;
+};
 
 // Turns a project's asset tree and startup scene into one pack.
 //
@@ -32,14 +57,18 @@ public:
     // is stored under in the pack (for example "scenes/main.fescene"), which is
     // the key the runtime asks for when it loads the scene from the pack.
     //
+    // `options` selects whether to pack the whole tree or only what the scene
+    // references.
+    //
     // Returns an Error when the asset root is unset, a file cannot be read, or
     // the scene key collides with an asset path.
     [[nodiscard]] static Result<PackFile> build(const AssetDatabase& assets, std::string_view startup_scene_path,
-                                                std::string_view scene_key);
+                                                std::string_view scene_key, const PackOptions& options = {});
 
     // build() plus writing the pack to `pack_path`, creating parent directories.
     [[nodiscard]] static Error write(std::string_view pack_path, const AssetDatabase& assets,
-                                     std::string_view startup_scene_path, std::string_view scene_key);
+                                     std::string_view startup_scene_path, std::string_view scene_key,
+                                     const PackOptions& options = {});
 };
 
 } // namespace fe::pack

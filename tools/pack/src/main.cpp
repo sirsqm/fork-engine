@@ -28,6 +28,7 @@
 #include "fe/resources/ResourceManager.h"
 #include "fe/scene/Scene.h"
 #include "fe/serialization/Json.h"
+#include "fe/serialization/SceneReferences.h"
 #include "fe/serialization/SceneSerializer.h"
 
 #include <nlohmann/json.hpp>
@@ -46,6 +47,7 @@ struct Options {
     std::string scene;     // startup scene path, in the explicit form
     std::string scene_key; // key the scene is stored under in the pack
     std::string out;       // output pack path
+    bool prune = false;    // pack only what the startup scene references
     bool verbose = false;
 };
 
@@ -102,15 +104,51 @@ struct ProjectFile {
     return project;
 }
 
+// Resolves the startup scene's resource references to root-relative asset paths,
+// so a pruned pack carries exactly what the scene names. Reads the scene as text
+// and traces it through reflection; it does not load it, so no resource is
+// decoded.
+//
+// A reference resolves if the database has indexed it (its path is current and
+// its id is stable) or, failing that, if the file is simply present under the
+// pack root - an unimported asset is still packed, by path, under the default
+// scheme, exactly as the unpruned writer packs it. A reference that resolves to
+// neither is a hard error: shipping a build whose scene names an asset that is
+// not in it produces a game that runs until it draws, which is worse than a
+// failed pack.
+[[nodiscard]] fe::Result<std::vector<std::string>>
+scene_asset_paths(const std::string& scene_path, const std::string& pack_root, const fe::AssetDatabase& assets) {
+    auto text = fe::fs::read_text_file(scene_path);
+    if (!text) {
+        return text.error();
+    }
+    auto references = fe::serialization::scene::collect_resource_references(text.value());
+    if (!references) {
+        return references.error();
+    }
+
+    std::vector<std::string> paths;
+    for (const std::string& reference : references.value()) {
+        const std::string path = fe::serialization::scene::reference_to_asset_path(reference, assets);
+        if (path.empty() || (assets.find_by_path(path) == nullptr && !fe::fs::exists(fe::fs::join(pack_root, path)))) {
+            return fe::Error("scene reference '" + reference + "' is not an asset under '" + pack_root + "'");
+        }
+        paths.push_back(path);
+    }
+    return paths;
+}
+
 void print_usage() {
-    std::puts("usage: fork_pack --project DIR --out FILE\n"
-              "       fork_pack --assets DIR --scene FILE --out FILE [--scene-key PATH]\n"
+    std::puts("usage: fork_pack --project DIR --out FILE [--prune]\n"
+              "       fork_pack --assets DIR --scene FILE --out FILE [--scene-key PATH] [--prune]\n"
               "\n"
               "  --project DIR     a project directory or fork.project.json file\n"
               "  --assets DIR      the asset root to pack (explicit form)\n"
               "  --scene FILE      the startup scene to pack (explicit form)\n"
               "  --scene-key PATH  the key the scene is stored under in the pack\n"
               "                    (default: the scene path relative to the asset root)\n"
+              "  --prune           pack only the assets the startup scene references,\n"
+              "                    instead of the whole tree (ADR-0065)\n"
               "  --out FILE        the pack file to write\n"
               "  --verbose         log at debug level");
 }
@@ -129,6 +167,8 @@ void print_usage() {
             out.scene_key = argv[++i];
         } else if (arg == "--out" && has_value) {
             out.out = argv[++i];
+        } else if (arg == "--prune") {
+            out.prune = true;
         } else if (arg == "--verbose") {
             out.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -205,7 +245,21 @@ int main(int argc, char** argv) {
     FE_LOG_INFO("fork_pack: indexed %llu asset(s) under '%s'", static_cast<unsigned long long>(assets.asset_count()),
                 pack_root.c_str());
 
-    if (fe::Error error = fe::pack::PackWriter::write(options.out, assets, scene_path, scene_key); error) {
+    fe::pack::PackOptions pack_options;
+    if (options.prune) {
+        auto paths = scene_asset_paths(scene_path, pack_root, assets);
+        if (!paths) {
+            std::fprintf(stderr, "fork_pack: %s\n", paths.error().message().c_str());
+            return 1;
+        }
+        pack_options.prune = true;
+        pack_options.include = std::move(paths.value());
+        FE_LOG_INFO("fork_pack: pruning to %llu scene-referenced asset(s)",
+                    static_cast<unsigned long long>(pack_options.include.size()));
+    }
+
+    if (fe::Error error = fe::pack::PackWriter::write(options.out, assets, scene_path, scene_key, pack_options);
+        error) {
         std::fprintf(stderr, "fork_pack: %s\n", error.message().c_str());
         return 1;
     }

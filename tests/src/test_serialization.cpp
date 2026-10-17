@@ -10,6 +10,7 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/serialization/SceneReferences.h"
 #include "fe/serialization/SceneSerializer.h"
 
 #include <filesystem>
@@ -362,4 +363,85 @@ TEST_CASE("a version-1 reference with no asset entry fails clearly instead of lo
     const Error error = serialization::scene::from_json(document, scene, &manager);
     CHECK(error);
     CHECK(error.message().find("cannot be migrated") != std::string::npos);
+}
+
+TEST_CASE("the reference collector finds a component's resource reference") {
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Hero", "type": "Node",
+              "components": [ { "type": "Sprite2D", "texture": "guid:3f2504e0-4f89-41d3-9a0c-0305e82c3301" } ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    REQUIRE(references.value().size() == 1);
+    CHECK(references.value()[0] == "guid:3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+}
+
+TEST_CASE("the reference collector descends a node tree and skips empty references") {
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Background", "type": "Node",
+              "components": [ { "type": "Sprite2D", "texture": "tex:assets/bg.png" } ],
+              "children": [
+                  { "name": "Foreground", "type": "Node",
+                    "components": [ { "type": "Sprite2D", "texture": "" } ] }
+              ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    // The unset texture on the child contributes nothing; the parent's does.
+    REQUIRE(references.value().size() == 1);
+    CHECK(references.value()[0] == "tex:assets/bg.png");
+}
+
+TEST_CASE("the reference collector reads a script's property strings as candidates") {
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Hero", "type": "Node",
+              "scripts": [
+                  { "behaviour": "Demo",
+                    "properties": { "label": "hero", "texture": "tex:assets/hero.png" } }
+              ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    // A behaviour's property kinds are known only once its module is loaded, so
+    // every script string is a candidate. The caller resolves them, so the plain
+    // "hero" label is harmless and the resource reference is not missed.
+    REQUIRE(references.value().size() == 2);
+    CHECK(references.value()[0] == "hero");
+    CHECK(references.value()[1] == "tex:assets/hero.png");
+}
+
+TEST_CASE("the reference collector reports malformed JSON instead of throwing") {
+    auto references = serialization::scene::collect_resource_references("{ not json");
+    CHECK_FALSE(references);
+    CHECK(references.error().message().find("parse error") != std::string::npos);
+}
+
+TEST_CASE("a reference maps to an asset path by guid or by scheme") {
+    TempDir dir("refpath");
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+    auto imported = assets.import("hero.png", "tex");
+    REQUIRE(imported);
+
+    CHECK(serialization::scene::reference_to_asset_path(to_reference(imported.value().id), assets) == "hero.png");
+    CHECK(serialization::scene::reference_to_asset_path("tex:assets/hero.png", assets) == "assets/hero.png");
+    CHECK(serialization::scene::reference_to_asset_path("assets/loose.txt", assets) == "assets/loose.txt");
+    // A guid the database does not know resolves to nothing, so the caller can
+    // report it rather than pack a dangling reference.
+    CHECK(serialization::scene::reference_to_asset_path("guid:3f2504e0-4f89-41d3-9a0c-0305e82c3301", assets).empty());
 }

@@ -214,6 +214,51 @@ TEST_CASE("the writer packs a project's asset tree and its scene") {
     CHECK(built.value().find_path("hero.png.meta") == nullptr);
 }
 
+TEST_CASE("pruning packs only the assets the caller lists, plus the scene") {
+    TempDir dir("prune");
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/hero.png"), "PNG"));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/unused.png"), "UNUSED"));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("scenes/main.fescene"), "{\"format\":\"fork_scene\"}"));
+
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+    auto imported = assets.import("hero.png", "tex");
+    REQUIRE(imported);
+
+    PackOptions options;
+    options.prune = true;
+    options.include = {"hero.png"};
+    auto built = pack::PackWriter::build(assets, dir.file("scenes/main.fescene"), "scenes/main.fescene", options);
+    REQUIRE(built);
+
+    // The listed asset keeps its scheme and id; the unlisted one is gone; the
+    // scene is always present, because it is the entry point.
+    const pack::PackEntry* hero = built.value().find_path("hero.png");
+    REQUIRE(hero != nullptr);
+    CHECK(hero->scheme == "tex");
+    CHECK(hero->guid == imported.value().id);
+    CHECK(built.value().find_path("unused.png") == nullptr);
+    CHECK(built.value().find_path("scenes/main.fescene") != nullptr);
+}
+
+TEST_CASE("the default pack options pack the whole tree, not a pruned one") {
+    TempDir dir("noprune");
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/used.png"), "USED"));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/spare.png"), "SPARE"));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("scenes/main.fescene"), "{\"format\":\"fork_scene\"}"));
+
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+    REQUIRE(assets.import("used.png", "tex"));
+
+    // No options at all: the historical behaviour, so a caller that never heard
+    // of pruning is unaffected.
+    auto built = pack::PackWriter::build(assets, dir.file("scenes/main.fescene"), "scenes/main.fescene");
+    REQUIRE(built);
+    CHECK(built.value().find_path("used.png") != nullptr);
+    CHECK(built.value().find_path("spare.png") != nullptr);
+}
+
 TEST_CASE("a pack mounts on a ResourceManager and serves loads with no loose files") {
     TempDir dir("mount");
     // A real, tiny scene with one sprite, written by the real serializer so the

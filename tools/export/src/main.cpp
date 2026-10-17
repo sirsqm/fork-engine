@@ -28,6 +28,7 @@
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/PackWriter.h"
 #include "fe/resources/AssetDatabase.h"
+#include "fe/serialization/SceneReferences.h"
 
 #include <nlohmann/json.hpp>
 
@@ -46,6 +47,7 @@ struct Options {
     std::string pack_name;            // pack file name inside the output directory
     std::string scene_key;            // key the scene is stored under; default: project-relative
     std::vector<std::string> modules; // gameplay modules to copy in and record
+    bool prune = false;               // pack only what the startup scene references
     bool verbose = false;
 };
 
@@ -102,6 +104,39 @@ struct ProjectFile {
     return project;
 }
 
+// Resolves the startup scene's resource references to root-relative asset paths,
+// so a pruned pack carries exactly what the scene names. Reads the scene as text
+// and traces it through reflection; it does not load it, so no resource is
+// decoded.
+//
+// A reference resolves if the database has indexed it or, failing that, if the
+// file is simply present under the pack root - an unimported asset is still
+// packed, by path, under the default scheme, exactly as the unpruned writer packs
+// it. A reference that resolves to neither is a hard error: shipping a build
+// whose scene names an asset that is not in it produces a game that runs until it
+// draws, which is worse than a failed export.
+[[nodiscard]] fe::Result<std::vector<std::string>>
+scene_asset_paths(const std::string& scene_path, const std::string& pack_root, const fe::AssetDatabase& assets) {
+    auto text = fe::fs::read_text_file(scene_path);
+    if (!text) {
+        return text.error();
+    }
+    auto references = fe::serialization::scene::collect_resource_references(text.value());
+    if (!references) {
+        return references.error();
+    }
+
+    std::vector<std::string> paths;
+    for (const std::string& reference : references.value()) {
+        const std::string path = fe::serialization::scene::reference_to_asset_path(reference, assets);
+        if (path.empty() || (assets.find_by_path(path) == nullptr && !fe::fs::exists(fe::fs::join(pack_root, path)))) {
+            return fe::Error("scene reference '" + reference + "' is not an asset under '" + pack_root + "'");
+        }
+        paths.push_back(path);
+    }
+    return paths;
+}
+
 // The runtime's file name on this platform, so a copy finds it and a manifest
 // reader can name it back.
 [[nodiscard]] std::string player_file_name() {
@@ -123,7 +158,7 @@ struct ProjectFile {
 
 void print_usage() {
     std::puts("usage: fork_export --project DIR --out DIR [--player PATH] [--pack-name NAME]\n"
-              "                   [--scene-key PATH] [--module PATH ...]\n"
+              "                   [--scene-key PATH] [--module PATH ...] [--prune]\n"
               "\n"
               "  --project DIR    a project directory or fork.project.json file\n"
               "  --out DIR        the directory to write the build into\n"
@@ -131,6 +166,8 @@ void print_usage() {
               "  --pack-name NAME the pack file's name (default: game.fepack)\n"
               "  --scene-key PATH the scene's key inside the pack (default: project-relative)\n"
               "  --module PATH    a gameplay module to copy in and record (repeatable)\n"
+              "  --prune          pack only the assets the startup scene references,\n"
+              "                   instead of the whole tree (ADR-0065)\n"
               "  --verbose        log at debug level");
 }
 
@@ -150,6 +187,8 @@ void print_usage() {
             out.scene_key = argv[++i];
         } else if (arg == "--module" && has_value) {
             out.modules.emplace_back(argv[++i]);
+        } else if (arg == "--prune") {
+            out.prune = true;
         } else if (arg == "--verbose") {
             out.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -219,7 +258,20 @@ int main(int argc, char** argv) {
 
     // Build the pack in memory first, then write the whole export. A failure
     // here (a missing scene, an unreadable asset) leaves no half-written build.
-    auto built = fe::pack::PackWriter::build(assets, project.value().startup_scene, scene_key);
+    fe::pack::PackOptions pack_options;
+    if (options.prune) {
+        auto paths = scene_asset_paths(project.value().startup_scene, pack_root, assets);
+        if (!paths) {
+            std::fprintf(stderr, "fork_export: %s\n", paths.error().message().c_str());
+            return 1;
+        }
+        pack_options.prune = true;
+        pack_options.include = std::move(paths.value());
+        FE_LOG_INFO("fork_export: pruning to %llu scene-referenced asset(s)",
+                    static_cast<unsigned long long>(pack_options.include.size()));
+    }
+
+    auto built = fe::pack::PackWriter::build(assets, project.value().startup_scene, scene_key, pack_options);
     if (!built) {
         std::fprintf(stderr, "fork_export: %s\n", built.error().message().c_str());
         return 1;

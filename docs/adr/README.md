@@ -70,6 +70,7 @@ rather than editing it.
 | [0062](0062-tilemaps.md) | Tilemaps | Accepted |
 | [0063](0063-reflection-backed-script-properties.md) | Reflection-backed script properties and script persistence | Accepted |
 | [0064](0064-export-runtime-and-player.md) | Export: a runtime that plays a pack | Accepted |
+| [0065](0065-pack-reachability-pruning.md) | Pack reachability pruning | Accepted |
 
 ## Format
 

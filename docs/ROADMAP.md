@@ -315,8 +315,14 @@ use, not merely that the editor runs on several OSes. Plan and trade-offs:
       a project's asset tree and startup scene into one file, and a `PackSource`
       the runtime mounts so the loaders and the scene reader read from a pack as
       transparently as from disk ([ADR-0030](adr/0030-asset-pack-format.md))
-- [ ] `fork_pack` tooling polish: reachability (pack only what the startup scene
-      references), compression, and streaming a large pack
+- [ ] `fork_pack` tooling polish: compression and streaming a large pack.
+      Reachability — packing only what the startup scene references — landed as an
+      opt-in `--prune` on `fork_pack` and `fork_export`: a scene's references are
+      traced through reflection (a component's `ResourceRef` properties and a
+      script's property strings, resolved against the asset database) and only
+      those paths are packed ([ADR-0065](adr/0065-pack-reachability-pruning.md)).
+      Following a packed asset's own references (a glTF's external buffers) and
+      making pruning the default remain
 - [x] The export path: `fork_player` mounts a pack and runs the game loop, and
       `fork_export` assembles a runnable build (the player, a fresh pack, and a
       manifest) from a project ([ADR-0064](adr/0064-export-runtime-and-player.md)).
