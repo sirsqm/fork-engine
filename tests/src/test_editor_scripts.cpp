@@ -208,10 +208,15 @@ TEST_CASE("a plain scene document is unchanged by the editor's script catalog") 
     [[maybe_unused]] Node* hero = context.scene().create_node("Hero");
     REQUIRE_FALSE(context.save_scene(path));
 
-    // No node carried a script, so the document has no "scripts" array.
-    std::ifstream in(path, std::ios::binary);
-    REQUIRE(in.good());
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    // No node carried a script, so the document has no "scripts" array. The
+    // stream is closed before the file is removed: Windows refuses to delete a
+    // file that is still open.
+    std::string text;
+    {
+        std::ifstream in(path, std::ios::binary);
+        REQUIRE(in.good());
+        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
     CHECK(text.find("scripts") == std::string::npos);
 
     std::filesystem::remove(path);
