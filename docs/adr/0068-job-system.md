@@ -123,6 +123,12 @@ entirely inside third-party code, the same way the ASan job excludes their leaks
 The engine tests need no display, so the job installs no X11/Wayland packages and
 runs no virtual display.
 
+A practical note for a contributor running TSan locally: TSan maps a large shadow
+region at a fixed address, which collides with a container's default ASLR
+entropy. If it aborts with "unexpected memory mapping", run the binary with
+address randomisation disabled (`setarch "$(uname -m)" -R <binary>`); CI's runner
+has the lower default and does not need this.
+
 ## Consequences
 
 - The follow-on row, parallel extraction and culling, has the pool and the chunk
