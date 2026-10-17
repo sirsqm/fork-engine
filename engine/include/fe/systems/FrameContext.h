@@ -9,6 +9,7 @@ namespace fe {
 class InputState;
 class ResourceManager;
 class FrameArena;
+class JobSystem;
 
 // What a system is told about the frame it is running in.
 //
@@ -42,6 +43,19 @@ struct FrameContext {
     // allocates from it is valid for that frame only: a pointer into the arena
     // must not outlive the frame (ADR-0017, ADR-0051, ADR-0053).
     FrameArena* arena = nullptr;
+
+    // The job system a system fans CPU work out to (ADR-0017, ADR-0068).
+    // Nullable: a tool or a test that runs a schedule with no pool runs it with
+    // no jobs, and a system must null-check it rather than assume one exists. A
+    // system that wants to parallelise a loop calls
+    // `context.jobs->parallel_for(...)`; when the pointer is null it runs the
+    // same loop serially. The API is identical either way, so the system does not
+    // branch on whether threads exist.
+    //
+    // A job must not touch the RHI device: the device is single-threaded
+    // (ADR-0017), so a job extracts, culls, or computes, and only the thread that
+    // owns the frame submits.
+    JobSystem* jobs = nullptr;
 };
 
 } // namespace fe

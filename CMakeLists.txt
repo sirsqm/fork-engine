@@ -50,6 +50,7 @@ option(FE_BUILD_BENCHMARKS "Build the Fork Engine benchmarks" ON)
 option(FE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(FE_USE_SYSTEM_DEPS "Prefer system-installed dependencies over FetchContent" OFF)
 option(FE_ENABLE_ASAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer (Debug)" OFF)
+option(FE_ENABLE_TSAN "Enable ThreadSanitizer (Debug; see ADR-0068)" OFF)
 
 include(FESettings)
 include(FEWarnings)
@@ -59,6 +60,17 @@ include(FEDependencies)
 if(FE_ENABLE_ASAN AND NOT MSVC)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
+endif()
+
+# ThreadSanitizer (ADR-0068). It is mutually exclusive with ASan: they install
+# incompatible interceptors, so asking for both is a configure error rather than
+# an obscure runtime failure.
+if(FE_ENABLE_TSAN AND FE_ENABLE_ASAN)
+  message(FATAL_ERROR "FE_ENABLE_TSAN and FE_ENABLE_ASAN are mutually exclusive")
+endif()
+if(FE_ENABLE_TSAN AND NOT MSVC)
+  add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=thread)
 endif()
 
 add_subdirectory(engine)

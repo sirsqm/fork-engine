@@ -17,6 +17,7 @@
 #   core, scene, systems, reflect  <-  physics3d
 #   core, scene, systems, resources  <-  audio
 #   core, resources  <-  pack
+#   core  <-  jobs (a thread pool; see ADR-0068)
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 #
@@ -109,6 +110,7 @@ set(FE_ENGINE_SOURCES
     src/renderer3d/Renderer3D.cpp
     src/runtime/Engine.cpp
     src/runtime/Application.cpp
+    src/jobs/JobSystem.cpp
     src/script/ScriptLibrary.cpp
     src/script/ScriptBinding.cpp
 )
@@ -139,6 +141,14 @@ set_target_properties(fork_engine PROPERTIES OUTPUT_NAME "fork_engine")
 
 # Convenience: propagate the warnings interface to our own translation units.
 target_link_libraries(fork_engine PRIVATE fe_warnings)
+
+# The jobs module uses std::thread and std::condition_variable, which on Linux
+# and macOS need the platform thread library linked (pthread). Threads::Threads
+# resolves to the right flags per platform and is a no-op where the standard
+# library already provides them, so it is linked PUBLIC: a consumer of the
+# engine that starts its own std::threads (a game) gets the same flags.
+find_package(Threads REQUIRED)
+target_link_libraries(fork_engine PUBLIC Threads::Threads)
 
 # Generated version header; engine sources include it, so they must wait for it.
 target_sources(fork_engine PRIVATE "${CMAKE_BINARY_DIR}/generated/fe/version/Version.h")

@@ -293,6 +293,71 @@ jobs:
         run: ccache -s
 
   # ---------------------------------------------------------------------------
+  # ThreadSanitizer (ADR-0068).
+  #
+  # The job system is the one place the engine starts threads, and ADR-0017 says
+  # a concurrency surface "must be run under a thread sanitizer". A Debug build
+  # with -DFE_ENABLE_TSAN=ON and warnings-as-errors runs the *pure-logic* tests
+  # (fork_engine_tests), which include every jobs test and start real threads.
+  #
+  # Only the engine tests run, deliberately. TSan instruments every thread, so
+  # the GL binaries -- which pull in Mesa/llvmpipe, GLFW and X11 and spawn their
+  # own driver threads -- report races entirely inside third-party code, the same
+  # way the ASan job excludes their leaks. The engine tests need no display, so
+  # this job installs no X11/Wayland packages and runs no xvfb.
+  # ---------------------------------------------------------------------------
+  threadsanitizer:
+    name: Linux / GCC / Debug + TSan
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-tsan-ccache-${{ hashFiles('**/CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            ${{ runner.os }}-tsan-ccache-
+
+      - name: Configure (Debug + TSan, warnings as errors)
+        env:
+          CC: gcc
+          CXX: g++
+        run: >-
+          cmake -S . -B build-tsan
+          -DCMAKE_BUILD_TYPE=Debug
+          -DFE_ENABLE_TSAN=ON
+          -DFE_WARNINGS_AS_ERRORS=ON
+          -DFE_BUILD_EDITOR=OFF
+          -DFE_BUILD_BENCHMARKS=OFF
+          -DFE_BUILD_EXAMPLES=OFF
+          -DGLFW_BUILD_WAYLAND=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build-tsan --target fork_engine_tests --parallel
+
+      # halt_on_error=1 makes a race fail the job rather than only print.
+      - name: Test (pure-logic suite, no display)
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --test-dir build-tsan --output-on-failure -R 'engine_tests'
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+  # ---------------------------------------------------------------------------
   # Warnings-as-errors.
   #
   # A Release-grade configure+build (RelWithDebInfo, so the optimiser is on and

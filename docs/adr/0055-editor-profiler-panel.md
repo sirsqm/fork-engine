@@ -21,7 +21,7 @@ in-editor read-out.
 The forces are specific to the editor. The profiler in a shipped game belongs to
 `Application`, which owns the frame loop and installs it as the thread's current
 profiler for each frame. **The editor is not an `Application`.** ADR-0001 and
-docs/ARCHITECTURE.md section 8 make the editor a client of the runtime that
+docs/ARCHITECTURE.md section 9 make the editor a client of the runtime that
 embeds an `Engine` and drives frames itself, so that play-in-editor shares the
 exact runtime a game uses. The editor therefore has no profiler, and its frame
 is not bracketed by anything. Adding a panel means deciding where the editor's
@@ -52,7 +52,7 @@ place while still allowing "no profiler yet".
 
 It is *not* added to `Engine`. `Engine` owns long-lived subsystems in a fixed
 creation order and deliberately does not run a frame loop (docs/ARCHITECTURE.md
-section 6); a profiler is a frame-loop concern, which is why `Application` owns
+section 7); a profiler is a frame-loop concern, which is why `Application` owns
 one. The editor drives its own loop, so the editor owns its own profiler, by the
 same rule.
 

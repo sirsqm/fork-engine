@@ -14,6 +14,7 @@ add_executable(fork_engine_tests
     src/test_profiler_disabled.cpp
     src/test_frame_arena.cpp
     src/test_spatial_bvh.cpp
+    src/test_jobs.cpp
     src/test_math.cpp
     src/test_frustum.cpp
     src/test_input_state.cpp

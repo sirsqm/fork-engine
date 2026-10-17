@@ -49,7 +49,7 @@ whether it is implemented now.
 | Input: touch, gamepad | — | Deferred; see "Where touch and gamepad attach" |
 | Graphics context | `rhi::Device` + `Window::get_proc_address` | Implemented (OpenGL 3.3 core) |
 | Filesystem | `core::fs` (+ `resources::ResourceSource`, `pack::PackSource`) | Implemented |
-| Threads | `core` (std only); the `jobs` module is planned (M9) | Partial |
+| Threads | `core` (std only); the `jobs` module (`JobSystem`, ADR-0068) | Implemented |
 | Time | `runtime::Engine` (steady clock); `platform` is where a backend would inject it | Implemented, but in the runtime |
 | Dynamic libraries | — | Deferred |
 | Lifecycle (init/shutdown) | `Window::create`/destructor; `Engine::initialize`/`shutdown` | Implemented |

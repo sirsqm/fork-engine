@@ -34,6 +34,14 @@ int Application::run() {
         FE_LOG_INFO("frame arena: %zu bytes", frame_arena_bytes_);
     }
 
+    // Create the run's job system. With worker_count_ == 0 it is single-threaded
+    // and every job runs inline on the frame thread, so a run that did not ask
+    // for workers behaves exactly as it did before the pool existed. The pool is
+    // joined at the end of the run (below), so no job outlives the frame loop
+    // (ADR-0017, ADR-0068).
+    jobs_ = std::make_unique<JobSystem>(worker_count_);
+    FE_LOG_INFO("job system: %u worker threads", jobs_->worker_count());
+
     FE_LOG_INFO("entering main loop (%s)", headless_ ? "headless" : "interactive");
 
     // Install the application's profiler on this thread for the whole run, so
@@ -89,6 +97,7 @@ int Application::run() {
             frame.resources = &engine_.resources();
             frame.input = &engine_.input();
             frame.arena = frame_arena_.get();
+            frame.jobs = jobs_.get();
             schedule_.update(frame, scene_);
         }
 
@@ -127,6 +136,12 @@ int Application::run() {
     // destructible frame data, so it needs no scene/device ordering like the
     // scene does below; it just must not outlive the run it belongs to.
     frame_arena_.reset();
+
+    // Join the pool after the loop and before the scene is torn down. A worker
+    // never touches the scene (a job extracts into the system's own data), so
+    // this ordering is not load-bearing the way the arena's is; it is here so no
+    // thread is alive past the point the frame loop stops driving it.
+    jobs_.reset();
 
     // Release the scene *before* the graphics device and window. Scene
     // components can own GPU-backed resources (a Sprite2D holds a Texture2D),

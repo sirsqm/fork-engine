@@ -372,8 +372,18 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       holds `render::SpriteInstance`/`MeshInstance` and the pure extract/cull
       steps; each renderer's `render()` is extract → cull → draw, and the draw
       step does no culling ([ADR-0052](adr/0052-render-extraction-seam.md))
-- [ ] Job system: a `jobs` module (thread pool, `parallel_for`, task graph);
-      `FrameContext` exposes it to systems
+- [x] Job system: a `jobs` module (thread pool, `parallel_for`, task graph);
+      `FrameContext` exposes it to systems — `JobSystem` is a fixed `std::thread`
+      pool with `parallel_for` and a dependency `TaskGraph`, and one API in two
+      modes: a worker count of zero (the default) runs every job inline, so the
+      module landed without changing any existing run and the serial-equivalence
+      test compares the two. The submitting thread helps run the queue while it
+      waits, so a nested call cannot deadlock. `FrameContext::jobs` is nullable
+      like `resources`/`input`/`arena`, and `Application` owns the pool, sizes it
+      from `set_worker_count`, and joins it when `run()` returns. The device stays
+      single-threaded: a job extracts, culls, or computes, and only the frame
+      thread submits. CI runs the pure-logic suite under ThreadSanitizer
+      (`FE_ENABLE_TSAN`; ADR-0068)
 - [ ] Parallel extraction and culling: chunk the instance array; output must be
       identical to the serial path
 - [x] Memory: a per-frame arena for transient data, with allocation counters —

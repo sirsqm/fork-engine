@@ -73,6 +73,7 @@ rather than editing it.
 | [0065](0065-pack-reachability-pruning.md) | Pack reachability pruning | Accepted |
 | [0066](0066-editor-driven-module-hot-reload.md) | Editor-driven gameplay-module hot reload | Accepted |
 | [0067](0067-debouncing-a-module-build.md) | Debouncing a gameplay-module build | Accepted |
+| [0068](0068-job-system.md) | A job system: thread pool, `parallel_for`, and a task graph | Accepted |
 
 ## Format
 

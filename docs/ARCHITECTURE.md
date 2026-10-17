@@ -27,13 +27,13 @@ are planned in [`STRATEGY.md`](STRATEGY.md):
   by measurement, not by a late optimization pass. The authoring model (the
   scene graph) and the processing model (flat, cache-friendly arrays) are
   deliberately different, and the conversion happens at one seam — see
-  [ADR-0017](adr/0017-performance-strategy.md) and section 5.
+  [ADR-0017](adr/0017-performance-strategy.md) and sections 5 and 6.
 - **Games ship anywhere.** The target is that a game reaches every platform its
   players use, not that the editor runs on several OSes — see
-  [ADR-0018](adr/0018-multi-platform-shipping.md) and section 10.
+  [ADR-0018](adr/0018-multi-platform-shipping.md) and section 11.
 - **Editing is collaborative.** Several people edit one project live, with
   presence and no manual merge — see
-  [ADR-0019](adr/0019-collaborative-editing.md) and section 8.
+  [ADR-0019](adr/0019-collaborative-editing.md) and section 9.
 
 Non-goals for now: matching a specific existing engine feature-for-feature, and
 optimising before there is something worth optimising (which is why performance
@@ -48,7 +48,7 @@ depend only "downwards"; the dependency graph is acyclic by construction.
 core  <-  platform  <-  rhi  <-  resources  <-  scene  <-  renderer2d
 core  <-  reflect  <-  scene, resources
 core  <-  serialization  <-  scene, resources, reflect
-core  <-  jobs  <-  systems
+core  <-  jobs
 core, scene, resources  <-  systems
 core, scene, systems, reflect  <-  anim
 core, scene, systems  <-  script
@@ -60,6 +60,7 @@ core, scene, resources  <-  scene3d
 core, rhi, resources, scene, mesh  <-  renderer3d
 core, scene, systems, resources  <-  audio
 core, resources  <-  pack
+core  <-  jobs
 core, scene, serialization  <-  session
 core, scene, serialization, session  <-  net
 everything  <-  runtime
@@ -84,7 +85,7 @@ everything  <-  runtime
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
 | `pack` | Asset pack container, writer, and the runtime mount that reads a pack like a directory | core, resources |
-| `jobs` *(planned)* | Thread pool, `parallel_for`, and a task graph; consumed by systems and by render extraction | core |
+| `jobs` | Thread pool, `parallel_for`, and a dependency task graph, in one API with a single-threaded mode; consumed by systems and by render extraction (`docs/adr/0068-job-system.md`) | core |
 | `render` | The extraction seam: `render::SpriteInstance`/`MeshInstance`, the pure `extract`/`cull` steps both renderers share, and the world-AABB expansion culling uses (`docs/adr/0052-render-extraction-seam.md`) | core, scene, scene3d, mesh, resources |
 | `debugdraw` | Collider wireframes for a 2D or a 3D scene: a CPU-side `DebugDrawList` and a `DebugRenderer` that draws it as one line list (`docs/adr/0058-editor-physics3d-and-debug-draw.md`) | core, rhi, scene, physics2d, physics3d |
 | `net` | The `Transport` seam (in-process loopback for tests, WebSocket planned), an authoritative `SessionServer` that orders every accepted edit, and the `SessionClient` a replica uses (`docs/adr/0049-net-transport-and-session-server.md`) | core, scene, serialization, session |
@@ -228,7 +229,9 @@ and the engine never includes an editor header.
 
 The current profiler is thread-local and a profiler is recorded from one thread;
 a worker thread records on its own profiler and cannot corrupt the main thread's
-frame. Cross-thread aggregation waits for the `jobs` module (M9).
+frame. The `jobs` module is now in place ([ADR-0068](adr/0068-job-system.md)), but
+cross-thread aggregation is not built yet: a job that wants its work in the frame
+profile still has no way to contribute it, and that remains M9 work.
 
 ### Physics as a system
 
@@ -388,7 +391,7 @@ save/load cycle. Future cross-scene and resource references will use the same
 - GPU objects are owned by the `rhi::Device` and released when their
   `shared_ptr` count reaches zero. Because their destructors call into the
   graphics API, they must be released **before** the device is shut down; the
-  runtime enforces this ordering (see section 6).
+  runtime enforces this ordering (see section 7).
 
 ## 4. Error handling
 
@@ -409,7 +412,60 @@ used at all. Assertions are reserved for programming errors:
 
 See [ADR-0003](adr/0003-error-handling.md).
 
-## 5. Rendering
+## 5. Parallelism
+
+The `jobs` module is where the engine's CPU parallelism lives: a `JobSystem`
+with a fixed pool of `std::thread` workers, `parallel_for`, and a dependency
+`TaskGraph` ([ADR-0017](adr/0017-performance-strategy.md),
+[ADR-0068](adr/0068-job-system.md)).
+
+**One API, two modes.** `JobSystem(worker_count)` starts that many workers; the
+default `JobSystem()` starts none, and every job then runs inline on the calling
+thread. The API is identical in both, so a system that calls `parallel_for` reads
+the same in a game, a headless tool, and a test, and a caller never branches on
+whether threads exist. The single-threaded mode is what makes the serial
+equivalence test possible (run the same call both ways and compare), what a
+platform without threads selects, and what lets the module land without changing
+any existing run: `Application` creates a pool only when a worker count is set.
+
+**`parallel_for` is serial-equivalent.** `parallel_for(begin, end, body)` splits
+the range into contiguous chunks and runs them on the pool, blocking until all are
+done. The body runs once per index, exactly once, with the value a serial loop
+would give it; only the *order* of calls is unspecified, so the body must not
+assume one chunk ran before another, and two indices that write the same memory
+are a race the caller avoids (chunk-local scratch, or an index-derived output
+slot). The split is deterministic, so a parallel result is directly comparable to
+the serial one.
+
+**The submitting thread helps.** While it waits for its batch, the calling thread
+runs queued tasks itself. That is what keeps a job that calls `parallel_for` again
+from deadlocking against a pool whose workers are all busy waiting: the waiter
+works too. The cost is that a nested call adds no parallelism - it runs its work
+on the calling thread - which is the right trade for a module whose job is to not
+deadlock.
+
+**A graph is a builder, and a bad graph runs nothing.** `TaskGraph` records tasks
+and their dependencies; `JobSystem::run` executes it. A task runs only after every
+task it depends on has finished, and tasks with no unmet dependency may run in any
+order. The graph is validated *before any body runs* - a dependency on an unknown
+id, or a cycle, returns an `Error` and runs nothing - so a caller never sees a
+partial run. A task body must not throw: an exception escaping a worker terminates
+the process, so a body that can fail records the failure itself.
+
+**The device stays single-threaded.** Threads may extract, cull, and compute, but
+only the thread that owns the frame submits to the RHI. `FrameContext::jobs` is
+nullable like `resources`/`input`/`arena`, and it carries this rule: a job must
+not touch the device. The module cannot enforce what a body touches, so this is a
+documented rule and review is the guard, as it is for the frame arena's lifetime
+rule.
+
+**Testing.** The pure-logic suite includes the jobs tests, which start real
+threads, and CI runs them under ThreadSanitizer (`FE_ENABLE_TSAN`). Only
+`fork_engine_tests` runs there: TSan instruments every thread, so the GL binaries
+report races entirely inside Mesa/llvmpipe, GLFW, and X11, the same way the ASan
+job excludes their leaks.
+
+## 6. Rendering
 
 Rendering is split into a device abstraction and renderers built on top of it.
 
@@ -439,7 +495,7 @@ touched. A debug pass that draws a line list is the first user
 ([ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)); a `VertexLayout::position_color`
 carries a per-vertex colour for it.
 
-**`renderer2d::Renderer2D`** runs the extraction seam (section 5, below):
+**`renderer2d::Renderer2D`** runs the extraction seam (section 6, below):
 it extracts the scene's sprites into a flat array, culls it against the view
 frustum, sorts the survivors into a stable draw order, builds a vertex/index
 stream in CPU memory, uploads it in batches, and issues one indexed draw per
@@ -584,7 +640,9 @@ render graph build on. The authoring model (the scene graph) and the processing
 model (the array) are deliberately different, and this seam is the only place
 they meet. It is the concrete form of the hybrid architecture
 ([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md)) in the hot path, and the
-prerequisite for the parallel culling and instancing still planned in M9.
+prerequisite for the parallel culling and instancing still planned in M9. The
+`jobs` module that chunks it is now in place ([ADR-0068](adr/0068-job-system.md));
+the extraction seam itself is not parallel yet.
 
 ### Camera selection
 
@@ -596,7 +654,7 @@ independent answers to that question is precisely the kind of divergence that
 produces subtle bugs, so the runtime calls the renderer's helper rather than
 reimplementing the rule.
 
-## 6. Subsystem lifetime
+## 7. Subsystem lifetime
 
 `Engine` is the single place that knows the order in which subsystems are
 created and destroyed:
@@ -629,7 +687,7 @@ behaviour; the ordering rule is enforced in `Application::run()` and documented
 at the call site. A headless run has no GPU-backed resources to release, so the
 same ordering is simply harmless there.
 
-## 7. Resources
+## 8. Resources
 
 The `ResourceManager` maps a path to a single shared instance, dispatches to a
 `ResourceLoader` by scheme and file extension, and caches weakly so assets are
@@ -726,7 +784,7 @@ path-based references keep working in headless tests and tools. A version-1 scen
 document (path keys) is migrated to GUIDs at load time. See
 [ADR-0020](adr/0020-resource-identity-guid-sidecar.md).
 
-## 8. Editor
+## 9. Editor
 
 The editor is a client of the engine, not a second copy of it:
 
@@ -906,7 +964,7 @@ out of that single order. The WebSocket backend and optimistic local apply are
 the next changes behind the same seam. The `net` module is where the transport
 lives; nothing above it knows whether the peer is in-process or remote.
 
-## 9. Scripting
+## 10. Scripting
 
 Gameplay behaviour attaches to a node as a `Script`, owned and driven by a
 `ScriptHost`, behind a seam that never names a concrete language. C++ is the
@@ -1019,7 +1077,7 @@ rows; the seam they attach to is the one above and does not change to accommodat
 them.
 
 
-## 10. Platform layer
+## 11. Platform layer
 
 Cross-platform support is designed in from the start, not retrofitted. All
 platform-specific functionality — window creation, input, filesystem access,
@@ -1071,12 +1129,15 @@ game built here reaches every platform its players use — see
 Desktop (Linux, macOS, Windows) is the initial target; web and mobile follow,
 and consoles are an architecture goal implemented only when SDK access permits.
 
-## 11. Testing strategy
+## 12. Testing strategy
 
 - **Pure-logic tests** (`fork_engine_tests`) cover math, filesystem, scene,
   components, resources, serialization, input, mesh geometry, 3D scene
-  components (camera projection, reflection registration), and frustum culling
-  (plane extraction, point/AABB visibility). They run anywhere.
+  components (camera projection, reflection registration), frustum culling
+  (plane extraction, point/AABB visibility), and the job system (serial
+  equivalence, reentrancy, graph ordering). They run anywhere. This suite is
+  also what runs under ThreadSanitizer (`FE_ENABLE_TSAN`, ADR-0068), because it
+  starts real threads and needs no display.
 - **Graphics tests** (`fork_graphics_tests`) create a hidden window and GL
   context, render a scene, and read the framebuffer back to assert what was
   actually drawn (pixel values, batching and draw counts, camera clear colour,
@@ -1093,7 +1154,7 @@ and consoles are an architecture goal implemented only when SDK access permits.
 
 Every milestone must build and pass its tests before the next one begins.
 
-## 12. What is deliberately not here yet
+## 13. What is deliberately not here yet
 
 - The parts of 3D rendering beyond the forward lit pass and directional shadows:
   batching, point/spot shadows, cascaded shadow maps, skeletal animation, a
@@ -1123,11 +1184,11 @@ Every milestone must build and pass its tests before the next one begins.
   (see [ADR-0016](adr/0016-audio-module.md)).
 - The editor's asset browser, 3D viewport, scripting workflow, and project
   settings (the editor shell, hierarchy, inspector, 2D viewport,
-  play-in-editor, and undo/redo exist; see section 8).
+  play-in-editor, and undo/redo exist; see section 9).
 - The parts of 2D authoring beyond tilemaps: particles, tile collisions,
   mixed tile sizes and tile flags (flip/rotate), and multiple tilemap layers
   per map (see [ADR-0062](adr/0062-tilemaps.md)).
-- The scripting seam and the C++ path exist (section 9,
+- The scripting seam and the C++ path exist (section 10,
   [ADR-0044](adr/0044-scripting-seam.md)): C++ gameplay modules load and
   hot-reload through `ScriptLibrary`
   ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)), a script's
@@ -1141,21 +1202,23 @@ Every milestone must build and pass its tests before the next one begins.
   language. These are the remaining M7 rows, and none of them changes the seam.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`
-  module and parallel extraction are planned in M9.
-- The performance work itself: the extraction seam is in place (section 5,
+  module is in place (section 5, [ADR-0068](adr/0068-job-system.md)); parallel
+  extraction is the next M9 row.
+- The performance work itself: the extraction seam is in place (section 6,
   [ADR-0052](adr/0052-render-extraction-seam.md)); the profiler, the benchmark
   gate, and the frame arena are in place -- the `core` primitive
   ([ADR-0051](adr/0051-frame-arena.md)) and its wiring into the frame loop, which
   owns one arena, resets it each frame, and hands it to systems through
-  `FrameContext` ([ADR-0054](adr/0054-frame-loop-arena.md)); the job system,
-  parallel culling, instancing, and moving the extraction seam onto the arena are
-  still planned in M9.
+  `FrameContext` ([ADR-0054](adr/0054-frame-loop-arena.md)); the job system is
+  in place too (section 5, [ADR-0068](adr/0068-job-system.md)), so parallel
+  culling, instancing, and moving the extraction seam onto the arena are what
+  remain in M9.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
-  and the web/mobile backends are planned in M8 (section 10). The asset-pack
+  and the web/mobile backends are planned in M8 (section 11). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).
 - Collaborative editing: component identity, the operation model, the
   replicated log, and the loopback transport with its authoritative session
   server are in place; the WebSocket backend, optimistic local apply, and
-  presence are planned in M10 (section 8).
+  presence are planned in M10 (section 9).
 
 These are sequenced in [`docs/ROADMAP.md`](ROADMAP.md).

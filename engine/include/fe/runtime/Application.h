@@ -4,6 +4,7 @@
 
 #include "fe/core/FrameArena.h"
 #include "fe/core/Profiler.h"
+#include "fe/jobs/JobSystem.h"
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Scene.h"
 #include "fe/systems/SceneSchedule.h"
@@ -110,6 +111,24 @@ public:
     [[nodiscard]] FrameArena* arena() noexcept { return frame_arena_.get(); }
     [[nodiscard]] const FrameArena* arena() const noexcept { return frame_arena_.get(); }
 
+    // --- Job system --------------------------------------------------------
+    // The application owns one JobSystem and hands it to every system through
+    // FrameContext::jobs, so a system that can parallelise its work has a pool to
+    // use without owning one (ADR-0017, ADR-0068).
+    //
+    // It is single-threaded by default (every job runs inline on the calling
+    // thread), so adding it to the frame loop changes no behaviour until a worker
+    // count is asked for. Set the count before run(); it is fixed for the run, so
+    // a system never sees the pool change size underneath it. The pool is created
+    // in run() and joined when run() returns, so no job outlives the loop.
+    void set_worker_count(u32 workers) noexcept { worker_count_ = workers; }
+    [[nodiscard]] u32 worker_count() const noexcept { return worker_count_; }
+
+    // The run's job system, or null before run() starts and after it returns.
+    // A system reaches it through FrameContext::jobs.
+    [[nodiscard]] JobSystem* jobs() noexcept { return jobs_.get(); }
+    [[nodiscard]] const JobSystem* jobs() const noexcept { return jobs_.get(); }
+
 protected:
     // --- Hooks -------------------------------------------------------------
     // Called once, after the engine is up and before the first frame. Return an
@@ -140,6 +159,10 @@ private:
     // One arena for the frame, created in run() and reset before the systems run.
     // Null before run() starts and after it returns.
     std::unique_ptr<FrameArena> frame_arena_;
+    // The run's job system, created in run() and joined when it returns. Null
+    // before and after. Single-threaded when worker_count_ is 0.
+    std::unique_ptr<JobSystem> jobs_;
+    u32 worker_count_ = 0;
     // Default capacity for the per-frame arena. 1 MiB holds the transient data of
     // a frame (scratch lists, extraction arrays) with room to spare; a frame that
     // needs more has grown past what a bump allocator should serve and should say
