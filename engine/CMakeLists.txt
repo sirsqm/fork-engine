@@ -11,6 +11,7 @@
 #   core  <-  serialization  <-  scene, resources, reflect
 #   core, scene, resources  <-  systems
 #   core, scene, systems  <-  script
+#   core, scene, systems, platform  <-  script (the module loader; see ADR-0061)
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, reflect  <-  physics3d
 #   core, scene, systems, resources  <-  audio
@@ -34,6 +35,7 @@ set(FE_ENGINE_SOURCES
     src/core/SpatialBvh.cpp
     src/platform/InputState.cpp
     src/platform/NullWindow.cpp
+    src/platform/DynamicLibrary.cpp
     src/platform/Window.cpp
     src/rhi/Device.cpp
     src/rhi/null/NullDevice.cpp
@@ -100,6 +102,7 @@ set(FE_ENGINE_SOURCES
     src/renderer3d/Renderer3D.cpp
     src/runtime/Engine.cpp
     src/runtime/Application.cpp
+    src/script/ScriptLibrary.cpp
 )
 
 add_library(fork_engine STATIC ${FE_ENGINE_SOURCES})

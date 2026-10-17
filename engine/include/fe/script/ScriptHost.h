@@ -105,6 +105,7 @@ public:
         if (entry.node != nullptr) {
             entry.script->detach(*entry.node);
         }
+        entry.script->set_node(nullptr);
         scripts_.erase(scripts_.begin() + static_cast<std::ptrdiff_t>(it->second));
         reindex();
         return true;
@@ -156,6 +157,14 @@ public:
 
     [[nodiscard]] usize script_count() const noexcept { return scripts_.size(); }
 
+    // The node a script is bound to, or nullptr. The scene owns the node; the
+    // host only reports the binding. A module loader uses this to rebind a script
+    // after a hot reload (ADR-0061).
+    [[nodiscard]] Node* node(const Uuid& node_id) const noexcept {
+        auto it = index_.find(node_id);
+        return it == index_.end() ? nullptr : scripts_[it->second].node;
+    }
+
     // The number of scripts currently disabled by a failure.
     [[nodiscard]] usize failed_count() const noexcept {
         usize count = 0;
@@ -173,6 +182,7 @@ public:
             if (entry.node != nullptr) {
                 entry.script->detach(*entry.node);
             }
+            entry.script->set_node(nullptr);
         }
         scripts_.clear();
         index_.clear();
@@ -189,13 +199,17 @@ private:
     };
 
     // Runs attach() and reports a refusal with the node's name for context.
+    // On success the script's back-pointer is set, so node() is valid for the
+    // whole time the script is bound; on a refusal it stays null.
     static Error bind(Script& script, Node& node) {
         Error error = script.attach(node);
         if (error) {
             FE_LOG_ERROR("script '%s' refused node '%s': %s", std::string(script.name()).c_str(), node.name().c_str(),
                          error.message().c_str());
+            return error;
         }
-        return error;
+        script.set_node(&node);
+        return Error::none();
     }
 
     void reindex() {

@@ -67,6 +67,19 @@ public:
         return nullptr;
     }
 
+    // Removes a registration, so a name stops resolving to a factory. Returns
+    // true if a registration was removed. A module loader uses this to forget
+    // the behaviours a module provided when that module is dropped (ADR-0061).
+    bool remove_script(std::string_view name) {
+        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+            if (it->name == name) {
+                entries_.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
     [[nodiscard]] bool contains(std::string_view name) const noexcept {
         for (const auto& entry : entries_) {
             if (entry.name == name) {

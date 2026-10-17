@@ -52,6 +52,7 @@ core  <-  jobs  <-  systems
 core, scene, resources  <-  systems
 core, scene, systems, reflect  <-  anim
 core, scene, systems  <-  script
+core, scene, systems, platform  <-  script (the module loader; ADR-0061)
 core, scene, systems, reflect  <-  physics2d
 core, scene, systems, reflect  <-  physics3d
 core, scene, resources  <-  mesh
@@ -67,7 +68,7 @@ everything  <-  runtime
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
 | `core` | Fixed-width types, math, `Error`/`Result`, logging, assertions, UUID, filesystem helpers, frame profiler, frame arena, spatial BVH | — |
-| `platform` | Window creation, input, and the graphics context | core |
+| `platform` | Window creation, input, the graphics context, and dynamic libraries (`DynamicLibrary`; `docs/adr/0061-cpp-gameplay-modules-hot-reload.md`) | core |
 | `rhi` | Graphics device abstraction and backend selection | core |
 | `resources` | Asset loading, caching, lifetime | core, rhi |
 | `scene` | Node/component hierarchy, transforms | core |
@@ -76,7 +77,7 @@ everything  <-  runtime
 | `session` | The local, headless replicated log: `Session` holds a document and an ordered log of `Operation`s, two in-process replicas converge, and undo is log-based (`docs/adr/0048-replicated-operation-log.md`) | core, scene, serialization |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
 | `anim` | Animation state machines: `AnimationStateMachine` (a named-state graph over sprite clips) and `AnimationStateMachineSystem`, which advances each machine and drives the node's `SpriteAnimator` (`docs/adr/0059-animation-state-machines.md`) | core, scene, systems, reflect |
-| `script` | The language-agnostic gameplay seam: `Script`, `ScriptHost` (per-node instances keyed by stable node id), `ScriptRegistry`, and the `ScriptSystem` bridge. Header-only | core, scene, systems |
+| `script` | The language-agnostic gameplay seam: `Script`, `ScriptHost` (per-node instances keyed by stable node id), `ScriptRegistry`, and the `ScriptSystem` bridge; plus `ScriptLibrary`, the C++ gameplay-module loader and hot reload (`docs/adr/0061-cpp-gameplay-modules-hot-reload.md`) | core, scene, systems, platform |
 | `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
 | `physics3d` | 3D collision shapes (box, sphere), a rigid-body simulation system (linear and angular: gravity, restitution, friction, damping, torque, inertia) with a uniform-grid broad phase, joints, queries, and contact events | core, scene, systems, reflect |
 | `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
@@ -918,8 +919,9 @@ data ([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md),
 Keeping them separate is what stops the per-node `update()` model ADR-0002
 rejected from returning through the component system.
 
-The module is `script` (header-only, `engine/include/fe/script/`) and depends
-only on `core`, `scene`, and `systems`:
+The module is `script` (`engine/include/fe/script/`). Its seam headers are
+header-only and depend only on `core`, `scene`, and `systems`; the module loader
+(`ScriptLibrary.cpp`) adds one edge, to `platform`, for `DynamicLibrary`:
 
 - **`Script`** — a per-node unit of behaviour: `attach(Node&)`,
   `detach(Node&)`, `update(const FrameContext&)`, a `name()`, and an `enabled`
@@ -945,8 +947,20 @@ only on `core`, `scene`, and `systems`:
 A script's `update()` must not attach or detach scripts; those are structural
 changes made between frames.
 
-**Not in this cut** (named so they are planned, not forgotten): hot reload of
-C++ gameplay modules, reflection-backed bindings that expose a script's
+**C++ gameplay modules.** A module is a shared library that registers behaviours
+through a versioned entry point (`fe/script/ScriptModuleApi.h`: the exported ABI
+version and `fe_script_module_register`). `ScriptLibrary` opens it through
+`platform::DynamicLibrary`, checks the ABI version before calling into it, and
+records which behaviours it added; `attach()` builds a script from the registry
+and binds it through the ordinary `ScriptHost`. Hot reload destroys the module's
+live scripts first — detaching while its code is still loaded — then unloads the
+image, loads the replacement, and rebinds a fresh script to each node that had
+one, so no instance ever outlives the code it runs
+([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic file
+watching is editor work and is not part of this cut.
+
+**Not in this cut** (named so they are planned, not forgotten): automatic
+file-watching on reload, reflection-backed bindings that expose a script's
 properties to the inspector and serializer, and editor integration and
 debugging. These are the remaining M7 rows; the seam they attach to is the one
 above and does not change to accommodate them.
@@ -973,7 +987,10 @@ game built here reaches every platform its players use — see
   suspend/resume) are named there so they are planned rather than forgotten.
   Touch and gamepad attach to the existing `InputState` seam — a backend
   translates native events into `on_key`-style calls — so they need no new
-  interface.
+  interface. Dynamic libraries are now implemented: `platform::DynamicLibrary`
+  opens an image, resolves a symbol by name, and closes it, with `dlopen`/`dlsym`
+  and `LoadLibrary`/`GetProcAddress` the only native APIs the engine names. It is
+  what loads a C++ gameplay module ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)).
 - **A null backend exists.** A headless implementation of the window and input
   part of the contract — no OS window, no graphics context, no-op events — for
   CI, dedicated servers, and deterministic tests. It is selected with
@@ -1056,10 +1073,12 @@ Every milestone must build and pass its tests before the next one begins.
   play-in-editor, and undo/redo exist; see section 8).
 - Tilemaps, particles, animation clips and state machines.
 - The scripting seam and the C++ path exist (section 9,
-  [ADR-0044](adr/0044-scripting-seam.md)); what is not here yet is hot reload of
-  C++ gameplay modules, reflection-backed script bindings, editor integration,
-  debugging, and any embedded or custom language. These are the remaining M7
-  rows, and none of them changes the seam.
+  [ADR-0044](adr/0044-scripting-seam.md)): C++ gameplay modules load and
+  hot-reload through `ScriptLibrary` ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)).
+  What is not here yet is automatic file-watching on reload,
+  reflection-backed script bindings, editor integration, debugging, and any
+  embedded or custom language. These are the remaining M7 rows, and none of them
+  changes the seam.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`
   module and parallel extraction are planned in M9.

@@ -46,6 +46,7 @@ add_executable(fork_engine_tests
     src/test_net.cpp
     src/test_render_extract.cpp
     src/test_debugdraw.cpp
+    src/test_script_module.cpp
 )
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_engine_tests PRIVATE cxx_std_20)
@@ -63,6 +64,34 @@ target_sources(fork_engine_tests PRIVATE
 )
 target_include_directories(fork_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/examples/breakout/src)
 set_target_properties(fork_engine_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# ---------------------------------------------------------------------------
+# Gameplay module fixtures (M7, ADR-0061).
+#
+# The loader tests load *real* shared-library images, not mocks, so the dynamic-
+# library seam and the reload path are exercised end to end. Two versions of the
+# same behaviour (module_a, module_b) let a test observe a hot reload swapping
+# code, and a third reports a wrong ABI version so the loader's refusal is tested.
+# Their paths are handed to the test as compile definitions.
+# ---------------------------------------------------------------------------
+include(FEModules)
+fe_add_gameplay_module(fe_test_module_a SOURCES modules/module_a.cpp)
+fe_add_gameplay_module(fe_test_module_b SOURCES modules/module_b.cpp)
+fe_add_gameplay_module(fe_test_module_c SOURCES modules/module_abi_mismatch.cpp)
+
+# The module images must exist before the test binary runs, and must be rebuilt
+# when their sources change.
+add_dependencies(fork_engine_tests fe_test_module_a fe_test_module_b fe_test_module_c)
+
+# The test locates the images by absolute path. The RUNTIME_OUTPUT_DIRECTORY of a
+# MODULE target is its LIBRARY_OUTPUT_DIRECTORY, which fe_add_gameplay_module
+# sets to build/bin; use $<TARGET_FILE:...> so the exact name (with the platform
+# suffix and any config subdirectory) is resolved by the generator.
+target_compile_definitions(fork_engine_tests PRIVATE
+    "FE_TEST_MODULE_A=\"$<TARGET_FILE:fe_test_module_a>\""
+    "FE_TEST_MODULE_B=\"$<TARGET_FILE:fe_test_module_b>\""
+    "FE_TEST_MODULE_C=\"$<TARGET_FILE:fe_test_module_c>\""
+)
 
 # The disabled-instrumentation test must see the macros expand to nothing, so
 # this one translation unit is compiled with profiling off. The define is set

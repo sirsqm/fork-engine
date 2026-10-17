@@ -257,8 +257,15 @@ is the expensive one, and it waits.
 - [x] A language-agnostic scripting seam: the engine core talks to an interface
       (`Script`/`ScriptHost`/`ScriptRegistry`), never to a concrete language
       (`fe/script/`, driven by `ScriptSystem` through the ordinary schedule)
-- [ ] C++ native gameplay modules: compile against the engine, load, and
-      hot-reload without restarting the editor
+- [x] C++ native gameplay modules: compile against the engine, load, and
+      hot-reload without restarting the editor — a module is a shared library
+      that registers behaviours through a versioned entry point
+      (`ScriptModuleApi.h`); `ScriptLibrary` opens it through the platform layer's
+      new `DynamicLibrary` seam (the deferred "dynamic libraries" row of
+      [ADR-0041](adr/0041-platform-contract-and-null-backend.md)) and reloads it
+      by destroying the live scripts first and rebinding them to the new code
+      ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic
+      file-watching is editor work and remains
 - [ ] Reflection-backed bindings, so a script's exposed properties flow through
       the existing reflection and serialization path
 - [ ] Editor integration (attach, inspect, hot reload)
