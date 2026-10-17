@@ -25,6 +25,20 @@ constexpr const char* kSharedSuffix = ".dylib";
 constexpr const char* kSharedSuffix = ".so";
 #endif
 
+// True when `path` names a file in the working directory rather than a path that
+// carries a directory of its own.
+[[nodiscard]] bool is_bare_name(std::string_view path) {
+    if (path.find('/') != std::string_view::npos) {
+        return false;
+    }
+#if defined(FE_PLATFORM_WINDOWS)
+    if (path.find('\\') != std::string_view::npos) {
+        return false;
+    }
+#endif
+    return true;
+}
+
 } // namespace
 
 DynamicLibrary::~DynamicLibrary() {
@@ -62,11 +76,22 @@ Result<DynamicLibrary> DynamicLibrary::load(std::string_view path) {
     }
     return DynamicLibrary(static_cast<void*>(module), std::move(owned));
 #else
+    // The loader searches its configured path for a bare name, and the working
+    // directory is not on that path, so a name with no directory is resolved
+    // against "./" here. Without this, "game.so" in the current directory fails
+    // with "cannot open shared object file" while the identical file at
+    // "./game.so" loads - the difference a manifest-relative module path hits
+    // (ADR-0064). A path that already carries a directory is left as given, so
+    // an absolute path and a caller's own relative path are untouched.
+    std::string to_open = owned;
+    if (is_bare_name(owned)) {
+        to_open = "./" + owned;
+    }
     // RTLD_NOW resolves every symbol up front, so a module with a missing
     // dependency fails at load with a clear error rather than at first call.
     // RTLD_LOCAL keeps the module's symbols out of the process-global namespace,
     // so two modules cannot collide by exporting the same name.
-    void* handle = ::dlopen(owned.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void* handle = ::dlopen(to_open.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr) {
         const char* message = ::dlerror();
         return Error("DynamicLibrary::load: could not open '" + owned +

@@ -296,3 +296,36 @@ TEST_CASE("a manifest's module is resolved and loaded the way the player does") 
     ScriptLibrary empty_library;
     CHECK(empty_library.load_module(fs::join(dir.str(), "absent_module.so")));
 }
+
+// The player runs with the export directory as its working directory and the
+// manifest names the module by a bare file name, which resolves (through
+// fork_player's resolve_against) to just that name. On Unix the loader does not
+// search the working directory, so the bare name has to be resolved here or a
+// shipped build fails to start - which is exactly how this regressed once
+// (ADR-0064). The test reproduces the player's shape: working directory is the
+// export directory, module named with no directory at all.
+TEST_CASE("a module named with no directory loads from the working directory") {
+    TempDir dir("bare_module");
+    const std::string module_name = fs::filename(FE_TEST_MODULE_A);
+    REQUIRE_FALSE(fs::copy_file(FE_TEST_MODULE_A, dir.file(module_name)));
+
+    const std::filesystem::path previous = std::filesystem::current_path();
+    std::filesystem::current_path(dir.str());
+    // Restore the working directory before the TempDir destructor runs, and even
+    // if an assertion below throws.
+    struct Restore {
+        const std::filesystem::path& to;
+        ~Restore() {
+            std::error_code ec;
+            std::filesystem::current_path(to, ec);
+        }
+    } restore{previous};
+
+    // resolve_against(".", name) normalizes "./name" to a bare "name", which is
+    // what the player hands the loader.
+    CHECK(fs::normalize(fs::join(".", module_name)) == module_name);
+
+    ScriptLibrary library;
+    REQUIRE_FALSE(library.load_module(module_name));
+    CHECK(library.registry().contains("SpinBehaviour"));
+}

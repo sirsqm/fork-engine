@@ -39,6 +39,12 @@ public:
 
     // Opens the image at `path`. On failure returns an Error carrying the OS
     // message; the caller can then try a decorated name via decorate().
+    //
+    // A `path` that names no directory is resolved against the working
+    // directory, on every platform: a bare name is a file beside the running
+    // process, not a library the loader is asked to find on its search path.
+    // (On Unix the loader does not search the working directory, so this is a
+    // real difference, not a convenience.)
     [[nodiscard]] static Result<DynamicLibrary> load(std::string_view path);
 
     // True when an image is currently open.
