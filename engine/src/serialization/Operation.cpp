@@ -174,15 +174,18 @@ const char* to_string(OperationKind kind) noexcept {
         return "set_resource";
     case OperationKind::SetScriptProperty:
         return "set_script_property";
+    case OperationKind::SetScriptResource:
+        return "set_script_resource";
     }
     return "rename_node";
 }
 
 bool operation_kind_from_string(std::string_view text, OperationKind& out) noexcept {
     const OperationKind kinds[] = {
-        OperationKind::CreateNode,  OperationKind::DeleteNode,   OperationKind::ReparentNode,
-        OperationKind::RenameNode,  OperationKind::AddComponent, OperationKind::RemoveComponent,
-        OperationKind::SetProperty, OperationKind::SetResource,  OperationKind::SetScriptProperty,
+        OperationKind::CreateNode,        OperationKind::DeleteNode,   OperationKind::ReparentNode,
+        OperationKind::RenameNode,        OperationKind::AddComponent, OperationKind::RemoveComponent,
+        OperationKind::SetProperty,       OperationKind::SetResource,  OperationKind::SetScriptProperty,
+        OperationKind::SetScriptResource,
     };
     for (const OperationKind kind : kinds) {
         if (text == to_string(kind)) {
@@ -242,6 +245,12 @@ std::string to_json(const Operation& op) {
         j["behaviour"] = op.name;
         j["path"] = op.path;
         j["value"] = value_to_json(op.value);
+        break;
+    case OperationKind::SetScriptResource:
+        j["node_id"] = op.node_id.to_string();
+        j["behaviour"] = op.name;
+        j["path"] = op.path;
+        j["reference"] = op.reference;
         break;
     }
     return j.dump();
@@ -366,6 +375,20 @@ Error from_json(std::string_view text, Operation& out) {
         if (Error error = value_from_json(j.at("value"), out.value); error) {
             return error;
         }
+        break;
+    case OperationKind::SetScriptResource:
+        if (Error error = parse_uuid(j, "node_id", out.node_id); error) {
+            return error;
+        }
+        if (!j.contains("behaviour") || !j.at("behaviour").is_string()) {
+            return Error("operation: set_script_resource requires a string 'behaviour'");
+        }
+        out.name = j.at("behaviour").get<std::string>();
+        if (!j.contains("path") || !j.at("path").is_array()) {
+            return Error("operation: set_script_resource requires a 'path' array");
+        }
+        out.path = j.at("path").get<std::vector<std::string>>();
+        out.reference = j.value("reference", std::string{});
         break;
     }
     return Error::none();
@@ -505,6 +528,19 @@ Error apply(const Operation& op, Scene& scene, ResourceManager* resources, Appli
         (void)scripts->write(op.node_id, op.path, op.value);
         break;
     }
+    case OperationKind::SetScriptResource: {
+        // The resource counterpart of SetScriptProperty. A resource is written by
+        // resolving a key through the manager, so a null manager (the headless
+        // case) is a no-op, exactly as SetResource is for a component.
+        if (resources == nullptr || scripts == nullptr || scene.find_node(op.node_id) == nullptr) {
+            break;
+        }
+        if (scripts->behaviour_of(op.node_id) != op.name) {
+            break;
+        }
+        (void)scripts->write_resource(op.node_id, op.path, op.reference, *resources);
+        break;
+    }
     }
     return Error::none();
 }
@@ -635,6 +671,27 @@ Result<Operation> inverse(const Operation& op, const Scene& scene, ScriptTarget*
         inv.name = op.name;
         inv.path = op.path;
         inv.value = std::move(previous.value());
+        return inv;
+    }
+    case OperationKind::SetScriptResource: {
+        // The inverse reads the script's current reference, so it needs the seam
+        // for the same reason SetScriptProperty does.
+        if (scripts == nullptr) {
+            return Error("operation: cannot invert a script resource write without a script target");
+        }
+        if (scripts->behaviour_of(op.node_id) != op.name) {
+            return Error("operation: cannot invert a script resource write on a node that runs another behaviour");
+        }
+        std::optional<std::string> previous = scripts->read_resource(op.node_id, op.path);
+        if (!previous.has_value()) {
+            return Error("operation: cannot invert a script resource write with no readable reference");
+        }
+        Operation inv;
+        inv.kind = OperationKind::SetScriptResource;
+        inv.node_id = op.node_id;
+        inv.name = op.name;
+        inv.path = op.path;
+        inv.reference = std::move(previous.value());
         return inv;
     }
     }

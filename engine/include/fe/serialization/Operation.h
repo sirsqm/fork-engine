@@ -48,6 +48,7 @@ enum class OperationKind : u8 {
     SetProperty,       // write one reflected property, resolved through the registry
     SetResource,       // set a resource-reference property through the manager
     SetScriptProperty, // write one reflected property of a node's gameplay script
+    SetScriptResource, // set a resource-reference property of a node's gameplay script
 };
 
 // The wire name of a kind ("create_node", ...). Stable; the reader rejects an
@@ -75,17 +76,19 @@ struct Operation {
     usize index = 0;
 
     // CreateNode/RenameNode: the node name. AddComponent: the registered type name.
-    // SetScriptProperty: the behaviour name the operation expects the node to run.
+    // SetScriptProperty/SetScriptResource: the behaviour name the operation
+    // expects the node to run.
     std::string name;
     // SetProperty/SetResource: the property name (a single name for a leaf).
     std::string property_name;
     // SetProperty/SetScriptProperty: the path within the component's TypeDesc (a
     // single name for a leaf or a member path for a group), or within a script's
-    // described properties.
+    // described properties. SetScriptResource uses a single name here too, since a
+    // resource reference is a leaf.
     std::vector<std::string> path;
     // SetProperty/SetScriptProperty: the value to write.
     reflect::Value value{};
-    // SetResource: the reference to resolve ("" clears the slot).
+    // SetResource/SetScriptResource: the reference to resolve ("" clears the slot).
     std::string reference;
 };
 

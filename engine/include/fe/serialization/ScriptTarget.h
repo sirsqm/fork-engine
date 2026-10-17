@@ -8,9 +8,14 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
-namespace fe::serialization {
+namespace fe {
+
+class ResourceManager;
+
+namespace serialization {
 
 // The seam through which the operation model reads and writes a scene's live
 // gameplay scripts.
@@ -43,6 +48,23 @@ public:
     // false when the path does not resolve or the property has no setter.
     [[nodiscard]] virtual bool write(const Uuid& node_id, const std::vector<std::string>& path,
                                      const reflect::Value& value) = 0;
+
+    // The current reference of the resource-reference property at `path` on the
+    // node's script, or an empty optional when it does not resolve. This is the
+    // resource counterpart of `read`: a resource is written by resolving a key
+    // through the manager rather than by assigning a value, so it needs its own
+    // pair of accessors.
+    [[nodiscard]] virtual std::optional<std::string> read_resource(const Uuid& node_id,
+                                                                   const std::vector<std::string>& path) const = 0;
+
+    // Resolves `reference` through `resources` and stores it in the
+    // resource-reference property at `path` on the node's script. Returns false
+    // when the path does not resolve or is not a resource reference. An empty
+    // reference clears the slot. A reference that fails to load stores nothing, so
+    // a typo never discards a good resource.
+    [[nodiscard]] virtual bool write_resource(const Uuid& node_id, const std::vector<std::string>& path,
+                                              std::string_view reference, ResourceManager& resources) = 0;
 };
 
-} // namespace fe::serialization
+} // namespace serialization
+} // namespace fe

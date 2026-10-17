@@ -194,7 +194,9 @@ void draw_string_row(const Property& property, void* component, EditContext& edi
 // operation, so a resource reference is now undoable like any other property and
 // carries as a serializable operation
 // (see docs/adr/0047-local-operation-model.md).
-void draw_resource_row(const Property& property, void* component, EditContext& edit, TextFields& fields) {
+void draw_resource_row(const Property& property, void* component, EditContext& edit, TextFields& fields,
+                       const std::vector<std::string>& path) {
+    const bool is_script = edit.script != nullptr;
     const std::string current = property.resource_ref ? property.resource_ref(component) : std::string{};
     sync(fields.scalar_label, fields.scalar_text, property.name, current);
 
@@ -204,28 +206,28 @@ void draw_resource_row(const Property& property, void* component, EditContext& e
         ImGui::TextDisabled("(%s)", property.resource->type_name.c_str());
     }
 
-    // A script's resource reference is shown but not edited: writing one needs a
-    // `SetResource` operation naming a component id, which a script does not
-    // have. The value is still visible, and the script's other fields remain
-    // editable, so this is a display-only gap rather than a broken row.
-    if (edit.script != nullptr) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", current.empty() ? "(unset)" : current.c_str());
-        return;
-    }
-
     ResourceManager* resources = edit.context != nullptr ? edit.context->resources() : nullptr;
 
+    // A component reference goes through a `SetResource` operation naming a
+    // component id; a script reference goes through `SetScriptResource`, which
+    // names the behaviour instead (a script is not a component, ADR-0044). Both
+    // resolve through the manager, so both are undoable and carry as a
+    // serializable operation (ADR-0047, ADR-0063).
     auto commit_resource = [&](const std::string& reference) {
-        if (resources != nullptr && edit.context != nullptr) {
-            serialization::Operation op;
-            op.kind = serialization::OperationKind::SetResource;
-            op.node_id = edit.node_id;
-            op.component_id = edit.component_id;
-            op.property_name = property.name;
-            op.reference = reference;
-            edit.context->execute(std::make_unique<OperationCommand>(std::move(op), resources));
+        if (resources == nullptr || edit.context == nullptr) {
+            return;
         }
+        if (is_script) {
+            edit.context->edit_script_resource(edit.node_id, edit.behaviour, path, reference);
+            return;
+        }
+        serialization::Operation op;
+        op.kind = serialization::OperationKind::SetResource;
+        op.node_id = edit.node_id;
+        op.component_id = edit.component_id;
+        op.property_name = property.name;
+        op.reference = reference;
+        edit.context->execute(std::make_unique<OperationCommand>(std::move(op), resources));
     };
 
     // The text field seeds from the current key and, on commit, routes the typed
@@ -359,7 +361,7 @@ void draw_leaf(const Property& property, void* component, EditContext& edit, Tex
         ImGui::TextDisabled("%s", format_value(property.getter(component)).c_str());
         return;
     case ValueKind::ResourceRef:
-        draw_resource_row(property, component, edit, fields);
+        draw_resource_row(property, component, edit, fields, path);
         return;
     case ValueKind::Group:
         return; // Handled by draw_row.

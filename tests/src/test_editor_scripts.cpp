@@ -11,6 +11,7 @@
 #include "fe/editor/EditorContext.h"
 #include "fe/editor/ScriptCatalog.h"
 #include "fe/reflect/PropertyBuilders.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/scene/Node.h"
 #include "fe/script/ScriptDesc.h"
 #include "fe/serialization/Operation.h"
@@ -333,4 +334,105 @@ TEST_CASE("a script property operation is a no-op when the node runs another beh
 
     REQUIRE_FALSE(serialization::apply(op, scene, nullptr, nullptr, &catalog));
     CHECK(script->speed == doctest::Approx(9.0f));
+}
+
+// A behaviour with a resource-reference property, so the test can prove a script
+// reference is edited through the operation model like a component one. The
+// accessors mirror a component registration exactly: the getter yields the
+// manager key, the resolver turns a key back into a live resource.
+class ArmedScript final : public Script {
+public:
+    [[nodiscard]] std::string_view name() const noexcept override { return "ArmedScript"; }
+    [[nodiscard]] Error update(const FrameContext&) override { return Error::none(); }
+
+    std::shared_ptr<Resource> weapon;
+};
+
+void register_armed(ScriptRegistry& registry) {
+    ScriptDesc desc;
+    desc.name = "ArmedScript";
+    desc.factory = [] { return std::unique_ptr<Script>(new ArmedScript()); };
+    desc.properties.push_back(reflect::make_resource_ref<ArmedScript, std::shared_ptr<Resource>>(
+        "weapon", &ArmedScript::weapon, "Weapon",
+        [](const std::shared_ptr<Resource>& slot) -> std::string {
+            return slot != nullptr ? slot->path() : std::string{};
+        },
+        [](std::shared_ptr<Resource>& slot, std::shared_ptr<Resource> loaded) { slot = std::move(loaded); }));
+    registry.register_desc(std::move(desc));
+}
+
+TEST_CASE("the catalog reads and writes a script resource reference through the seam") {
+    ScriptCatalog catalog;
+    register_armed(catalog.registry());
+
+    Scene scene;
+    Node* node = scene.create_node("Hero");
+    REQUIRE_FALSE(catalog.attach(*node, "ArmedScript"));
+
+    auto* script = dynamic_cast<ArmedScript*>(catalog.script(node->id()));
+    REQUIRE(script != nullptr);
+
+    // An empty slot reads as an empty reference, which is what a clear writes.
+    auto before = catalog.read_resource(node->id(), {"weapon"});
+    REQUIRE(before.has_value());
+    CHECK(before.value().empty());
+
+    // An empty reference clears the slot, exactly as the component resolver does.
+    ResourceManager resources;
+    CHECK(catalog.write_resource(node->id(), {"weapon"}, "", resources));
+    CHECK(script->weapon == nullptr);
+
+    // A non-resource path and an unscripted node both report absence, never a
+    // guess, so the operation model can treat them as un-invertible.
+    CHECK_FALSE(catalog.read_resource(node->id(), {"speed"}).has_value());
+    CHECK_FALSE(catalog.write_resource(node->id(), {"speed"}, "wpn:x", resources));
+    Node* bare = scene.create_node("Bare");
+    CHECK_FALSE(catalog.read_resource(bare->id(), {"weapon"}).has_value());
+    CHECK_FALSE(catalog.write_resource(bare->id(), {"weapon"}, "wpn:x", resources));
+}
+
+TEST_CASE("a script resource edit is undoable and is a no-op for another behaviour") {
+    EditorContext context;
+    register_armed(context.scripts().registry());
+    Node* node = context.scene().create_node("Hero");
+    REQUIRE_FALSE(context.scripts().attach(*node, "ArmedScript"));
+
+    // The manager has no loader for the scheme, so the reference cannot resolve
+    // and the slot is left untouched - a bad key never clobbers a good one. The
+    // operation still applies and inverts (both are empty), which is the point:
+    // the edit is a normal undoable step.
+    REQUIRE(context.edit_script_resource(node->id(), "ArmedScript", {"weapon"}, "wpn:sword"));
+    auto* script = dynamic_cast<ArmedScript*>(context.scripts().script(node->id()));
+    REQUIRE(script != nullptr);
+    CHECK(script->weapon == nullptr);
+    REQUIRE(context.can_undo());
+    REQUIRE(context.undo());
+
+    // The operation names a behaviour the node does not run, so apply skips it.
+    serialization::Operation op;
+    op.kind = serialization::OperationKind::SetScriptResource;
+    op.node_id = node->id();
+    op.name = "SomeOtherScript";
+    op.path = {"weapon"};
+    op.reference = "wpn:axe";
+    CHECK_FALSE(serialization::apply(op, context.scene(), nullptr, nullptr, &context.scripts()));
+}
+
+TEST_CASE("a script resource operation round-trips through JSON") {
+    serialization::Operation op;
+    op.kind = serialization::OperationKind::SetScriptResource;
+    op.node_id = Uuid::generate();
+    op.name = "ArmedScript";
+    op.path = {"weapon"};
+    op.reference = "wpn:sword";
+
+    const std::string text = serialization::to_json(op);
+    serialization::Operation parsed;
+    REQUIRE_FALSE(serialization::from_json(text, parsed));
+    CHECK(parsed.kind == serialization::OperationKind::SetScriptResource);
+    CHECK(parsed.node_id == op.node_id);
+    CHECK(parsed.name == "ArmedScript");
+    REQUIRE(parsed.path.size() == 1);
+    CHECK(parsed.path.front() == "weapon");
+    CHECK(parsed.reference == "wpn:sword");
 }

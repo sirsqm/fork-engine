@@ -138,21 +138,25 @@ load.
   ordinary editor tests. `EditorContext` owns one, clears it when a different
   scene is loaded, and threads a `script::ScriptBinding` over it through save and
   load.
+- Editing a script's reflected fields is undoable through the operation model
+  ([ADR-0047](0047-local-operation-model.md)). `OperationKind::SetScriptProperty`
+  and `OperationKind::SetScriptResource` name a script by its behaviour rather
+  than by a component id, and `ScriptCatalog` implements the
+  `serialization::ScriptTarget` seam (`behaviour_of`, `read`/`write`,
+  `read_resource`/`write_resource`) that `apply` and `inverse` reach a live
+  script through. This keeps `serialization` independent of the `script` module
+  and gives a script edit the same undo, coalescing, and (later) replication
+  behaviour a component edit has.
 
 ### What this does not do
 
-Editing a script property from the inspector is not undoable yet. The panel now
-lists a scripted node's behaviour and draws its reflected property values, and
-the document persists and reloads the bindings through a `ScriptCatalog` that
-pairs a `ScriptHost` with the `ScriptRegistry` — but a property row is shown
-read-only, because routing an edit through the undo stack needs an operation that
-names a *script* rather than a component id, and the operation model
-([ADR-0047](0047-local-operation-model.md)) has no such field. Making a script
-property an editable, undoable operation is the next editor cut; showing a row
-that looks editable but is not would be worse than showing it plainly.
-
-File-watching hot reload is likewise still editor work: `ScriptLibrary` reloads
-on demand (ADR-0061), but nothing in the editor watches the module file yet.
+Every reflected script field is now editable from the inspector and undoable,
+including a resource reference, which `OperationKind::SetScriptResource` writes
+by resolving a key through the manager exactly as a component reference does. The
+remaining editor work here is not a field kind but a lifecycle one: file-watching
+hot reload. `ScriptLibrary` reloads on demand (ADR-0061), but nothing in the
+editor watches the module file yet, so a rebuilt module is picked up only when
+the editor is told to.
 
 ## Alternatives considered
 

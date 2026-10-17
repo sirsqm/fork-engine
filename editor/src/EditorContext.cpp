@@ -299,6 +299,17 @@ bool EditorContext::edit_script_property(const Uuid& node_id, const std::string&
     return execute(std::make_unique<OperationCommand>(std::move(op), resources(), &scripts_));
 }
 
+bool EditorContext::edit_script_resource(const Uuid& node_id, const std::string& behaviour,
+                                         const std::vector<std::string>& path, const std::string& reference) {
+    serialization::Operation op;
+    op.kind = serialization::OperationKind::SetScriptResource;
+    op.node_id = node_id;
+    op.name = behaviour;
+    op.path = path;
+    op.reference = reference;
+    return execute(std::make_unique<OperationCommand>(std::move(op), resources(), &scripts_));
+}
+
 bool EditorContext::undo() {
     if (!can_undo()) {
         return false;

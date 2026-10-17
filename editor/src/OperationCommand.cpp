@@ -127,6 +127,8 @@ std::string_view OperationCommand::label() const noexcept {
         return "Set Resource";
     case OperationKind::SetScriptProperty:
         return "Set Script Property";
+    case OperationKind::SetScriptResource:
+        return "Set Script Resource";
     }
     return "Edit";
 }
@@ -161,6 +163,22 @@ std::string OperationCommand::coalesce_key() const {
         // A script has no component id; the behaviour name plus the path is what
         // identifies the field, so two gestures on the same script property merge
         // and two different scripts never do.
+        std::string key = operation_.node_id.to_string();
+        key += '@';
+        key += operation_.name;
+        key += ':';
+        for (usize i = 0; i < operation_.path.size(); ++i) {
+            if (i > 0) {
+                key += '.';
+            }
+            key += operation_.path[i];
+        }
+        return key;
+    }
+    case OperationKind::SetScriptResource: {
+        // The script resource key matches the script property one, so a text edit
+        // that resolves a reference repeatedly merges into one undo step, and a
+        // script resource never merges with a component one.
         std::string key = operation_.node_id.to_string();
         key += '@';
         key += operation_.name;

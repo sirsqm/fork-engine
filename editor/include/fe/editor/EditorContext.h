@@ -180,6 +180,15 @@ public:
     bool edit_script_property(const Uuid& node_id, const std::string& behaviour, const std::vector<std::string>& path,
                               const reflect::Value& value);
 
+    // Routes an edit of a gameplay script's *resource reference* through the
+    // command stack as a serializable `SetScriptResource` operation. A resource
+    // is written by resolving a key through the manager rather than by assigning
+    // a value, so it has its own operation; this is the script counterpart of the
+    // component resource edit. `path` is the reference's path within the
+    // behaviour's described properties. Returns true when the command executed.
+    bool edit_script_resource(const Uuid& node_id, const std::string& behaviour, const std::vector<std::string>& path,
+                              const std::string& reference);
+
     // Undoes/redoes the last command and refreshes the hierarchy. Returns false
     // when there is nothing to undo/redo. Both are refused while play is
     // running, because play shows a copy and an edit to the hidden authored

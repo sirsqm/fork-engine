@@ -6,6 +6,7 @@
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
 #include "fe/reflect/Value.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/script/Script.h"
 #include "fe/script/ScriptHost.h"
 #include "fe/script/ScriptRegistry.h"
@@ -136,6 +137,35 @@ public:
             return false;
         }
         return reflect::write_property(*property, bound, value);
+    }
+
+    [[nodiscard]] std::optional<std::string> read_resource(const Uuid& node_id,
+                                                           const std::vector<std::string>& path) const override {
+        const Script* bound = host_.script(node_id);
+        const ScriptDesc* desc = desc_of(node_id);
+        if (bound == nullptr || desc == nullptr) {
+            return std::nullopt;
+        }
+        const reflect::Property* property = reflect::resolve_property(desc->properties, path);
+        if (property == nullptr || !property->resource_ref) {
+            return std::nullopt;
+        }
+        return property->resource_ref(bound);
+    }
+
+    [[nodiscard]] bool write_resource(const Uuid& node_id, const std::vector<std::string>& path,
+                                      std::string_view reference, ResourceManager& resources) override {
+        Script* bound = host_.script(node_id);
+        const ScriptDesc* desc = desc_of(node_id);
+        if (bound == nullptr || desc == nullptr) {
+            return false;
+        }
+        const reflect::Property* property = reflect::resolve_property(desc->properties, path);
+        if (property == nullptr || !property->resolve_resource) {
+            return false;
+        }
+        (void)property->resolve_resource(bound, reference, resources);
+        return true;
     }
 
     // Drops every binding. Called before a different scene is loaded into the
