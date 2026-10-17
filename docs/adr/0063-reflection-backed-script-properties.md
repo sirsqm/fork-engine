@@ -131,13 +131,28 @@ load.
 - The seam is language-agnostic in the same sense the scripting seam is: a second
   language would register `ScriptDesc`s and implement `ScriptBinding`, not change
   these interfaces.
+- The editor gains a `ScriptCatalog` (`editor/ScriptCatalog.h`): a `ScriptHost`
+  and a `ScriptRegistry` held as a pair, so the inspector can attach, replace,
+  and detach a behaviour and the document can persist its bindings. It is
+  headless and lives in `fork_editor_core`, so script editing is covered by the
+  ordinary editor tests. `EditorContext` owns one, clears it when a different
+  scene is loaded, and threads a `script::ScriptBinding` over it through save and
+  load.
 
 ### What this does not do
 
-The editor inspector does not yet draw script properties. The seam it needs —
-`ScriptDesc::properties` and `ScriptHost::bindings()` — is now in place, so that
-is a panel change with no new engine surface. This record lands the engine side
-and leaves the panel to the editor milestone.
+Editing a script property from the inspector is not undoable yet. The panel now
+lists a scripted node's behaviour and draws its reflected property values, and
+the document persists and reloads the bindings through a `ScriptCatalog` that
+pairs a `ScriptHost` with the `ScriptRegistry` — but a property row is shown
+read-only, because routing an edit through the undo stack needs an operation that
+names a *script* rather than a component id, and the operation model
+([ADR-0047](0047-local-operation-model.md)) has no such field. Making a script
+property an editable, undoable operation is the next editor cut; showing a row
+that looks editable but is not would be worse than showing it plainly.
+
+File-watching hot reload is likewise still editor work: `ScriptLibrary` reloads
+on demand (ADR-0061), but nothing in the editor watches the module file yet.
 
 ## Alternatives considered
 

@@ -743,7 +743,7 @@ never back. It is built as three targets:
 
 | Target | Responsibility | Depends on |
 | --- | --- | --- |
-| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, asset browser view model (`AssetBrowserViewModel`), play-in-editor (`PlaySession`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, asset browser view model (`AssetBrowserViewModel`), play-in-editor (`PlaySession`), the script catalogue (`ScriptCatalog`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
 | `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), the `AssetBrowserPanel`, and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
 | `fork_editor_shell` | The executable entry point. | `fork_editor` |
 
@@ -983,10 +983,21 @@ persists which behaviour runs on which node and with what property values
 ([ADR-0063](adr/0063-reflection-backed-script-properties.md)). A saved scene now
 comes back scripted.
 
+**In the editor**, the document owns a `ScriptCatalog`
+(`editor/ScriptCatalog.h`) — a `ScriptHost` paired with the `ScriptRegistry`
+that describes it — so the inspector can attach, replace, and detach a
+behaviour and `EditorContext` can persist the bindings by threading a
+`script::ScriptBinding` over the catalog through save and load. Loading a
+different scene clears the catalog, so no script outlives the nodes it was bound
+to. The catalog is headless and lives in `fork_editor_core`, so script editing is
+covered by the ordinary editor tests. A script property row is drawn read-only
+for now: routing an edit through the undo stack needs an operation that names a
+script rather than a component id, which the operation model does not have yet.
+
 **Not in this cut** (named so they are planned, not forgotten): automatic
-file-watching on reload, drawing script properties in the inspector panel, and
-editor integration and debugging. These are the remaining M7 rows; the seam they
-attach to is the one above and does not change to accommodate them.
+file-watching on reload, editing a script property as an undoable operation, and
+debugging support. These are the remaining M7 rows; the seam they attach to is
+the one above and does not change to accommodate them.
 
 
 ## 10. Platform layer
@@ -1100,13 +1111,13 @@ Every milestone must build and pass its tests before the next one begins.
 - The scripting seam and the C++ path exist (section 9,
   [ADR-0044](adr/0044-scripting-seam.md)): C++ gameplay modules load and
   hot-reload through `ScriptLibrary`
-  ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)), and a script's
-  reflected properties persist through the scene serializer
+  ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)), a script's
+  reflected properties persist through the scene serializer, and the editor
+  attaches, inspects, and persists script bindings through its `ScriptCatalog`
   ([ADR-0063](adr/0063-reflection-backed-script-properties.md)).
-  What is not here yet is automatic file-watching on reload, drawing script
-  properties in the inspector panel, editor integration, debugging, and any
-  embedded or custom language. These are the remaining M7 rows, and none of them
-  changes the seam.
+  What is not here yet is automatic file-watching on reload, editing a script
+  property as an undoable operation, debugging, and any embedded or custom
+  language. These are the remaining M7 rows, and none of them changes the seam.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`
   module and parallel extraction are planned in M9.

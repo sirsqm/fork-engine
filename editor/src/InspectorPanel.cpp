@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/editor/InspectorPanel.h"
 
+#include "fe/core/Log.h"
 #include "fe/editor/EditorContext.h"
 #include "fe/editor/OperationCommand.h"
 #include "fe/editor/PropertyEditor.h"
@@ -434,6 +435,62 @@ void InspectorPanel::draw(EditorContext& context) {
             draw_row(property, component, edit, fields_, empty_path);
         }
         ImGui::PopID();
+    }
+
+    // A "Scripts" section: the behaviour bound to this node, its reflected
+    // properties, and an attach/remove control. Scripts are not components
+    // (ADR-0044), so they are drawn from the document's `ScriptCatalog` rather
+    // than from the node, but a script's properties are ordinary
+    // `reflect::Property` rows (ADR-0063) so the same widgets edit them.
+    ImGui::SeparatorText("Scripts");
+    ScriptCatalog& catalog = context.scripts();
+    const std::string bound = catalog.behaviour_of(node->id());
+
+    if (bound.empty()) {
+        ImGui::TextDisabled("No script");
+    } else {
+        ImGui::Text("%s", bound.c_str());
+        if (context.is_editable()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Remove##remove_script")) {
+                catalog.detach(node->id());
+            }
+        }
+        if (const ScriptDesc* desc = catalog.desc_of(node->id())) {
+            if (Script* script = catalog.script(node->id())) {
+                // Property values are shown read-only this cut. Editing a script
+                // property needs an undoable operation that names a script
+                // rather than a component id, which the operation model does not
+                // have yet; until then a row that looks editable but is not
+                // would be worse than a row that plainly is not. See
+                // docs/adr/0063-reflection-backed-script-properties.md.
+                for (const Property& property : desc->properties) {
+                    ImGui::Text("%s", property.name.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s", format_value(property.getter(script)).c_str());
+                }
+            }
+        }
+    }
+
+    // An "attach script" palette: every registered behaviour the node is not
+    // already running. Registered by name, so a module's behaviour appears here
+    // with no edit to this file (ADR-0061).
+    if (context.is_editable() && ImGui::Button("Attach Script")) {
+        ImGui::OpenPopup("##attach_script");
+    }
+    if (ImGui::BeginPopup("##attach_script")) {
+        for (const std::string& behaviour : catalog.behaviour_names()) {
+            if (behaviour == bound) {
+                continue;
+            }
+            if (ImGui::MenuItem(behaviour.c_str())) {
+                if (Error error = catalog.attach(*node, behaviour)) {
+                    FE_LOG_WARN("editor: could not attach '%s': %s", behaviour.c_str(), error.message().c_str());
+                }
+            }
+        }
+        ImGui::EndPopup();
     }
 
     // An "add component" palette: every registered type that the node does not

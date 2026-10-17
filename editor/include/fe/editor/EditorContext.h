@@ -9,6 +9,7 @@
 #include "fe/editor/HierarchyViewModel.h"
 #include "fe/editor/PlaySession.h"
 #include "fe/editor/ProjectSettings.h"
+#include "fe/editor/ScriptCatalog.h"
 #include "fe/scene/Scene.h"
 
 #include <memory>
@@ -50,6 +51,15 @@ public:
     // Registers the copy factories for the built-in component types
     // (Camera2D, Sprite2D) on the play session, so play-in-editor sees them.
     void register_default_component_factories();
+
+    // --- Scripts -----------------------------------------------------------
+    // The authored scene's gameplay scripts: which behaviour is bound to which
+    // node, and the catalogue the inspector offers. Scripts are not components
+    // (ADR-0044), so they live here rather than in the scene, and the scene
+    // serializer persists them through this catalog's host and registry
+    // (ADR-0063).
+    [[nodiscard]] ScriptCatalog& scripts() noexcept { return scripts_; }
+    [[nodiscard]] const ScriptCatalog& scripts() const noexcept { return scripts_; }
 
     // --- Document ----------------------------------------------------------
     [[nodiscard]] Scene& scene() noexcept { return scene_; }
@@ -199,6 +209,7 @@ private:
     Scene scene_;
     HierarchyViewModel hierarchy_;
     PlaySession play_;
+    ScriptCatalog scripts_;
     CommandStack commands_;
     std::string scene_path_;
     ProjectSettings project_;

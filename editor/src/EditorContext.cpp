@@ -13,6 +13,7 @@
 #include "fe/scene/Sprite2D.h"
 #include "fe/scene/SpriteAnimator.h"
 #include "fe/scene/Tilemap.h"
+#include "fe/script/ScriptBinding.h"
 #include "fe/serialization/SceneSerializer.h"
 
 #include <memory>
@@ -174,6 +175,8 @@ void EditorContext::register_default_component_factories() {
 
 Error EditorContext::new_scene(ResourceManager* resources) {
     scene_.clear();
+    // The previous document's scripts are bound to nodes that no longer exist.
+    scripts_.clear();
     scene_.set_name("Untitled");
     scene_path_.clear();
     // A new document has no history: undo must not reach back across documents.
@@ -217,10 +220,16 @@ Error EditorContext::new_scene(ResourceManager* resources) {
 }
 
 Error EditorContext::load_scene(std::string_view path, ResourceManager* resources) {
+    // The document's current scripts are bound to the nodes about to be
+    // replaced, so drop them first; the reader repopulates the catalog from the
+    // file. (The binding's own reset() clears the host again during the read.)
+    scripts_.clear();
+
     // Load into a scratch scene so a malformed file cannot leave the document
     // half-replaced.
     Scene loaded;
-    if (Error error = serialization::scene::load(path, loaded, resources); error) {
+    script::ScriptBinding binding(scripts_.host(), scripts_.registry());
+    if (Error error = serialization::scene::load(path, loaded, resources, &binding); error) {
         return error;
     }
 
@@ -249,7 +258,10 @@ Error EditorContext::save_scene(std::string_view path) {
     if (target.empty()) {
         return Error("EditorContext::save_scene: no path given and the scene has never been saved");
     }
-    if (Error error = serialization::scene::save(scene_, target); error) {
+    // Persist the document's script bindings alongside its nodes and components
+    // (ADR-0063), so a scene saved from the editor comes back scripted.
+    script::ScriptBinding binding(scripts_.host(), scripts_.registry());
+    if (Error error = serialization::scene::save(scene_, target, nullptr, &binding); error) {
         return error;
     }
     scene_path_ = target;

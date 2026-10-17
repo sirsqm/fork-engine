@@ -280,7 +280,16 @@ is the expensive one, and it waits.
 - [x] Reflection-backed bindings, so a script's exposed properties flow through
       the existing reflection and serialization path
       ([ADR-0063](adr/0063-reflection-backed-script-properties.md))
-- [ ] Editor integration (attach, inspect, hot reload)
+- [ ] Editor integration (attach, inspect, hot reload) — the headless half has
+      landed: the editor owns a `ScriptCatalog` (a `ScriptHost` plus a
+      `ScriptRegistry`) and the document persists its bindings through the
+      serializer's `ScriptBinding` seam, so a scene saved from the editor comes
+      back scripted and the inspector lists a node's behaviour and its reflected
+      properties (read-only for now, because an editable script property needs an
+      undoable operation that names a script rather than a component id,
+      [ADR-0063](adr/0063-reflection-backed-script-properties.md)). Still to do:
+      editing a script property as an undoable operation, and file-watching hot
+      reload driven from the editor
 - [ ] Debugging support
 - [ ] *(Deferred)* An embedded language (Lua/Wren) or a custom engine language,
       only once the seam is proven and the criteria in the ADR are met
