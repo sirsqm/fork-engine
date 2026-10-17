@@ -120,6 +120,7 @@ if(FE_BUILD_EDITOR)
       src/test_asset_browser.cpp
       src/test_editor_context.cpp
       src/test_editor_scripts.cpp
+      src/test_editor_script_modules.cpp
       src/test_project_settings.cpp
       src/test_play_session.cpp
       src/test_property_editor.cpp
@@ -132,6 +133,15 @@ if(FE_BUILD_EDITOR)
   target_link_libraries(fork_editor_tests PRIVATE FE::editor_core ${FE_DOCTEST_TARGET} fe_warnings)
   target_compile_features(fork_editor_tests PRIVATE cxx_std_20)
   set_target_properties(fork_editor_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+  # The editor's script tests load the same real gameplay-module images the
+  # engine's loader tests use, so the module path and the image itself are
+  # available here too (ADR-0061, ADR-0066).
+  add_dependencies(fork_editor_tests fe_test_module_a fe_test_module_b)
+  target_compile_definitions(fork_editor_tests PRIVATE
+      "FE_TEST_MODULE_A=\"$<TARGET_FILE:fe_test_module_a>\""
+      "FE_TEST_MODULE_B=\"$<TARGET_FILE:fe_test_module_b>\""
+  )
 
   add_test(NAME editor_tests COMMAND fork_editor_tests)
 endif()

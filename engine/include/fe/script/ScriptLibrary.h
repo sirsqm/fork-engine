@@ -88,7 +88,8 @@ public:
 
     // Creates the named behaviour and attaches it to `node`, recording the
     // binding so a later reload rebinds it. Replaces any script already on the
-    // node. Returns an Error if no loaded module provides the behaviour.
+    // node. Returns an Error if no registered behaviour has that name (whether
+    // registered in-process or by a loaded module).
     [[nodiscard]] Error attach(ScriptHost& host, Node& node, std::string_view behaviour);
 
     // Detaches the node's script and forgets its binding. Returns true if the
@@ -102,11 +103,43 @@ public:
     // the number of scripts it will rebind on a reload.
     [[nodiscard]] usize attached_count() const noexcept { return bindings_.size(); }
 
+    // --- Change detection --------------------------------------------------
+    // The module ids whose image changed on disk since it was loaded, and
+    // updates each one's recorded time so a change is reported once. Empty when
+    // nothing changed. This is the editor's "a module was rebuilt, reload it"
+    // step, headless and poll-driven: there is no OS watch here, so a caller
+    // (the editor's frame loop, a test) decides how often to ask. It mirrors
+    // ResourceManager::poll_changed() (ADR-0046) for the same reason.
+    //
+    // A module whose file cannot be stat-ed is left alone rather than treated as
+    // deleted, so a transient read error does not tear down a running game. It
+    // detects; the caller adopts each id with reload_module().
+    [[nodiscard]] std::vector<std::string> poll_changed();
+
+    // Records that `node_id` runs the named behaviour, without attaching a
+    // script, so a later reload rebinds it. A scene loaded into a host attaches
+    // its scripts through the ordinary reader (ADR-0063), not through this
+    // library; the editor calls this for each binding the load produced, so a
+    // reload still finds them.
+    void track_binding(const Uuid& node_id, std::string_view behaviour);
+
+    // Forgets every tracked binding. The editor calls this before a scene is
+    // replaced, so a stale binding to a node that is gone is not rebound.
+    void clear_bindings() noexcept { bindings_.clear(); }
+
+    // Rebuilds the tracked bindings from the scripts currently in `host`, so a
+    // caller that has just attached a set of scripts (a scene load) can hand
+    // them to the library in one call. Replaces any earlier binding record.
+    void adopt_bindings(const ScriptHost& host);
+
 private:
-    // A loaded image and the behaviours it registered.
+    // A loaded image and the behaviours it registered. The write time is the
+    // image file's at load, which poll_changed() compares against so a rebuilt
+    // module is detected (mirroring ResourceManager's cache entry).
     struct Module {
         DynamicLibrary image;
         std::vector<std::string> behaviours;
+        u64 reload_stamp = 0;
     };
 
     // A node scripted by a module, remembered so a reload can rebind it. The node

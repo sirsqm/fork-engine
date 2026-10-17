@@ -973,31 +973,45 @@ and binds it through the ordinary `ScriptHost`. Hot reload destroys the module's
 live scripts first — detaching while its code is still loaded — then unloads the
 image, loads the replacement, and rebinds a fresh script to each node that had
 one, so no instance ever outlives the code it runs
-([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic file
-watching is editor work and is not part of this cut.
+([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). The library also
+detects a rebuild: it records each image's write time at load and
+`poll_changed()` reports the ids whose image changed, the same poll-driven
+"detect, then adopt" shape as the resource manager
+([ADR-0046](adr/0046-resource-change-detection-and-reload.md)). There is no OS
+watch; a caller decides how often to ask.
 
 **Landed since**: reflection-backed script bindings. A registered `ScriptDesc`
 exposes a script's fields to the inspector and the serializer, and
 `serialization::ScriptBinding` — implemented by `fe::script::ScriptBinding` —
 persists which behaviour runs on which node and with what property values
 ([ADR-0063](adr/0063-reflection-backed-script-properties.md)). A saved scene now
-comes back scripted.
+comes back scripted, and every reflected script field — a scalar or a resource
+reference — is an undoable `SetScriptProperty`/`SetScriptResource` operation.
 
 **In the editor**, the document owns a `ScriptCatalog`
-(`editor/ScriptCatalog.h`) — a `ScriptHost` paired with the `ScriptRegistry`
-that describes it — so the inspector can attach, replace, and detach a
-behaviour and `EditorContext` can persist the bindings by threading a
-`script::ScriptBinding` over the catalog through save and load. Loading a
-different scene clears the catalog, so no script outlives the nodes it was bound
-to. The catalog is headless and lives in `fork_editor_core`, so script editing is
-covered by the ordinary editor tests. A script property row is drawn read-only
-for now: routing an edit through the undo stack needs an operation that names a
-script rather than a component id, which the operation model does not have yet.
+(`editor/ScriptCatalog.h`) — a `ScriptLibrary` (which owns the loaded images and
+the `ScriptRegistry` describing them) paired with the `ScriptHost` that holds the
+live instances — so the inspector can attach, replace, and detach a behaviour and
+`EditorContext` can persist the bindings by threading a `script::ScriptBinding`
+over the catalog through save and load. Loading a different scene clears the
+catalog, so no script outlives the nodes it was bound to. The catalog is headless
+and lives in `fork_editor_core`, so script editing is covered by the ordinary
+editor tests.
 
-**Not in this cut** (named so they are planned, not forgotten): automatic
-file-watching on reload, editing a script property as an undoable operation, and
-debugging support. These are the remaining M7 rows; the seam they attach to is
-the one above and does not change to accommodate them.
+**Hot reload, driven from the editor** ([ADR-0066](adr/0066-editor-driven-module-hot-reload.md)):
+`EditorHost` loads the modules named on the command line (`--module`) before any
+scene opens, then polls them once per frame, between frames and never from inside
+a script's `update()`. A module whose image was rebuilt is reloaded and the nodes
+it scripted are rebound. Because a scene opened in the editor attaches its scripts
+through the serializer rather than through the library, the document hands the
+library the bindings a load produced (`adopt_bindings()`), so a reload rebinds
+those nodes too. The editor's `ScriptCatalog` declares its library before its host
+so the host — holding scripts whose code lives in the images — is destroyed first.
+
+**Not in this cut** (named so they are planned, not forgotten): debouncing a
+build before a reload, preserving a script's state across a reload, and debugging
+support. These are the remaining M7 rows; the seam they attach to is the one above
+and does not change to accommodate them.
 
 
 ## 10. Platform layer
@@ -1113,10 +1127,12 @@ Every milestone must build and pass its tests before the next one begins.
   hot-reload through `ScriptLibrary`
   ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)), a script's
   reflected properties persist through the scene serializer, and the editor
-  attaches, inspects, and persists script bindings through its `ScriptCatalog`
-  ([ADR-0063](adr/0063-reflection-backed-script-properties.md)).
-  What is not here yet is automatic file-watching on reload, editing a script
-  property as an undoable operation, debugging, and any embedded or custom
+  attaches, inspects, and persists script bindings through its `ScriptCatalog`,
+  polling the loaded modules each frame and hot-reloading a rebuilt one
+  ([ADR-0063](adr/0063-reflection-backed-script-properties.md),
+  [ADR-0066](adr/0066-editor-driven-module-hot-reload.md)).
+  What is not here yet is debouncing a build before a reload, preserving a
+  script's state across a reload, debugging, and any embedded or custom
   language. These are the remaining M7 rows, and none of them changes the seam.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`

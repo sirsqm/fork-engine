@@ -128,6 +128,20 @@ jobs:
           ./build/bin/fork_export --project examples/demo_project --out /tmp/fork_export_pruned --prune
           (cd /tmp/fork_export_pruned && ./fork_player --export . --headless 30)
 
+      - name: Load a gameplay module in the editor (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          # The editor loads a real gameplay module named on the command line and
+          # exits cleanly (ADR-0061, ADR-0066). The hot-reload path itself is
+          # exercised deterministically by editor_tests, which loads two real
+          # images, replaces one in place, polls, reloads, and asserts the node
+          # runs the new code -- a race against a frame loop would be flaky, so
+          # this step only proves the module loads through the shell.
+          cp ./build/bin/fe_test_module_a.so /tmp/fork_module_smoke.so
+          xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_editor_shell \
+              --module /tmp/fork_module_smoke.so --headless --frames 3 2>&1 | tee /tmp/fork_module_smoke.log
+          grep -q "loaded module" /tmp/fork_module_smoke.log
+
   # The performance regression gate
   # (docs/adr/0033-performance-regression-gate.md): a Release build runs the
   # benchmark over a fixed scene and compares its frame-time p50 against the

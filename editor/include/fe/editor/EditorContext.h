@@ -62,6 +62,15 @@ public:
     [[nodiscard]] ScriptCatalog& scripts() noexcept { return scripts_; }
     [[nodiscard]] const ScriptCatalog& scripts() const noexcept { return scripts_; }
 
+    // Polls the loaded gameplay modules for a rebuilt image and hot-reloads each
+    // one that changed, rebinding the nodes it scripted to fresh code (ADR-0066).
+    // Returns the ids that were reloaded, so the caller can log them. This is the
+    // editor's per-frame "did a module get rebuilt" step: poll-driven, so the
+    // loop decides how often to ask, exactly as the resource manager's change
+    // check does (ADR-0046). Empty when nothing changed. A reload that fails is
+    // logged and the module dropped, not thrown.
+    [[nodiscard]] std::vector<std::string> poll_script_modules();
+
     // --- Document ----------------------------------------------------------
     [[nodiscard]] Scene& scene() noexcept { return scene_; }
     [[nodiscard]] const Scene& scene() const noexcept { return scene_; }

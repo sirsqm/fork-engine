@@ -276,7 +276,8 @@ is the expensive one, and it waits.
       [ADR-0041](adr/0041-platform-contract-and-null-backend.md)) and reloads it
       by destroying the live scripts first and rebinding them to the new code
       ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic
-      file-watching is editor work and remains
+      file-watching landed with editor integration
+      ([ADR-0066](adr/0066-editor-driven-module-hot-reload.md))
 - [x] Reflection-backed bindings, so a script's exposed properties flow through
       the existing reflection and serialization path
       ([ADR-0063](adr/0063-reflection-backed-script-properties.md))
@@ -288,7 +289,12 @@ is the expensive one, and it waits.
       properties, and every reflected script field — a scalar or a resource
       reference — is an undoable `SetScriptProperty`/`SetScriptResource` operation
       ([ADR-0063](adr/0063-reflection-backed-script-properties.md)).
-      Still to do: file-watching hot reload driven from the editor
+      File-watching hot reload has also landed: the editor's `ScriptCatalog` owns
+      a `ScriptLibrary`, loads gameplay modules named on the command line
+      (`--module`), and polls them each frame, hot-reloading a rebuilt one and
+      rebinding the nodes it scripted — including the nodes a scene load scripted
+      ([ADR-0066](adr/0066-editor-driven-module-hot-reload.md)).
+      Still to do: debouncing a build
 - [ ] Debugging support
 - [ ] *(Deferred)* An embedded language (Lua/Wren) or a custom engine language,
       only once the seam is proven and the criteria in the ADR are met

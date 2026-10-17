@@ -212,6 +212,15 @@ a few frames, which is enough to confirm the project and scene load:
 ./build/bin/fork_editor_shell --project examples/demo_project --headless
 ```
 
+A gameplay module can be loaded and hot-reloaded while the editor runs: pass its
+shared library with `--module` (repeatable) and rebuild it from your build
+directory, and the editor picks the new code up on the next frame without a
+restart:
+
+```bash
+./build/bin/fork_editor_shell --project examples/demo_project --module ./build/bin/my_game.so
+```
+
 See `examples/demo_project/README.md` for what the project contains.
 
 ### Tests

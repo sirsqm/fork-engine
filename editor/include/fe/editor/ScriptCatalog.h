@@ -9,6 +9,7 @@
 #include "fe/resources/ResourceManager.h"
 #include "fe/script/Script.h"
 #include "fe/script/ScriptHost.h"
+#include "fe/script/ScriptLibrary.h"
 #include "fe/script/ScriptRegistry.h"
 #include "fe/serialization/ScriptTarget.h"
 
@@ -47,6 +48,13 @@ namespace editor {
 // operation model uses to read and write a live script's properties. That is
 // what lets a script property edit be an ordinary serializable operation - and
 // so undoable - without the operation model depending on the script module.
+//
+// It owns a `ScriptLibrary` (ADR-0061), so the behaviours a game provides can be
+// loaded from a shared library rather than only registered in-process, and a
+// rebuilt module can be hot-reloaded without restarting the editor (ADR-0066).
+// The registry the library owns is the same one the inspector lists and the
+// serializer resolves against, so a module's behaviour appears in the attach
+// control the moment its module loads.
 class ScriptCatalog : public serialization::ScriptTarget {
 public:
     ScriptCatalog() = default;
@@ -56,31 +64,56 @@ public:
 
     // The behaviours the editor can offer. A host registers gameplay behaviours
     // here (for example a module's, ADR-0061) before the inspector is shown.
-    [[nodiscard]] ScriptRegistry& registry() noexcept { return registry_; }
-    [[nodiscard]] const ScriptRegistry& registry() const noexcept { return registry_; }
+    [[nodiscard]] ScriptRegistry& registry() noexcept { return library_.registry(); }
+    [[nodiscard]] const ScriptRegistry& registry() const noexcept { return library_.registry(); }
 
     // The live instances, keyed by node id.
     [[nodiscard]] ScriptHost& host() noexcept { return host_; }
     [[nodiscard]] const ScriptHost& host() const noexcept { return host_; }
 
+    // --- Gameplay modules (ADR-0061, ADR-0066) -----------------------------
+    // Loads a gameplay module from a shared library, so its behaviours join the
+    // registry the inspector offers. Returns an Error naming the file when the
+    // image will not load or reports a mismatched ABI.
+    [[nodiscard]] Error load_module(std::string_view path) { return library_.load_module(path); }
+
+    // The loaded module ids, in id order.
+    [[nodiscard]] std::vector<std::string> module_ids() const { return library_.module_ids(); }
+    [[nodiscard]] usize module_count() const noexcept { return library_.module_count(); }
+    [[nodiscard]] bool is_module_loaded(std::string_view id) const noexcept { return library_.is_module_loaded(id); }
+
+    // The module ids whose image changed on disk since it was loaded, and each
+    // one's recorded time updated so a change is reported once. This is the
+    // editor's "a module was rebuilt, reload it" step; the caller adopts each id
+    // with reload_module(). Mirrors ResourceManager::poll_changed (ADR-0046).
+    [[nodiscard]] std::vector<std::string> poll_changed_modules() { return library_.poll_changed(); }
+
+    // Replaces a loaded module's code and rebinds every node it scripted to a
+    // fresh instance built from the new code (ADR-0061). `new_image_path` is the
+    // ordinary rebuilt-in-place case when empty.
+    [[nodiscard]] Error reload_module(std::string_view module_id, std::string_view new_image_path = {}) {
+        return library_.reload_module(host_, module_id, new_image_path);
+    }
+
+    // Rebuilds the reload bookkeeping from the scripts currently attached, so a
+    // set of scripts attached outside the library (a scene load through the
+    // serializer, ADR-0063) is still rebound by a later reload.
+    void adopt_bindings() { library_.adopt_bindings(host_); }
+
     // Every registered behaviour name, in registration order. This is what the
     // inspector's attach control lists.
-    [[nodiscard]] std::vector<std::string> behaviour_names() const { return registry_.names(); }
+    [[nodiscard]] std::vector<std::string> behaviour_names() const { return registry().names(); }
 
     // Attaches a fresh instance of `behaviour` to `node`, replacing any script
     // the node already had. Fails if the name is not registered, or if the new
     // instance refuses the node; on failure the node is left as it was.
     [[nodiscard]] Error attach(Node& node, std::string_view behaviour) {
-        std::unique_ptr<Script> script = registry_.create(behaviour);
-        if (script == nullptr) {
-            return Error("ScriptCatalog::attach: unknown behaviour '" + std::string(behaviour) + "'");
-        }
-        return host_.attach_script(node, std::move(script));
+        return library_.attach(host_, node, behaviour);
     }
 
     // Removes the node's script, if any. Returns true if one was removed. Safe
     // to call for a node with no script.
-    bool detach(const Uuid& node_id) { return host_.detach_script(node_id); }
+    bool detach(const Uuid& node_id) { return library_.detach(host_, node_id); }
 
     [[nodiscard]] bool has_script(const Uuid& node_id) const noexcept { return host_.has_script(node_id); }
 
@@ -95,7 +128,7 @@ public:
     // this to draw the behaviour's reflected properties.
     [[nodiscard]] const ScriptDesc* desc_of(const Uuid& node_id) const {
         const Script* bound = host_.script(node_id);
-        return bound == nullptr ? nullptr : registry_.find(bound->name());
+        return bound == nullptr ? nullptr : registry().find(bound->name());
     }
 
     [[nodiscard]] usize script_count() const noexcept { return host_.script_count(); }
@@ -169,11 +202,22 @@ public:
     }
 
     // Drops every binding. Called before a different scene is loaded into the
-    // document, so no script outlives the nodes it was bound to.
-    void clear() noexcept { host_.clear(); }
+    // document, so no script outlives the nodes it was bound to - including the
+    // reload bookkeeping, so a stale binding to a node that is gone is not
+    // rebound by a later module reload.
+    void clear() noexcept {
+        host_.clear();
+        library_.clear_bindings();
+    }
 
 private:
-    ScriptRegistry registry_;
+    // The library owns the registry and the loaded images; the host owns the
+    // live instances. Declared in this order so the host, which holds scripts
+    // whose code lives in the images, is destroyed *first* (members destroy in
+    // reverse declaration order) - the same ordering constraint the library
+    // documents for itself, since destroying a script after its image is
+    // unmapped would call into freed memory.
+    ScriptLibrary library_;
     ScriptHost host_;
 };
 

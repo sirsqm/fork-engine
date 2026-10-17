@@ -249,9 +249,26 @@ Error EditorContext::load_scene(std::string_view path, ResourceManager* resource
     // Loading replaces the document, so the previous document's history no
     // longer applies to what is on screen.
     commands_.clear();
+    // The reader attached the scene's scripts through the ordinary host, not
+    // through the module library, so hand the library the bindings it now needs
+    // to rebind them on a hot reload (ADR-0066).
+    scripts_.adopt_bindings();
     refresh_hierarchy();
     FE_LOG_INFO("editor: loaded '%s' (%zu nodes)", scene_path_.c_str(), scene_.node_count());
     return Error::none();
+}
+
+std::vector<std::string> EditorContext::poll_script_modules() {
+    std::vector<std::string> reloaded;
+    for (const std::string& id : scripts_.poll_changed_modules()) {
+        if (Error error = scripts_.reload_module(id); error) {
+            FE_LOG_ERROR("editor: module '%s' failed to reload: %s", id.c_str(), error.message().c_str());
+            continue;
+        }
+        FE_LOG_INFO("editor: hot-reloaded module '%s'", id.c_str());
+        reloaded.push_back(id);
+    }
+    return reloaded;
 }
 
 Error EditorContext::save_scene(std::string_view path) {

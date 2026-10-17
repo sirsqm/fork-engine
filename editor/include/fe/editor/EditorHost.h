@@ -9,6 +9,7 @@
 #include "fe/runtime/Engine.h"
 
 #include <string>
+#include <vector>
 
 namespace fe::editor {
 
@@ -44,6 +45,11 @@ public:
         // A scene file to open at startup; empty opens the project's startup
         // scene, or a built-in example scene when there is no project.
         std::string scene_to_open;
+        // Gameplay module shared libraries to load before any scene opens, so a
+        // scene that records a behaviour by name can attach it (ADR-0061). Each
+        // is watched for a rebuild and hot-reloaded while the editor runs
+        // (ADR-0066).
+        std::vector<std::string> modules;
         // Run at most this many frames, then exit. 0 means "until the window
         // closes". A non-zero limit with a hidden window is the headless smoke
         // test used by CI, where there is no display to close the window.

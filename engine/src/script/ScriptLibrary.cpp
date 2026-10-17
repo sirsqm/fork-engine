@@ -55,6 +55,9 @@ Error ScriptLibrary::load_module(std::string_view path) {
     }
 
     FE_LOG_INFO("script module '%s' loaded with %zu behaviour(s)", resolved.c_str(), module.behaviours.size());
+    // Record the image's write time now, so poll_changed() can report a later
+    // rebuild of this module (the same scheme ResourceManager uses per resource).
+    module.reload_stamp = fs::last_write_time_ns(resolved);
     modules_.emplace(resolved, std::move(module));
     return Error::none();
 }
@@ -117,6 +120,9 @@ Error ScriptLibrary::reload_module(ScriptHost& host, std::string_view module_id,
         }
         return error;
     }
+    // Record the new image's write time, so a second rebuild is detected rather
+    // than reported against the old stamp.
+    module.reload_stamp = fs::last_write_time_ns(image_path);
     modules_.emplace(resolved_id, std::move(module));
 
     // Step 4: give every node that had a script from this module a fresh one,
@@ -146,10 +152,50 @@ std::vector<std::string> ScriptLibrary::module_ids() const {
     return ids;
 }
 
+std::vector<std::string> ScriptLibrary::poll_changed() {
+    std::vector<std::string> changed;
+    for (auto& [id, module] : modules_) {
+        const u64 stamp = fs::last_write_time_ns(id);
+        // Zero means the file could not be read; treat that as "leave it alone"
+        // rather than "it was deleted", so a transient error does not tear down a
+        // running module. A stamp that moved means the image was rebuilt.
+        if (stamp != 0 && stamp != module.reload_stamp) {
+            module.reload_stamp = stamp;
+            changed.push_back(id);
+        }
+    }
+    return changed;
+}
+
+void ScriptLibrary::track_binding(const Uuid& node_id, std::string_view behaviour) {
+    if (behaviour.empty()) {
+        return;
+    }
+    for (Binding& binding : bindings_) {
+        if (binding.node_id == node_id) {
+            binding.behaviour = std::string(behaviour);
+            return;
+        }
+    }
+    bindings_.push_back(Binding{node_id, std::string(behaviour), nullptr});
+}
+
+void ScriptLibrary::adopt_bindings(const ScriptHost& host) {
+    bindings_.clear();
+    for (const ScriptHost::BindingView& view : host.bindings()) {
+        if (view.script == nullptr) {
+            continue;
+        }
+        // The node pointer is resolved on the next reload through the host, so a
+        // binding adopted from a load needs no node here.
+        bindings_.push_back(Binding{view.node_id, std::string(view.script->name()), nullptr});
+    }
+}
+
 Error ScriptLibrary::attach(ScriptHost& host, Node& node, std::string_view behaviour) {
     std::unique_ptr<Script> script = registry_.create(behaviour);
     if (!script) {
-        return Error("ScriptLibrary::attach: no loaded module provides behaviour '" + std::string(behaviour) + "'");
+        return Error("ScriptLibrary::attach: behaviour '" + std::string(behaviour) + "' is not registered");
     }
 
     const Uuid node_id = node.id();

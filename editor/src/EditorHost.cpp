@@ -39,6 +39,18 @@ Error EditorHost::initialize() {
     // Point the inspector's resource fields at the embedded engine's manager.
     context_.set_resources(&engine_.resources());
 
+    // Load the gameplay modules before any scene opens, so a scene that records
+    // a behaviour by name can attach it during deserialization (ADR-0061). A
+    // module that will not load is reported but not fatal: the editor still
+    // opens, and the inspector simply does not offer its behaviours.
+    for (const std::string& module : config_.modules) {
+        if (Error error = context_.scripts().load_module(module); error) {
+            FE_LOG_ERROR("editor: could not load module '%s': %s", module.c_str(), error.message().c_str());
+        } else {
+            FE_LOG_INFO("editor: loaded module '%s'", module.c_str());
+        }
+    }
+
     // Establish the project before any scene is loaded, so GUID references
     // inside the scene resolve during deserialization (the asset database must
     // be indexed first). A project file supplies the asset root and a startup
@@ -114,6 +126,15 @@ void EditorHost::step() {
     engine_.window().poll_events();
 
     handle_play_request();
+
+    // Hot-reload any gameplay module whose image was rebuilt on disk, before the
+    // frame runs, so the frame that follows executes the new code (ADR-0066).
+    // Poll-driven: the check is a stat per module, and a module that changed is
+    // reloaded and its nodes rebound. Scripts are attached and detached between
+    // frames, never from inside a script's update(), which is the host contract.
+    // The reloaded ids are logged by the poll itself; the host has no further
+    // use for them here.
+    (void)context_.poll_script_modules();
 
     // Install the editor's profiler for the frame, so the scopes the UI and the
     // panels record land in it. The profiler panel reads the *previous* committed

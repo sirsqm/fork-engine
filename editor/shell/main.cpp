@@ -14,6 +14,8 @@
 //                                     file); indexes its asset root
 //   fork_editor_shell --project-file F  open the project file F
 //   fork_editor_shell --scene PATH    open a scene file
+//   fork_editor_shell --module PATH   load a gameplay module (repeatable); it is
+//                                     hot-reloaded when its file is rebuilt
 //
 // Controls: the Hierarchy panel lists the scene; the Play panel starts and
 // stops play-in-editor; close the window to exit.
@@ -27,6 +29,7 @@
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -34,6 +37,9 @@ struct Options {
     std::string project_file;
     std::string project_root;
     std::string scene_to_open;
+    // Gameplay module shared libraries to load and hot-reload while the editor
+    // runs (ADR-0061, ADR-0066). Repeatable: --module a --module b.
+    std::vector<std::string> modules;
     fe::LogLevel log_level = fe::LogLevel::Info;
     fe::u32 max_frames = 0;
     bool headless = false;
@@ -79,6 +85,8 @@ struct Options {
             options.project_file = argv[++i];
         } else if (arg == "--scene" && i + 1 < argc) {
             options.scene_to_open = argv[++i];
+        } else if (arg == "--module" && i + 1 < argc) {
+            options.modules.emplace_back(argv[++i]);
         } else if (arg == "--frames" && i + 1 < argc) {
             options.max_frames = static_cast<fe::u32>(std::strtoul(argv[++i], nullptr, 10));
         } else if (arg == "--headless") {
@@ -97,8 +105,9 @@ struct Options {
         } else if (arg == "--quiet") {
             options.log_level = fe::LogLevel::Warn;
         } else if (arg == "--help" || arg == "-h") {
-            std::puts("usage: fork_editor_shell [--project DIR|FILE] [--project-file FILE] [--scene PATH] [--headless] "
-                      "[--frames N] [--cache-dir DIR] [--no-cache] [--verbose] [--quiet]");
+            std::puts(
+                "usage: fork_editor_shell [--project DIR|FILE] [--project-file FILE] [--scene PATH] [--module PATH] "
+                "[--headless] [--frames N] [--cache-dir DIR] [--no-cache] [--verbose] [--quiet]");
             std::exit(0);
         }
     }
@@ -132,6 +141,7 @@ int main(int argc, char** argv) {
     config.project_file = options.project_file;
     config.project_root = options.project_root;
     config.scene_to_open = options.scene_to_open;
+    config.modules = options.modules;
     config.max_frames = options.max_frames;
 
     fe::editor::EditorHost host(std::move(config));

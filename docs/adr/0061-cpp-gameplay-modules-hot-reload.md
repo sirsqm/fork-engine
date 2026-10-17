@@ -214,6 +214,10 @@ planned, not forgotten):**
 - **File watching and automatic reload.** The mechanism is here
   (`reload_module`); deciding *when* to call it — watching a module's file for a
   change, debouncing a build — is editor work and lands with editor integration.
+  **Landed:** [ADR-0066](0066-editor-driven-module-hot-reload.md) adds a
+  poll-driven change check to `ScriptLibrary` (mirroring the resource manager's,
+  ADR-0046), has the editor's `ScriptCatalog` own the library, and reloads a
+  rebuilt module from the editor's frame loop.
 - **Reflection-backed bindings.** Exposing a script's properties to the inspector
   and the serializer is the next cut; it reuses
   [ADR-0006](0006-component-reflection.md) and does not change this seam.
