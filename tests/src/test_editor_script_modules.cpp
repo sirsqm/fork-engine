@@ -216,6 +216,67 @@ TEST_CASE("a module rebuilt in place is detected by a poll and reloaded") {
 }
 #endif
 
+TEST_CASE("a build still writing an image is debounced, then reloaded once settled") {
+    // A build writes a module image over a short window (GNU ld rewrites it in
+    // place), so a poll can see a write time that has moved but not yet settled.
+    // With settle_polls = 2 the module is reported only once the time has held
+    // for two consecutive polls, so a mid-write image is never handed to the
+    // reload (ADR-0067). Each touch here simulates one more write within the
+    // build window; the write time is moved forward so it always looks changed.
+    TempDir dir("settle");
+    const std::string image = dir.file(fs::filename(kModuleAPath));
+    REQUIRE_FALSE(fs::copy_file(kModuleAPath, image));
+
+    ScriptCatalog catalog;
+    REQUIRE_FALSE(catalog.load_module(image));
+
+    // A rebuild starts: the first poll sees a new time but does not report it,
+    // because it has not held yet.
+    touch_forward(image);
+    CHECK(catalog.poll_changed_modules(2).empty());
+
+    // The build writes again before the next poll: the time moved, so the settle
+    // count restarts and the module is still not reported.
+    touch_forward(image);
+    CHECK(catalog.poll_changed_modules(2).empty());
+
+    // The build has stopped: this poll sees the same time as the previous one, so
+    // the count reaches two and the module is reported.
+    const std::vector<std::string> changed = catalog.poll_changed_modules(2);
+    REQUIRE(changed.size() == 1);
+    CHECK(changed.front() == image);
+
+    // Reported once: a further poll with no new write is empty.
+    CHECK(catalog.poll_changed_modules(2).empty());
+}
+
+TEST_CASE("a settled rebuild is reloaded through the context after two polls") {
+    // The whole editor shape: the context polls with settle_polls = 2 (what the
+    // host uses), so a rebuilt image is picked up on the second settled poll and
+    // the node is rebound to the new code (ADR-0066, ADR-0067).
+    TempDir dir("settle_context");
+    const std::string image = dir.file(fs::filename(kModuleAPath));
+    REQUIRE_FALSE(fs::copy_file(kModuleAPath, image));
+
+    EditorContext context;
+    REQUIRE_FALSE(context.scripts().load_module(image));
+
+    Scene& scene = context.scene();
+    Node* node = scene.create_node("Mover");
+    REQUIRE_FALSE(context.scripts().attach(*node, "SpinBehaviour"));
+
+    touch_forward(image);
+    // First settled poll: the change is seen but not yet acted on.
+    CHECK(context.poll_script_modules(2).empty());
+
+    // Second settled poll: the module reloads, and the binding survives.
+    const std::vector<std::string> reloaded = context.poll_script_modules(2);
+    REQUIRE(reloaded.size() == 1);
+    CHECK(reloaded.front() == image);
+    CHECK(context.scripts().has_script(node->id()));
+    CHECK(context.scripts().behaviour_of(node->id()) == "SpinBehaviour");
+}
+
 TEST_CASE("clear forgets the reload bookkeeping so a stale node is not rebound") {
     TempDir dir("clear");
     const std::string image = dir.file(fs::filename(kModuleAPath));

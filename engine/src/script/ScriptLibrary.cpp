@@ -152,17 +152,37 @@ std::vector<std::string> ScriptLibrary::module_ids() const {
     return ids;
 }
 
-std::vector<std::string> ScriptLibrary::poll_changed() {
+std::vector<std::string> ScriptLibrary::poll_changed(u32 settle_polls) {
+    const u32 required = settle_polls == 0 ? 1 : settle_polls;
     std::vector<std::string> changed;
     for (auto& [id, module] : modules_) {
         const u64 stamp = fs::last_write_time_ns(id);
         // Zero means the file could not be read; treat that as "leave it alone"
         // rather than "it was deleted", so a transient error does not tear down a
         // running module. A stamp that moved means the image was rebuilt.
-        if (stamp != 0 && stamp != module.reload_stamp) {
-            module.reload_stamp = stamp;
-            changed.push_back(id);
+        if (stamp == 0 || stamp == module.reload_stamp) {
+            continue;
         }
+        // The image differs from what is loaded. A build may still be writing it
+        // (GNU ld writes the output in place), so wait for the write time to hold
+        // across `required` consecutive polls before reporting it (ADR-0067). The
+        // first poll to see a given stamp starts the count; each later poll with
+        // the same stamp advances it, and a stamp that moves again restarts it.
+        if (stamp != module.pending_stamp) {
+            module.pending_stamp = stamp;
+            module.settled_polls = 1;
+        } else {
+            ++module.settled_polls;
+        }
+        if (module.settled_polls < required) {
+            continue;
+        }
+        // Settled: report the module once and record the new time as loaded, so a
+        // further rebuild is what makes it report again.
+        module.reload_stamp = stamp;
+        module.pending_stamp = 0;
+        module.settled_polls = 0;
+        changed.push_back(id);
     }
     return changed;
 }

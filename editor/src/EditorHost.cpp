@@ -134,7 +134,14 @@ void EditorHost::step() {
     // frames, never from inside a script's update(), which is the host contract.
     // The reloaded ids are logged by the poll itself; the host has no further
     // use for them here.
-    (void)context_.poll_script_modules();
+    //
+    // Two settled polls before a reload (ADR-0067): a build writes a module image
+    // over a short window (GNU ld truncates and rewrites the file in place), so a
+    // single-poll trigger can hand reload_module() a half-written image, which
+    // fails to load and - by ADR-0061's policy - drops the module, losing the
+    // bindings. Waiting for the write time to hold across two polls costs one
+    // frame and skips that window.
+    (void)context_.poll_script_modules(2);
 
     // Install the editor's profiler for the frame, so the scopes the UI and the
     // panels record land in it. The profiler panel reads the *previous* committed

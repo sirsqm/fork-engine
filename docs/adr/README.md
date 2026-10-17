@@ -72,6 +72,7 @@ rather than editing it.
 | [0064](0064-export-runtime-and-player.md) | Export: a runtime that plays a pack | Accepted |
 | [0065](0065-pack-reachability-pruning.md) | Pack reachability pruning | Accepted |
 | [0066](0066-editor-driven-module-hot-reload.md) | Editor-driven gameplay-module hot reload | Accepted |
+| [0067](0067-debouncing-a-module-build.md) | Debouncing a gameplay-module build | Accepted |
 
 ## Format
 

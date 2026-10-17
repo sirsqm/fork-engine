@@ -114,7 +114,14 @@ public:
     // A module whose file cannot be stat-ed is left alone rather than treated as
     // deleted, so a transient read error does not tear down a running game. It
     // detects; the caller adopts each id with reload_module().
-    [[nodiscard]] std::vector<std::string> poll_changed();
+    //
+    // `settle_polls` debounces a build (ADR-0067): a module is reported only once
+    // its write time has held for that many consecutive polls, so an image a
+    // build is still writing is not handed to reload_module() mid-write. The
+    // default of 1 reports as soon as the time stops moving; the editor passes 2,
+    // which costs one frame of latency and skips the common "still linking"
+    // window. The count is per module and resets whenever its write time moves.
+    [[nodiscard]] std::vector<std::string> poll_changed(u32 settle_polls = 1);
 
     // Records that `node_id` runs the named behaviour, without attaching a
     // script, so a later reload rebinds it. A scene loaded into a host attaches
@@ -135,11 +142,16 @@ public:
 private:
     // A loaded image and the behaviours it registered. The write time is the
     // image file's at load, which poll_changed() compares against so a rebuilt
-    // module is detected (mirroring ResourceManager's cache entry).
+    // module is detected (mirroring ResourceManager's cache entry). The pending
+    // time and the consecutive poll count debounce a build that is still writing
+    // the image (ADR-0067): a change is reported only after the write time has
+    // held for the requested number of polls.
     struct Module {
         DynamicLibrary image;
         std::vector<std::string> behaviours;
         u64 reload_stamp = 0;
+        u64 pending_stamp = 0;
+        u32 settled_polls = 0;
     };
 
     // A node scripted by a module, remembered so a reload can rebind it. The node

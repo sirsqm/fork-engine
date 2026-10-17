@@ -86,7 +86,14 @@ public:
     // one's recorded time updated so a change is reported once. This is the
     // editor's "a module was rebuilt, reload it" step; the caller adopts each id
     // with reload_module(). Mirrors ResourceManager::poll_changed (ADR-0046).
-    [[nodiscard]] std::vector<std::string> poll_changed_modules() { return library_.poll_changed(); }
+    //
+    // `settle_polls` debounces a build (ADR-0067): a module is reported only once
+    // its write time has held for that many consecutive polls, so an image a
+    // build is still writing is not reloaded mid-write. The default of 1 reports
+    // as soon as the time stops moving.
+    [[nodiscard]] std::vector<std::string> poll_changed_modules(u32 settle_polls = 1) {
+        return library_.poll_changed(settle_polls);
+    }
 
     // Replaces a loaded module's code and rebinds every node it scripted to a
     // fresh instance built from the new code (ADR-0061). `new_image_path` is the

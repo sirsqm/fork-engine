@@ -978,7 +978,12 @@ detects a rebuild: it records each image's write time at load and
 `poll_changed()` reports the ids whose image changed, the same poll-driven
 "detect, then adopt" shape as the resource manager
 ([ADR-0046](adr/0046-resource-change-detection-and-reload.md)). There is no OS
-watch; a caller decides how often to ask.
+watch; a caller decides how often to ask. The poll also debounces a build
+([ADR-0067](adr/0067-debouncing-a-module-build.md)): a module is reported only
+once its image's write time has held across a requested number of consecutive
+polls (`settle_polls`), so a linker still writing the file is not read mid-write.
+That matters because a failed reload drops the module (ADR-0061), so reading a
+partial image would lose the working code for a change that was never real.
 
 **Landed since**: reflection-backed script bindings. A registered `ScriptDesc`
 exposes a script's fields to the inspector and the serializer, and
@@ -1008,10 +1013,10 @@ library the bindings a load produced (`adopt_bindings()`), so a reload rebinds
 those nodes too. The editor's `ScriptCatalog` declares its library before its host
 so the host — holding scripts whose code lives in the images — is destroyed first.
 
-**Not in this cut** (named so they are planned, not forgotten): debouncing a
-build before a reload, preserving a script's state across a reload, and debugging
-support. These are the remaining M7 rows; the seam they attach to is the one above
-and does not change to accommodate them.
+**Not in this cut** (named so they are planned, not forgotten): preserving a
+script's state across a reload, and debugging support. These are the remaining M7
+rows; the seam they attach to is the one above and does not change to accommodate
+them.
 
 
 ## 10. Platform layer

@@ -69,7 +69,12 @@ public:
     // loop decides how often to ask, exactly as the resource manager's change
     // check does (ADR-0046). Empty when nothing changed. A reload that fails is
     // logged and the module dropped, not thrown.
-    [[nodiscard]] std::vector<std::string> poll_script_modules();
+    //
+    // `settle_polls` debounces a build (ADR-0067): a module is reloaded only once
+    // its write time has held for that many consecutive polls, so a link still in
+    // progress is not read as a finished module. The host passes 2 - one frame of
+    // latency - so the common "image is being written" window is skipped.
+    [[nodiscard]] std::vector<std::string> poll_script_modules(u32 settle_polls = 1);
 
     // --- Document ----------------------------------------------------------
     [[nodiscard]] Scene& scene() noexcept { return scene_; }

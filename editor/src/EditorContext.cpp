@@ -258,9 +258,9 @@ Error EditorContext::load_scene(std::string_view path, ResourceManager* resource
     return Error::none();
 }
 
-std::vector<std::string> EditorContext::poll_script_modules() {
+std::vector<std::string> EditorContext::poll_script_modules(u32 settle_polls) {
     std::vector<std::string> reloaded;
-    for (const std::string& id : scripts_.poll_changed_modules()) {
+    for (const std::string& id : scripts_.poll_changed_modules(settle_polls)) {
         if (Error error = scripts_.reload_module(id); error) {
             FE_LOG_ERROR("editor: module '%s' failed to reload: %s", id.c_str(), error.message().c_str());
             continue;

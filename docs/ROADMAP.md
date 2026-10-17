@@ -294,7 +294,10 @@ is the expensive one, and it waits.
       (`--module`), and polls them each frame, hot-reloading a rebuilt one and
       rebinding the nodes it scripted — including the nodes a scene load scripted
       ([ADR-0066](adr/0066-editor-driven-module-hot-reload.md)).
-      Still to do: debouncing a build
+      Debouncing a build has landed too: the poll reports a module only once its
+      image's write time has held across a requested number of consecutive polls,
+      and the frame loop asks for two, so a link still writing the image is not
+      read as a finished module ([ADR-0067](adr/0067-debouncing-a-module-build.md))
 - [ ] Debugging support
 - [ ] *(Deferred)* An embedded language (Lua/Wren) or a custom engine language,
       only once the seam is proven and the criteria in the ADR are met
