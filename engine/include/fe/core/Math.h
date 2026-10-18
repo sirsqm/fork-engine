@@ -248,6 +248,12 @@ struct Mat4 {
         }
         return r;
     }
+
+    // Exact component equality, not approximate. Two matrices built the same way
+    // from the same inputs are bit-identical, so this is what a test uses to
+    // assert that a parallel path reproduced the serial one exactly; an
+    // approximate compare would hide a reordered or lost instance.
+    [[nodiscard]] constexpr bool operator==(const Mat4&) const noexcept = default;
 };
 
 // ---------------------------------------------------------------------------

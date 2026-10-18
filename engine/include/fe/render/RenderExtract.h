@@ -10,6 +10,7 @@
 
 namespace fe {
 
+class JobSystem;
 class Mesh;
 class MeshRenderer3D;
 class Scene;
@@ -80,6 +81,12 @@ struct SpriteInstance {
     Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     // Render order within the 2D pass. Higher values draw on top.
     i32 layer = 0;
+
+    // Exact field equality. Extraction is a pure function of the scene, so a
+    // parallel extraction must reproduce a serial one bit for bit; a test
+    // compares two arrays with this to prove it, which an approximate compare
+    // could not (it would hide a lost or reordered instance).
+    [[nodiscard]] constexpr bool operator==(const SpriteInstance&) const noexcept = default;
 };
 
 // One mesh instance's resolved draw state.
@@ -95,6 +102,10 @@ struct MeshInstance {
     // so the culling pass needs neither the `Mesh` nor the `Scene`.
     Vec3 world_min{};
     Vec3 world_max{};
+
+    // Exact field equality, for the same reason `SpriteInstance` has it: a
+    // parallel extraction must reproduce the serial array exactly.
+    [[nodiscard]] constexpr bool operator==(const MeshInstance&) const noexcept = default;
 };
 
 // A key that identifies a mesh instance's static geometry across frames. A BVH
@@ -123,7 +134,16 @@ struct MeshInstanceKey {
 // is skipped when it has no texture or its texture is not a `Texture2D`, which
 // matches the pre-seam behaviour: an untextured sprite is an authoring state,
 // not content.
-void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out);
+//
+// `jobs` is optional. With a null pointer (the default) the walk is serial, which
+// is the whole behaviour when no pool exists. With a real `JobSystem` and a scene
+// large enough to pay for the fan-out (see `kParallelExtractThreshold`) the walk
+// is chunked and run in parallel; the result is byte-for-byte identical to the
+// serial one, because each chunk appends to its own list and the lists are
+// concatenated in node order. A scene below the threshold runs serially even
+// when a pool is supplied, because fanning out a handful of nodes costs more than
+// it saves (ADR-0017: a change that cannot show a win does not land).
+void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out, JobSystem* jobs = nullptr);
 
 // Appends every non-empty tile of every `Tilemap` in `scene` to `out`. Unlike
 // extract_sprites this does *not* clear: a tilemap and the sprites above it
@@ -134,14 +154,25 @@ void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out);
 // matrix composed with the cell's local offset, and whose `uv` is the tile's
 // cell in the tileset. A map with no texture, an empty grid, or a zero tile size
 // contributes nothing.
-void extract_tiles(const Scene& scene, std::vector<SpriteInstance>& out);
+//
+// `jobs` behaves as it does for extract_sprites, with one difference: the tile
+// walk is parallelised only when the map has more tiles than the threshold
+// (`kParallelTileThreshold`), and a single map is split across chunks by cell so
+// its tiles are still appended in row-major order. Chunk-local lists keep the
+// result identical to serial.
+void extract_tiles(const Scene& scene, std::vector<SpriteInstance>& out, JobSystem* jobs = nullptr);
 
 // Collects every drawable mesh instance in `scene` into `out` (cleared first).
 // Each referenced mesh is also appended to `meshes_seen` (never cleared here),
 // which the renderer's buffer sweep uses to decide liveness: a mesh that is
 // merely off screen must keep its GPU buffers. Pass nullptr when the caller does
 // not need the liveness list.
-void extract_meshes(const Scene& scene, std::vector<MeshInstance>& out, std::vector<const Mesh*>* meshes_seen);
+//
+// `jobs` behaves as it does for extract_sprites. `meshes_seen` is filled in node
+// order regardless of the mode, so the buffer sweep sees the same list either
+// way.
+void extract_meshes(const Scene& scene, std::vector<MeshInstance>& out, std::vector<const Mesh*>* meshes_seen,
+                    JobSystem* jobs = nullptr);
 
 // --- Culling ---------------------------------------------------------------
 //
@@ -151,15 +182,46 @@ void extract_meshes(const Scene& scene, std::vector<MeshInstance>& out, std::vec
 // which is the explicit "draw everything" case.
 //
 // These are pure functions of the array, which is what lets them be tested with
-// no scene and, later, run in parallel over chunks of the array.
+// no scene and run in parallel over chunks of the array.
+//
+// `jobs` is optional and defaults to null (serial). Above
+// `kParallelCullThreshold` instances, a real `JobSystem` tests visibility in
+// parallel into a byte mask and then compacts serially; that is the shape the
+// measurement supports. Culling is cheap per instance, so on the common
+// (smaller) scene the fan-out costs more than the test it saves and the serial
+// path is kept -- which is why the threshold is high. The survivors are in the
+// same order either way: the mask is indexed by position, so compaction moves
+// instance i to its original relative place.
 
 // Culls sprites using a quad-sized AABB around each sprite's world position.
 // The AABB is derived from the sprite's resolved size, so a sprite larger than
 // the frustum is kept, as it must be.
-usize cull_sprites(std::vector<SpriteInstance>& instances, const Frustum* frustum);
+usize cull_sprites(std::vector<SpriteInstance>& instances, const Frustum* frustum, JobSystem* jobs = nullptr);
 
 // Culls meshes using each instance's precomputed world AABB.
-usize cull_meshes(std::vector<MeshInstance>& instances, const Frustum* frustum);
+usize cull_meshes(std::vector<MeshInstance>& instances, const Frustum* frustum, JobSystem* jobs = nullptr);
+
+// --- Parallel thresholds ---------------------------------------------------
+//
+// The instance counts at or above which a supplied `JobSystem` is actually used.
+// Below them the serial path runs even when a pool is available, because the
+// fan-out (queueing chunks, waking workers, joining) is a fixed cost that a small
+// scene does not repay.
+//
+// The values come from a sweep on the reference machine (4 workers, the null
+// device), timing only the step, with the input copy excluded:
+//
+//   extract: ~1200 nodes is break-even (1.0x); 2000 is 1.25x, 8000 is ~1.9x.
+//   cull:    below ~16000 instances the parallel path is *slower* (a loss at
+//            2000: 0.33x); it only wins from about 16000 (1.04x) upward.
+//
+// So extraction crosses over early and culling late, which is why the two
+// thresholds differ by an order of magnitude. They are deliberately conservative:
+// the cost of parallelising too eagerly is a slower frame, and these numbers are
+// a starting point to be re-measured, not a law.
+inline constexpr usize kParallelExtractThreshold = 1024;
+inline constexpr usize kParallelTileThreshold = 4096;
+inline constexpr usize kParallelCullThreshold = 16384;
 
 } // namespace render
 } // namespace fe

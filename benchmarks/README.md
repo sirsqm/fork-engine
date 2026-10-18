@@ -47,10 +47,31 @@ Options:
 --bodies N       dynamic body count
 --frames N       frames to run (default 240)
 --warmup N       frames to discard before measuring (default 20)
+--workers N      job-pool threads for extraction/culling (default 0 = serial)
+--textured       give the sprites a real texture (see below)
 --json           emit JSON instead of CSV
 --out PATH       also write the result block to a file
 --verbose        log at debug level
 ```
+
+### Measuring the parallel extract/cull path
+
+The default scene's sprites are deliberately untextured, which extraction skips
+(an untextured sprite is an authoring state, not content). So the gate's
+`frame_render` figure is the draw and clear cost, not the extraction cost. To
+measure extraction and culling — the work ADR-0069 parallelises — add
+`--textured` so the sprites produce instances, and compare `--workers 0` against
+`--workers 4`:
+
+```sh
+xvfb-run -a -s "-screen 0 1280x720x24" \
+  ./build/bin/fork_bench --scene sprite_heavy --sprites 8000 --textured --workers 0
+xvfb-run -a -s "-screen 0 1280x720x24" \
+  ./build/bin/fork_bench --scene sprite_heavy --sprites 8000 --textured --workers 4
+```
+
+Neither flag changes the gate's default run, so the recorded baseline and the CI
+check are unaffected.
 
 Output (CSV):
 

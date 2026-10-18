@@ -204,17 +204,17 @@ void Renderer2D::append_quad(const render::SpriteInstance& instance) {
     indices_.push_back(base + 0);
 }
 
-void Renderer2D::extract(const Scene& scene, std::vector<render::SpriteInstance>& out) const {
+void Renderer2D::extract(const Scene& scene, std::vector<render::SpriteInstance>& out, JobSystem* jobs) const {
     // Sprites and tiles share one array and one draw path: a tile is a textured
     // quad, so the only difference is where its world matrix and UV come from.
     // Filling one array is also what lets the layer sort order a map and the
     // sprites over it together.
-    render::extract_sprites(scene, out);
-    render::extract_tiles(scene, out);
+    render::extract_sprites(scene, out, jobs);
+    render::extract_tiles(scene, out, jobs);
 }
 
-usize Renderer2D::cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum) {
-    return render::cull_sprites(out, frustum);
+usize Renderer2D::cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum, JobSystem* jobs) {
+    return render::cull_sprites(out, frustum, jobs);
 }
 
 // The view-projection the pass draws with: the active camera's, or a pixel-space
@@ -229,7 +229,8 @@ usize Renderer2D::cull(std::vector<render::SpriteInstance>& out, const Frustum* 
                               1.0f);
 }
 
-Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height) {
+Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                 JobSystem* jobs) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(vertex_buffer_ != nullptr);
     FE_CHECK(index_buffer_ != nullptr);
@@ -237,7 +238,7 @@ Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 vi
 
     // --- 1. Extract --------------------------------------------------------
     std::vector<render::SpriteInstance> instances;
-    extract(scene, instances);
+    extract(scene, instances, jobs);
 
     // --- 2. Cull -----------------------------------------------------------
     // A sprite outside the view cannot contribute a pixel, so it never needs a
@@ -246,7 +247,7 @@ Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 vi
     // steps can never disagree about what is on screen.
     const Frustum frustum =
         Frustum::from_view_projection(sprite_view_projection(scene, viewport_width, viewport_height));
-    last_culled_ = static_cast<u32>(cull(instances, &frustum));
+    last_culled_ = static_cast<u32>(cull(instances, &frustum, jobs));
 
     // --- 3. Draw -----------------------------------------------------------
     return draw(device, scene, viewport_width, viewport_height, instances);

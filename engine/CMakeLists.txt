@@ -18,6 +18,8 @@
 #   core, scene, systems, resources  <-  audio
 #   core, resources  <-  pack
 #   core  <-  jobs (a thread pool; see ADR-0068)
+#   core, scene, scene3d, mesh, resources  <-  render (the extraction seam; its
+#     parallel extract/cull take a JobSystem*, see ADR-0052, ADR-0069)
 #   everything  <-  runtime
 # See docs/ARCHITECTURE.md for the dependency rules.
 #

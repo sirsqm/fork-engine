@@ -13,6 +13,7 @@
 
 namespace fe {
 
+class JobSystem;
 class Scene;
 class Node;
 class Camera2D;
@@ -68,11 +69,17 @@ public:
     // Device::begin_frame() first. `viewport_width`/`viewport_height` are in
     // pixels and are used to build the camera projection.
     //
+    // `jobs` is optional. When a real `JobSystem` is supplied and the scene is
+    // large enough to pay for it (see `render::kParallelExtractThreshold`), the
+    // extract and cull steps run in parallel; the result is identical to the
+    // serial path, so the image does not change. A null pointer (the default) is
+    // the serial path, which is what every existing caller gets.
+    //
     // Returns the number of sprites drawn, which the example uses to prove the
     // pipeline actually produced geometry. A return value of 0 is valid (an
     // empty scene).
-    [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width,
-                                       u32 viewport_height);
+    [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                       JobSystem* jobs = nullptr);
 
     // Number of draw calls issued by the most recent render(). Exposed for the
     // example's on-screen statistics and for tests that assert batching.
@@ -89,13 +96,16 @@ public:
     // handed a frustum of its own choosing.
 
     // Step 1: collect the scene's drawable sprites into `out` (cleared first).
-    // No GPU work; the renderer's upload buffers are untouched.
-    void extract(const Scene& scene, std::vector<render::SpriteInstance>& out) const;
+    // No GPU work; the renderer's upload buffers are untouched. `jobs` is passed
+    // through to `render::extract_sprites`; null means serial.
+    void extract(const Scene& scene, std::vector<render::SpriteInstance>& out, JobSystem* jobs = nullptr) const;
 
     // Step 2: drop sprites whose quad-sized world AABB lies wholly outside
     // `frustum`; a null frustum keeps everything. Returns the number dropped.
-    // A pure function of `out`, so it is testable with no scene.
-    [[nodiscard]] static usize cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum);
+    // A pure function of `out`, so it is testable with no scene. `jobs` is passed
+    // through to `render::cull_sprites`; null means serial.
+    [[nodiscard]] static usize cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum,
+                                    JobSystem* jobs = nullptr);
 
     // Step 3: build geometry from `instances`, upload, and issue draws. Returns
     // the number of sprites drawn. Does no culling; the caller has done it.

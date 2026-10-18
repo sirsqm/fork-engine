@@ -86,7 +86,7 @@ everything  <-  runtime
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
 | `pack` | Asset pack container, writer, and the runtime mount that reads a pack like a directory | core, resources |
 | `jobs` | Thread pool, `parallel_for`, and a dependency task graph, in one API with a single-threaded mode; consumed by systems and by render extraction (`docs/adr/0068-job-system.md`) | core |
-| `render` | The extraction seam: `render::SpriteInstance`/`MeshInstance`, the pure `extract`/`cull` steps both renderers share, and the world-AABB expansion culling uses (`docs/adr/0052-render-extraction-seam.md`) | core, scene, scene3d, mesh, resources |
+| `render` | The extraction seam: `render::SpriteInstance`/`MeshInstance`, the pure `extract`/`cull` steps both renderers share, the world-AABB expansion culling uses, and the parallel (chunked) extract/cull paths (`docs/adr/0052-render-extraction-seam.md`, `docs/adr/0069-parallel-extraction-and-culling.md`) | core, jobs, scene, scene3d, mesh, resources |
 | `debugdraw` | Collider wireframes for a 2D or a 3D scene: a CPU-side `DebugDrawList` and a `DebugRenderer` that draws it as one line list (`docs/adr/0058-editor-physics3d-and-debug-draw.md`) | core, rhi, scene, physics2d, physics3d |
 | `net` | The `Transport` seam (in-process loopback for tests, WebSocket planned), an authoritative `SessionServer` that orders every accepted edit, and the `SessionClient` a replica uses (`docs/adr/0049-net-transport-and-session-server.md`) | core, scene, serialization, session |
 | `renderer2d` | Batched 2D rendering | core, rhi, resources, scene, render |
@@ -639,10 +639,31 @@ The flat array is the unit a job system chunks and the unit instancing and a
 render graph build on. The authoring model (the scene graph) and the processing
 model (the array) are deliberately different, and this seam is the only place
 they meet. It is the concrete form of the hybrid architecture
-([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md)) in the hot path, and the
-prerequisite for the parallel culling and instancing still planned in M9. The
-`jobs` module that chunks it is now in place ([ADR-0068](adr/0068-job-system.md));
-the extraction seam itself is not parallel yet.
+([ADR-0002](adr/0002-hybrid-scene-ecs-architecture.md)) in the hot path.
+
+### Parallel extract and cull
+
+The seam chunks across the job pool ([ADR-0068](adr/0068-job-system.md)) when a
+pool is supplied and the array is large enough to pay for the fan-out
+([ADR-0069](adr/0069-parallel-extraction-and-culling.md)). `render::extract_*`
+and `render::cull_*` take a trailing `JobSystem* jobs = nullptr`; the renderers
+thread it through and `Application::render_frame` supplies its own, so an
+interactive run is parallel and every other caller is unchanged.
+
+Output is identical to the serial path by construction, not by luck. Extraction
+flattens the hierarchy into a node list, splits it into contiguous chunks, and
+has each chunk append to its own vector; the vectors are concatenated in chunk
+order, so the fan-out order cannot change the result. Culling tests visibility in
+parallel into a position-indexed byte mask, then compacts in one serial pass, so
+the survivors keep their original relative order.
+
+Two measured thresholds keep the fan-out off where it does not pay
+(`kParallelExtractThreshold` = 1024, `kParallelCullThreshold` = 16384). Extraction
+crosses over around 1200 nodes and is a clean win above that; culling is a *loss*
+until roughly 16000 instances, because the per-instance test is cheap and the
+compaction — not the visibility test — is the bottleneck. Below its threshold a
+step stays serial even when a pool is present. `Renderer3D::cull` keeps its BVH,
+which is already sub-linear, so a pool does not change it.
 
 ### Camera selection
 

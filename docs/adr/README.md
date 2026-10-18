@@ -74,6 +74,7 @@ rather than editing it.
 | [0066](0066-editor-driven-module-hot-reload.md) | Editor-driven gameplay-module hot reload | Accepted |
 | [0067](0067-debouncing-a-module-build.md) | Debouncing a gameplay-module build | Accepted |
 | [0068](0068-job-system.md) | A job system: thread pool, `parallel_for`, and a task graph | Accepted |
+| [0069](0069-parallel-extraction-and-culling.md) | Parallel extraction and culling | Accepted |
 
 ## Format
 

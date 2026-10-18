@@ -17,6 +17,7 @@
 
 namespace fe {
 
+class JobSystem;
 class Scene;
 class Node;
 class Camera3D;
@@ -86,8 +87,14 @@ public:
     //
     // `settings` opts into the post-processing chain. With `settings.enabled`
     // false this is the pre-chain behaviour exactly.
+    //
+    // `jobs` is optional. When supplied and the scene is large enough to pay for
+    // it, extraction runs in parallel (see `render::kParallelExtractThreshold`);
+    // the result is identical to the serial path. The cull keeps its BVH, which
+    // is already sub-linear, so a pool does not change it here. A null pointer
+    // (the default) is the serial path every existing caller gets.
     [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
-                                       const PostProcessSettings& settings = {});
+                                       const PostProcessSettings& settings = {}, JobSystem* jobs = nullptr);
 
     [[nodiscard]] u32 last_draw_calls() const noexcept { return last_draw_calls_; }
     [[nodiscard]] usize cached_mesh_count() const noexcept { return buffers_.size(); }
@@ -111,9 +118,10 @@ public:
 
     // Step 1: collect the scene's drawable mesh instances into `out` (cleared
     // first), and append every referenced mesh to `meshes_seen` (never cleared
-    // here) for the caller's buffer-liveness sweep. No GPU work.
-    void extract(const Scene& scene, std::vector<render::MeshInstance>& out,
-                 std::vector<const Mesh*>* meshes_seen) const;
+    // here) for the caller's buffer-liveness sweep. No GPU work. `jobs` is passed
+    // through to `render::extract_meshes`; null means serial.
+    void extract(const Scene& scene, std::vector<render::MeshInstance>& out, std::vector<const Mesh*>* meshes_seen,
+                 JobSystem* jobs = nullptr) const;
 
     // Step 2: drop instances whose world AABB lies wholly outside `frustum`; a
     // null frustum keeps everything. Returns the number dropped. A pure function
@@ -124,8 +132,12 @@ public:
     // The flat, hierarchy-free cull: tests every instance's world AABB directly.
     // Kept as the reference the BVH path must match, and as the fallback for a
     // caller that does not want the renderer to hold tree state (a static
-    // helper, like the sprite cull). A null `frustum` keeps everything.
-    [[nodiscard]] static usize cull_flat(std::vector<render::MeshInstance>& out, const Frustum* frustum);
+    // helper, like the sprite cull). A null `frustum` keeps everything. `jobs`
+    // parallelises the test above `render::kParallelCullThreshold`; null means
+    // serial. It is a static helper, so unlike the BVH cull it holds no state and
+    // is safe to run from a caller that has no renderer instance.
+    [[nodiscard]] static usize cull_flat(std::vector<render::MeshInstance>& out, const Frustum* frustum,
+                                         JobSystem* jobs = nullptr);
 
     // Step 3: acquire mesh buffers and issue the shadow and main passes over
     // `instances`. `view_projection` and `camera_position` come from the active

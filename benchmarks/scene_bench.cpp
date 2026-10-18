@@ -27,11 +27,17 @@
 //
 // Usage:
 //   fork_bench [--scene NAME] [--sprites N] [--bricks N] [--bodies N]
-//              [--frames N] [--warmup N] [--json] [--out PATH] [--verbose]
+//              [--frames N] [--warmup N] [--workers N] [--json] [--out PATH]
+//              [--verbose]
 //
 // Output: a machine-readable block on stdout (CSV by default, JSON with
 // --json) and a human summary in the log. `--out PATH` also writes the block to
 // a file, which is what CI records as an artifact.
+//
+// `--workers N` sizes the job pool that extraction and culling use (M9,
+// ADR-0069). The default is 0 -- the single-threaded system every plain run
+// uses -- so the recorded baseline and the CI gate measure the serial path; pass
+// `--workers 4` to reproduce the parallel win.
 
 #include "fe/core/Log.h"
 #include "fe/core/Profiler.h"
@@ -39,15 +45,19 @@
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/platform/Window.h"
+#include "fe/resources/Texture2D.h"
+#include "fe/rhi/Types.h"
 #include "fe/runtime/Application.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Sprite2D.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -62,6 +72,17 @@ struct Options {
     fe::u32 bodies = 200;
     fe::u32 frames = 240;
     fe::u32 warmup = 20;
+    // The job pool's worker count. Zero (the default) is the single-threaded
+    // system every plain run uses, so the recorded baseline is unchanged and the
+    // gate measures the serial path. Set it to reproduce the parallel
+    // extract/cull win: `--workers 4`.
+    fe::u32 workers = 0;
+    // Give the sprites a real texture so extraction produces instances and the
+    // render workload is real. Off by default: the recorded baseline was taken
+    // with untextured sprites, so flipping this on would change what the gate
+    // measures. It is for measuring the extract/cull path (`--workers 4`), not
+    // for the gate.
+    bool textured = false;
     bool json = false;
     std::string out;
     fe::LogLevel log_level = fe::LogLevel::Warn;
@@ -152,11 +173,16 @@ protected:
 
         // Sprites: the renderer's workload. Left untextured on purpose, so the
         // benchmark does not depend on a decode step and every sprite batches
-        // into the same (white-texture) draw group.
+        // into the same (white-texture) draw group. Untextured sprites are
+        // skipped by extraction (an authoring state, not content), so this is
+        // the physics-and-systems workload; pass --textured to exercise the
+        // extract/cull path too.
+        const std::shared_ptr<fe::Texture2D> texture = options_.textured ? make_bench_texture() : nullptr;
         for (fe::u32 i = 0; i < options_.sprites; ++i) {
             fe::Node* node = scene().create_node("Sprite");
             auto* sprite = node->add_component<fe::Sprite2D>();
             sprite->size = fe::Vec2{16.0f, 16.0f};
+            sprite->texture = texture;
             // Spread over a wide grid so the scene is not all one point.
             const fe::f32 x = static_cast<fe::f32>(i % 100) * 20.0f;
             const fe::f32 y = static_cast<fe::f32>(i / 100) * 20.0f;
@@ -217,6 +243,38 @@ protected:
     void on_stop() override { report(); }
 
 private:
+    // A small solid texture for the sprite workload, created through the RHI so
+    // it works against the null device too. The benchmark does not need a decode
+    // step; a checkerboard is enough for the sprites to be textured and for
+    // extraction to produce instances.
+    [[nodiscard]] std::shared_ptr<fe::Texture2D> make_bench_texture() {
+        constexpr fe::u32 kSize = 16;
+        std::array<fe::u8, kSize * kSize * 4> pixels{};
+        for (fe::u32 y = 0; y < kSize; ++y) {
+            for (fe::u32 x = 0; x < kSize; ++x) {
+                const bool light = ((x / 4) + (y / 4)) % 2 == 0;
+                const fe::u8 value = light ? 255 : 64;
+                const fe::usize index = (static_cast<fe::usize>(y) * kSize + x) * 4;
+                pixels[index + 0] = value;
+                pixels[index + 1] = value;
+                pixels[index + 2] = value;
+                pixels[index + 3] = 255;
+            }
+        }
+
+        fe::rhi::TextureDesc desc;
+        desc.name = "bench_sprite";
+        desc.width = kSize;
+        desc.height = kSize;
+        desc.pixels = pixels.data();
+        auto created = engine().device().create_texture(desc);
+        if (!created) {
+            FE_LOG_WARN("benchmark: could not create the sprite texture: %s", created.error().message().c_str());
+            return nullptr;
+        }
+        return std::make_shared<fe::Texture2D>("bench:sprite.png", created.value());
+    }
+
     void add_wall(const char* name, const fe::Vec2& center, const fe::Vec2& half_extent) {
         fe::Node* node = scene().create_node(name);
         auto* collider = node->add_component<fe::physics2d::Collider2D>();
@@ -358,6 +416,10 @@ private:
             options.frames = static_cast<fe::u32>(std::stoul(argv[++i]));
         } else if (arg == "--warmup" && i + 1 < argc) {
             options.warmup = static_cast<fe::u32>(std::stoul(argv[++i]));
+        } else if (arg == "--workers" && i + 1 < argc) {
+            options.workers = static_cast<fe::u32>(std::stoul(argv[++i]));
+        } else if (arg == "--textured") {
+            options.textured = true;
         } else if (arg == "--json") {
             options.json = true;
         } else if (arg == "--out" && i + 1 < argc) {
@@ -366,8 +428,10 @@ private:
             options.log_level = fe::LogLevel::Debug;
         } else if (arg == "--help" || arg == "-h") {
             std::puts("usage: fork_bench [--scene NAME] [--sprites N] [--bricks N] [--bodies N] "
-                      "[--frames N] [--warmup N] [--json] [--out PATH] [--verbose]\n"
-                      "scenes: sprite_heavy (default), physics_heavy, mixed");
+                      "[--frames N] [--warmup N] [--workers N] [--textured] [--json] [--out PATH] [--verbose]\n"
+                      "scenes: sprite_heavy (default), physics_heavy, mixed\n"
+                      "--workers N  run extraction/culling on N threads (0 = serial, the default)\n"
+                      "--textured   give sprites a real texture, so extraction has instances to build");
             std::exit(0);
         }
     }
@@ -406,6 +470,7 @@ int main(int argc, char** argv) {
     }
 
     BenchmarkApp app(config, options);
+    app.set_worker_count(options.workers);
     app.set_headless(options.frames);
     return app.run();
 }

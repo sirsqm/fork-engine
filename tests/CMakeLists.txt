@@ -46,6 +46,7 @@ add_executable(fork_engine_tests
     src/test_session.cpp
     src/test_net.cpp
     src/test_render_extract.cpp
+    src/test_render_parallel.cpp
     src/test_tilemap.cpp
     src/test_debugdraw.cpp
     src/test_script_module.cpp

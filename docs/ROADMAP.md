@@ -384,8 +384,17 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       single-threaded: a job extracts, culls, or computes, and only the frame
       thread submits. CI runs the pure-logic suite under ThreadSanitizer
       (`FE_ENABLE_TSAN`; ADR-0068)
-- [ ] Parallel extraction and culling: chunk the instance array; output must be
-      identical to the serial path
+- [x] Parallel extraction and culling: chunk the instance array; output must be
+      identical to the serial path — `render::extract_sprites`/`extract_tiles`/
+      `extract_meshes` and `cull_sprites`/`cull_meshes` take an optional
+      `JobSystem*`; each chunk appends to its own list (extraction) or fills a
+      byte mask (culling) and the results are joined in order, so the output is
+      byte-identical to serial. Two measured thresholds keep the fan-out off
+      where it does not pay: extraction above 1024 nodes (break-even ~1200),
+      culling above 16384 instances (it is a loss below that). `Renderer2D`/
+      `Renderer3D` thread the pool through, `Application::render_frame` supplies
+      its own, and every other caller keeps the serial path unchanged
+      ([ADR-0069](adr/0069-parallel-extraction-and-culling.md))
 - [x] Memory: a per-frame arena for transient data, with allocation counters —
       the `core` primitive (`FrameArena`: bump allocate / `reset` /
       `mark`+`restore` / `create<T>`) with allocation counters and a test that

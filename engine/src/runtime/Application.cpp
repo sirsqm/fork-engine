@@ -174,7 +174,7 @@ void Application::render_frame() {
 
     engine_.device().begin_frame(width, height, clear);
 
-    auto result = engine_.renderer_2d().render(engine_.device(), scene_, width, height);
+    auto result = engine_.renderer_2d().render(engine_.device(), scene_, width, height, jobs_.get());
     if (!result) {
         FE_LOG_ERROR("render failed: %s", result.error().message().c_str());
         last_sprite_count_ = 0;

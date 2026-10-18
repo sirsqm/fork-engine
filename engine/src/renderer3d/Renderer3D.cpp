@@ -426,8 +426,8 @@ Error Renderer3D::ensure_shadow_target(rhi::Device& device) {
 }
 
 void Renderer3D::extract(const Scene& scene, std::vector<render::MeshInstance>& out,
-                         std::vector<const Mesh*>* meshes_seen) const {
-    render::extract_meshes(scene, out, meshes_seen);
+                         std::vector<const Mesh*>* meshes_seen, JobSystem* jobs) const {
+    render::extract_meshes(scene, out, meshes_seen, jobs);
 }
 
 usize Renderer3D::cull(std::vector<render::MeshInstance>& out, const Frustum* frustum) {
@@ -464,8 +464,8 @@ usize Renderer3D::cull(std::vector<render::MeshInstance>& out, const Frustum* fr
     return before - write;
 }
 
-usize Renderer3D::cull_flat(std::vector<render::MeshInstance>& out, const Frustum* frustum) {
-    return render::cull_meshes(out, frustum);
+usize Renderer3D::cull_flat(std::vector<render::MeshInstance>& out, const Frustum* frustum, JobSystem* jobs) {
+    return render::cull_meshes(out, frustum, jobs);
 }
 
 bool Renderer3D::refresh_cull_bvh(const std::vector<render::MeshInstance>& instances) {
@@ -497,7 +497,7 @@ bool Renderer3D::refresh_cull_bvh(const std::vector<render::MeshInstance>& insta
 }
 
 Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
-                                 const PostProcessSettings& settings) {
+                                 const PostProcessSettings& settings, JobSystem* jobs) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(viewport_width > 0 && viewport_height > 0);
 
@@ -515,7 +515,7 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     // --- 1. Extract --------------------------------------------------------
     std::vector<render::MeshInstance> instances;
     std::vector<const Mesh*> meshes_seen;
-    extract(scene, instances, &meshes_seen);
+    extract(scene, instances, &meshes_seen, jobs);
 
     // --- 2. Cull -----------------------------------------------------------
     // Reject instances whose world AABB lies wholly outside the view. The test is
