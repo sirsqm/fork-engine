@@ -75,6 +75,29 @@ public:
     virtual void bind_texture(u32 slot, Texture& texture) = 0;
     virtual void draw_indexed(u32 index_count) = 0;
 
+    // Binds the per-instance buffer for an instanced draw, starting at
+    // `byte_offset`. The offset is how a batch draws its own contiguous run out of
+    // one shared instance buffer: a draw of `instance_count` instances reads from
+    // the offset onward, so batches of one frame share a single upload.
+    //
+    // The bound vertex layout must mark its per-instance attributes with a
+    // non-zero divisor (`VertexAttribute::divisor`); this call only establishes
+    // the buffer, it does not know which attributes read from it. Passing a buffer
+    // whose layout has no instanced attribute is a caller error the backend cannot
+    // detect, so the layout and the buffer are expected to come from one place.
+    //
+    // Kept separate from bind_vertex_buffer because the two buffers are bound to
+    // different targets and a layout spans both; a single call would have to
+    // guess the split. The device is single-threaded (ADR-0017), so no
+    // synchronization is implied.
+    virtual void bind_instance_buffer(Buffer& buffer, u32 byte_offset = 0) = 0;
+
+    // Draws `index_count` indices `instance_count` times. The per-vertex stream
+    // advances once per index (the shared quad) and the per-instance stream once
+    // per instance, which is what makes one call cover every sprite in a batch.
+    // A zero instance_count draws nothing, matching draw_indexed(0).
+    virtual void draw_indexed_instanced(u32 index_count, u32 instance_count) = 0;
+
     // --- Readback ----------------------------------------------------------
     // Copies a region of the current framebuffer into `out` as tightly packed
     // RGBA8 (4 bytes per pixel), with row 0 at the bottom (OpenGL convention).

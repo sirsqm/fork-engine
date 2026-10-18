@@ -274,7 +274,7 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
             bounds_owner_.push_back(i);
         }
     }
-    broad_phase_.build(broad_phase_bounds_);
+    broad_phase_.build(broad_phase_bounds_, context.jobs);
     const std::span<const BroadPhasePair> candidates = broad_phase_.pairs();
 
     // Resolve. Sequential impulses over the candidate pairs, repeated for a few

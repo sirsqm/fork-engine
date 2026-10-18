@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/render/RenderExtract.h"
 
+#include "fe/core/FrameArena.h"
 #include "fe/jobs/JobSystem.h"
 #include "fe/mesh/Mesh.h"
 #include "fe/resources/Texture2D.h"
@@ -84,14 +85,15 @@ void flatten_nodes(const Scene& scene, std::vector<const Node*>& out) {
     scene.for_each_node([&](Node& node) { out.push_back(&node); });
 }
 
-// Appends the instance for cell (x, y) of `map` to `out`, or nothing when the
-// cell is empty. Shared by the serial and parallel tile walks so the two cannot
-// disagree on the cell's world matrix or UV.
-void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* texture, u32 x, u32 y,
-                 std::vector<SpriteInstance>& out) {
+// Resolves the instance for cell (x, y) of `map` into `out`, or returns false
+// when the cell is empty. Shared by the serial and parallel tile walks, and by
+// the vector and arena destinations, so none of them can disagree on a cell's
+// world matrix or UV.
+[[nodiscard]] bool resolve_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* texture, u32 x, u32 y,
+                                SpriteInstance& out) {
     const i32 tile = map.at(x, y);
     if (tile == Tilemap::kEmpty) {
-        return;
+        return false;
     }
 
     // Cell (0, 0) is the map's top-left, +X right and +Y down, so the map spans
@@ -101,15 +103,24 @@ void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* te
     const f32 local_x = (static_cast<f32>(x) + 0.5f) * map.tile_size.x;
     const f32 local_y = -(static_cast<f32>(y) + 0.5f) * map.tile_size.y;
 
+    out = SpriteInstance{};
+    out.texture = &texture->texture();
+    out.tilemap = &map;
+    out.world = node_world * Mat4::translation(Vec3{local_x, local_y, 0.0f});
+    out.size = map.tile_size;
+    out.uv = map.tile_uv(tile);
+    out.color = map.color;
+    out.layer = map.layer;
+    return true;
+}
+
+// The vector-destination wrapper around resolve_tile.
+void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* texture, u32 x, u32 y,
+                 std::vector<SpriteInstance>& out) {
     SpriteInstance instance;
-    instance.texture = &texture->texture();
-    instance.tilemap = &map;
-    instance.world = node_world * Mat4::translation(Vec3{local_x, local_y, 0.0f});
-    instance.size = map.tile_size;
-    instance.uv = map.tile_uv(tile);
-    instance.color = map.color;
-    instance.layer = map.layer;
-    out.push_back(instance);
+    if (resolve_tile(map, node_world, texture, x, y, instance)) {
+        out.push_back(instance);
+    }
 }
 
 // One mesh instance's resolved state, or a reason to skip it. Shared by the
@@ -147,6 +158,16 @@ void concatenate(std::vector<Instance>& out, const std::vector<std::vector<Insta
     for (u32 c = 0; c < chunks; ++c) {
         out.insert(out.end(), parts[c].begin(), parts[c].end());
     }
+}
+
+// The visibility predicate shared by the vector and arena culls, so the two
+// cannot disagree on what is on screen. A quad-sized AABB centred on the
+// sprite's world position; deriving it from the resolved size means a sprite
+// larger than the view is kept.
+[[nodiscard]] bool sprite_visible(const SpriteInstance& instance, const Frustum& frustum) noexcept {
+    const Vec3 centre = transform_point(instance.world, Vec3{});
+    const Vec3 half{instance.size.x * 0.5f, instance.size.y * 0.5f, 0.0f};
+    return frustum.intersects_aabb(centre - half, centre + half);
 }
 
 } // namespace
@@ -283,20 +304,209 @@ void extract_meshes(const Scene& scene, std::vector<MeshInstance>& out, std::vec
     }
 }
 
+// --- Arena-backed extraction (ADR-0054 follow-on) --------------------------
+
+usize sprite_instance_bound(const Scene& scene) {
+    // One sprite per node is the worst case for the sprite walk (a node with no
+    // sprite contributes none), plus every cell of every tilemap. A tilemap node
+    // may also carry a sprite, so the two add rather than max. Counting the whole
+    // grid over-counts the empty cells, which is the point of a bound: it must
+    // never be short, and the caller sizes the arena from it.
+    usize bound = scene.node_count();
+    scene.for_each_node([&](Node& node) {
+        const auto* map = node.get_component<Tilemap>();
+        if (map != nullptr) {
+            bound += static_cast<usize>(map->width) * map->height;
+        }
+    });
+    return bound;
+}
+
+usize extract_sprites_into(FrameArena& arena, const Scene& scene, std::span<SpriteInstance> out, JobSystem* jobs) {
+    if (out.empty()) {
+        return 0;
+    }
+
+    if (jobs == nullptr || !jobs->is_threaded() || scene.node_count() < kParallelExtractThreshold) {
+        usize written = 0;
+        scene.for_each_node([&](Node& node) {
+            if (written == out.size()) {
+                return;
+            }
+            if (resolve_sprite(node, out[written])) {
+                ++written;
+            }
+        });
+        return written;
+    }
+
+    // Parallel: count each chunk, turn the counts into offsets, then let each
+    // chunk write straight into its own slice. The two passes read the same
+    // read-only scene and use the same predicate (`resolve_sprite`), so the write
+    // lands exactly where the count said and the result matches the serial array.
+    //
+    // The flat node list and the per-chunk counts come from the arena, so this
+    // path performs no heap allocation either -- which is the whole reason it
+    // exists rather than reusing the vector path's chunk lists.
+    const usize capacity = scene.node_count();
+    auto* flat = static_cast<const Node**>(arena.allocate(sizeof(const Node*) * capacity, alignof(const Node*)));
+    const u32 chunk_capacity =
+        static_cast<u32>(std::min<usize>(capacity, static_cast<usize>(jobs->worker_count()) * 4));
+    auto* counts = static_cast<usize*>(arena.allocate(sizeof(usize) * chunk_capacity, alignof(usize)));
+    auto* offsets = static_cast<usize*>(arena.allocate(sizeof(usize) * chunk_capacity, alignof(usize)));
+    if (flat == nullptr || counts == nullptr || offsets == nullptr) {
+        // Arena exhausted before the fan-out. Fall back to the serial walk, which
+        // needs no scratch and still respects the output bound.
+        usize written = 0;
+        scene.for_each_node([&](Node& node) {
+            if (written < out.size() && resolve_sprite(node, out[written])) {
+                ++written;
+            }
+        });
+        return written;
+    }
+
+    // Fill the flat list, but never past the capacity: the walk is the source of
+    // truth for how many nodes there are, and the chunking uses that count.
+    usize n = 0;
+    scene.for_each_node([&](Node& node) {
+        if (n < capacity) {
+            flat[n++] = &node;
+        }
+    });
+    const u32 chunks = static_cast<u32>(std::min<usize>(n, chunk_capacity));
+
+    jobs->parallel_for(0, chunks, [&](usize c) {
+        const usize lo = n * c / chunks;
+        const usize hi = n * (c + 1) / chunks;
+        usize count = 0;
+        SpriteInstance scratch;
+        for (usize i = lo; i < hi; ++i) {
+            if (resolve_sprite(*flat[i], scratch)) {
+                ++count;
+            }
+        }
+        counts[c] = count;
+    });
+
+    // Clamp to the output bound and take the running offsets serially, so the
+    // destination is never overrun even if the caller sized it too small.
+    usize total = 0;
+    for (u32 c = 0; c < chunks; ++c) {
+        offsets[c] = total;
+        total += std::min(counts[c], out.size() - total);
+    }
+
+    jobs->parallel_for(0, chunks, [&](usize c) {
+        const usize lo = n * c / chunks;
+        const usize hi = n * (c + 1) / chunks;
+        usize write = offsets[c];
+        for (usize i = lo; i < hi; ++i) {
+            if (write == out.size()) {
+                break;
+            }
+            if (resolve_sprite(*flat[i], out[write])) {
+                ++write;
+            }
+        }
+    });
+
+    return total;
+}
+
+usize extract_tiles_into(FrameArena& arena, const Scene& scene, std::span<SpriteInstance> out, usize offset,
+                         JobSystem* jobs) {
+    usize written = offset;
+    scene.for_each_node([&](Node& node) {
+        const auto* map = node.get_component<Tilemap>();
+        if (map == nullptr || map->empty()) {
+            return;
+        }
+        const auto* texture = dynamic_cast<const Texture2D*>(map->texture.get());
+        if (texture == nullptr || map->tile_size.x == 0.0f || map->tile_size.y == 0.0f) {
+            return;
+        }
+
+        const Mat4 node_world = node.world_matrix();
+        const usize tile_count = static_cast<usize>(map->width) * map->height;
+
+        if (jobs == nullptr || !jobs->is_threaded() || tile_count < kParallelTileThreshold) {
+            for (u32 y = 0; y < map->height && written < out.size(); ++y) {
+                for (u32 x = 0; x < map->width && written < out.size(); ++x) {
+                    if (resolve_tile(*map, node_world, texture, x, y, out[written])) {
+                        ++written;
+                    }
+                }
+            }
+            return;
+        }
+
+        // Parallel: the same count-then-write shape as the sprite walk, over the
+        // map's cells. Offsets are global (they start at `written`), so the tiles
+        // land in row-major order after whatever the caller already wrote.
+        const u32 chunks = static_cast<u32>(std::min<usize>(tile_count, static_cast<usize>(jobs->worker_count()) * 4));
+        auto* counts = static_cast<usize*>(arena.allocate(sizeof(usize) * chunks, alignof(usize)));
+        auto* offsets = static_cast<usize*>(arena.allocate(sizeof(usize) * chunks, alignof(usize)));
+        if (counts == nullptr || offsets == nullptr) {
+            for (usize t = 0; t < tile_count && written < out.size(); ++t) {
+                const u32 x = static_cast<u32>(t % map->width);
+                const u32 y = static_cast<u32>(t / map->width);
+                if (resolve_tile(*map, node_world, texture, x, y, out[written])) {
+                    ++written;
+                }
+            }
+            return;
+        }
+
+        jobs->parallel_for(0, chunks, [&](usize c) {
+            const usize lo = tile_count * c / chunks;
+            const usize hi = tile_count * (c + 1) / chunks;
+            usize count = 0;
+            SpriteInstance scratch;
+            for (usize t = lo; t < hi; ++t) {
+                const u32 x = static_cast<u32>(t % map->width);
+                const u32 y = static_cast<u32>(t / map->width);
+                if (resolve_tile(*map, node_world, texture, x, y, scratch)) {
+                    ++count;
+                }
+            }
+            counts[c] = count;
+        });
+
+        usize total = written;
+        for (u32 c = 0; c < chunks; ++c) {
+            offsets[c] = total;
+            total += std::min(counts[c], out.size() - total);
+        }
+
+        jobs->parallel_for(0, chunks, [&](usize c) {
+            const usize lo = tile_count * c / chunks;
+            const usize hi = tile_count * (c + 1) / chunks;
+            usize write = offsets[c];
+            for (usize t = lo; t < hi; ++t) {
+                if (write == out.size()) {
+                    break;
+                }
+                const u32 x = static_cast<u32>(t % map->width);
+                const u32 y = static_cast<u32>(t / map->width);
+                if (resolve_tile(*map, node_world, texture, x, y, out[write])) {
+                    ++write;
+                }
+            }
+        });
+
+        written = total;
+    });
+    return written;
+}
+
 usize cull_sprites(std::vector<SpriteInstance>& instances, const Frustum* frustum, JobSystem* jobs) {
     if (frustum == nullptr) {
         return 0;
     }
     const usize before = instances.size();
     if (jobs == nullptr || !jobs->is_threaded() || before < kParallelCullThreshold) {
-        std::erase_if(instances, [&](const SpriteInstance& instance) {
-            // A quad-sized AABB centred on the sprite's world position. Deriving
-            // it from the resolved size means a sprite larger than the view is
-            // kept.
-            const Vec3 centre = transform_point(instance.world, Vec3{});
-            const Vec3 half{instance.size.x * 0.5f, instance.size.y * 0.5f, 0.0f};
-            return !frustum->intersects_aabb(centre - half, centre + half);
-        });
+        std::erase_if(instances, [&](const SpriteInstance& instance) { return !sprite_visible(instance, *frustum); });
         return before - instances.size();
     }
 
@@ -310,10 +520,7 @@ usize cull_sprites(std::vector<SpriteInstance>& instances, const Frustum* frustu
         const usize lo = before * c / chunks;
         const usize hi = before * (c + 1) / chunks;
         for (usize i = lo; i < hi; ++i) {
-            const SpriteInstance& instance = instances[i];
-            const Vec3 centre = transform_point(instance.world, Vec3{});
-            const Vec3 half{instance.size.x * 0.5f, instance.size.y * 0.5f, 0.0f};
-            keep[i] = frustum->intersects_aabb(centre - half, centre + half) ? 1 : 0;
+            keep[i] = sprite_visible(instances[i], *frustum) ? 1 : 0;
         }
     });
 
@@ -325,6 +532,64 @@ usize cull_sprites(std::vector<SpriteInstance>& instances, const Frustum* frustu
     }
     instances.resize(write);
     return before - write;
+}
+
+usize cull_sprites_in_place(FrameArena& arena, std::span<SpriteInstance> instances, usize used, const Frustum* frustum,
+                            JobSystem* jobs) {
+    used = std::min(used, instances.size());
+    if (frustum == nullptr) {
+        return used;
+    }
+
+    if (jobs == nullptr || !jobs->is_threaded() || used < kParallelCullThreshold) {
+        usize write = 0;
+        for (usize read = 0; read < used; ++read) {
+            if (sprite_visible(instances[read], *frustum)) {
+                if (write != read) {
+                    instances[write] = instances[read];
+                }
+                ++write;
+            }
+        }
+        return write;
+    }
+
+    // Parallel: same shape as the vector path, but the mask comes from the arena
+    // so the step allocates nothing on the heap.
+    auto* keep = static_cast<u8*>(arena.allocate(sizeof(u8) * used, alignof(u8)));
+    if (keep == nullptr) {
+        // No scratch: fall back to the serial compaction, which needs none.
+        usize write = 0;
+        for (usize read = 0; read < used; ++read) {
+            if (sprite_visible(instances[read], *frustum)) {
+                if (write != read) {
+                    instances[write] = instances[read];
+                }
+                ++write;
+            }
+        }
+        return write;
+    }
+
+    const u32 chunks = static_cast<u32>(std::min<usize>(used, static_cast<usize>(jobs->worker_count()) * 4));
+    jobs->parallel_for(0, chunks, [&](usize c) {
+        const usize lo = used * c / chunks;
+        const usize hi = used * (c + 1) / chunks;
+        for (usize i = lo; i < hi; ++i) {
+            keep[i] = sprite_visible(instances[i], *frustum) ? 1 : 0;
+        }
+    });
+
+    usize write = 0;
+    for (usize read = 0; read < used; ++read) {
+        if (keep[read] != 0) {
+            if (write != read) {
+                instances[write] = instances[read];
+            }
+            ++write;
+        }
+    }
+    return write;
 }
 
 usize cull_meshes(std::vector<MeshInstance>& instances, const Frustum* frustum, JobSystem* jobs) {

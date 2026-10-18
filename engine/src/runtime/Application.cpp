@@ -174,7 +174,14 @@ void Application::render_frame() {
 
     engine_.device().begin_frame(width, height, clear);
 
-    auto result = engine_.renderer_2d().render(engine_.device(), scene_, width, height, jobs_.get());
+    // Prefer the arena-backed path when the frame has an arena: the 2D pass then
+    // builds its extraction and cull scratch with no heap traffic. With the arena
+    // disabled (frame_arena_ == nullptr) the heap path runs, which is the
+    // documented opt-out and the pre-arena behaviour (ADR-0054).
+    Result<usize> result =
+        frame_arena_ != nullptr
+            ? engine_.renderer_2d().render(engine_.device(), scene_, width, height, *frame_arena_, jobs_.get())
+            : engine_.renderer_2d().render(engine_.device(), scene_, width, height, jobs_.get());
     if (!result) {
         FE_LOG_ERROR("render failed: %s", result.error().message().c_str());
         last_sprite_count_ = 0;

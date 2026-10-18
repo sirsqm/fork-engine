@@ -3,6 +3,7 @@
 #include "fe/renderer2d/Renderer2D.h"
 
 #include "fe/core/Assert.h"
+#include "fe/core/FrameArena.h"
 #include "fe/core/Log.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Scene.h"
@@ -14,17 +15,26 @@
 namespace fe::renderer2d {
 namespace {
 
-// GLSL 3.30 core. The vertex shader transforms a sprite's local quad into clip
-// space; the fragment shader samples the texture and multiplies by the tint.
+// GLSL 3.30 core. The vertex shader places one instanced quad. The per-vertex
+// input is a unit-square corner; the per-instance inputs are the sprite's world
+// transform (columns 0 and 1 already scaled by size, plus the translation), its
+// tint, and its uv rectangle. Position is assembled on the GPU from those, which
+// is the whole point of instancing: the CPU no longer transforms four corners
+// per sprite.
 //
-// Positions arrive in world space (the CPU already applied the sprite's world
-// matrix), so the vertex shader only applies the view-projection.
+// The world transform is rebuilt from the three columns rather than uploaded as
+// a mat4: a 2D sprite never needs the third column, so this is one vec4 less per
+// instance. `u_view_projection` is applied last, as before.
 constexpr const char* kVertexShaderSource = R"glsl(
 #version 330 core
 
-layout(location = 0) in vec2 a_position;
-layout(location = 1) in vec4 a_color;
-layout(location = 2) in vec2 a_uv;
+layout(location = 0) in vec2 a_corner;
+
+layout(location = 1) in vec4 a_world_x;
+layout(location = 2) in vec4 a_world_y;
+layout(location = 3) in vec4 a_world_z;
+layout(location = 4) in vec4 a_color;
+layout(location = 5) in vec4 a_uv;
 
 uniform mat4 u_view_projection;
 
@@ -32,9 +42,17 @@ out vec4 v_color;
 out vec2 v_uv;
 
 void main() {
+    // Column-major: the sprite's world position is x*col0 + y*col1 + col3. The
+    // corner is in [-0.5, 0.5] and the columns carry the size, so this reproduces
+    // the per-vertex transform the CPU used to do.
+    vec4 world = a_world_x * a_corner.x + a_world_y * a_corner.y + a_world_z;
     v_color = a_color;
-    v_uv = a_uv;
-    gl_Position = u_view_projection * vec4(a_position, 0.0, 1.0);
+    // a_uv is (u0, v0, u1, v1) with v0 the top row. The corner's unit position
+    // selects within it, and v is flipped so the bottom-left corner maps to v1,
+    // matching the per-vertex uv assignment the CPU used to make.
+    vec2 unit = a_corner + vec2(0.5, 0.5);
+    v_uv = vec2(mix(a_uv.x, a_uv.z, unit.x), mix(a_uv.w, a_uv.y, unit.y));
+    gl_Position = u_view_projection * vec4(world.xy, 0.0, 1.0);
 }
 )glsl";
 
@@ -64,6 +82,24 @@ void main() {
     return a.texture < b.texture;
 }
 
+// The shared quad: four unit-square corners, drawn once and instanced. The
+// corners go counter-clockwise so the two triangles wind consistently with the
+// old per-sprite quads. UVs are unit-square too; the shader maps them into the
+// instance's uv rectangle, so one quad serves every sprite's sub-rectangle.
+constexpr std::array<Vec2, 4> kQuadCorners = {
+    Vec2{-0.5f, -0.5f},
+    Vec2{0.5f, -0.5f},
+    Vec2{0.5f, 0.5f},
+    Vec2{-0.5f, 0.5f},
+};
+constexpr std::array<Vec2, 4> kQuadUVs = {
+    Vec2{0.0f, 0.0f},
+    Vec2{1.0f, 0.0f},
+    Vec2{1.0f, 1.0f},
+    Vec2{0.0f, 1.0f},
+};
+constexpr std::array<u32, 6> kQuadIndices = {0, 1, 2, 2, 3, 0};
+
 } // namespace
 
 Renderer2D::Renderer2D() = default;
@@ -82,25 +118,37 @@ Error Renderer2D::initialize(rhi::Device& device) {
     }
     shader_ = shader.value();
 
-    // Start with capacity for 1024 sprites; grow on demand.
-    constexpr u32 kInitialVertices = 1024 * 4;
-    constexpr u32 kInitialIndices = 1024 * 6;
-    const u32 vertex_bytes = kInitialVertices * static_cast<u32>(sizeof(Vertex));
-
-    auto vertex_buffer = device.create_vertex_buffer(rhi::VertexLayout::position_color_uv(), vertex_bytes);
+    // The shared quad. Four vertices and six indices, uploaded once; instancing
+    // means they never grow with the sprite count. The vertex buffer is created
+    // with exactly the quad's size, so vertex_capacity() is a constant four.
+    auto vertex_buffer =
+        device.create_vertex_buffer(rhi::VertexLayout::sprite_quad(), static_cast<u32>(sizeof(Vertex) * 4));
     if (!vertex_buffer) {
         return vertex_buffer.error();
     }
     vertex_buffer_ = vertex_buffer.value();
+    vertex_buffer_->update(
+        std::span<const u8>(reinterpret_cast<const u8*>(kQuadCorners.data()), kQuadCorners.size() * sizeof(Vec2)));
+    vertex_capacity_ = 4;
 
-    auto index_buffer = device.create_index_buffer(kInitialIndices);
+    auto index_buffer = device.create_index_buffer(static_cast<u32>(kQuadIndices.size()));
     if (!index_buffer) {
         return index_buffer.error();
     }
     index_buffer_ = index_buffer.value();
+    index_buffer_->update(
+        std::span<const u8>(reinterpret_cast<const u8*>(kQuadIndices.data()), kQuadIndices.size() * sizeof(u32)));
+    index_capacity_ = static_cast<u32>(kQuadIndices.size());
 
-    vertex_capacity_ = kInitialVertices;
-    index_capacity_ = kInitialIndices;
+    // Start with capacity for 1024 instances; grow on demand.
+    constexpr u32 kInitialInstances = 1024;
+    auto instance_buffer = device.create_vertex_buffer(rhi::VertexLayout::sprite_instance(),
+                                                       kInitialInstances * static_cast<u32>(sizeof(Instance)));
+    if (!instance_buffer) {
+        return instance_buffer.error();
+    }
+    instance_buffer_ = instance_buffer.value();
+    instance_capacity_ = kInitialInstances;
 
     // 1x1 opaque white, used for untextured sprites.
     const std::array<u8, 4> white = {255, 255, 255, 255};
@@ -120,33 +168,19 @@ Error Renderer2D::initialize(rhi::Device& device) {
     return Error::none();
 }
 
-void Renderer2D::ensure_capacity(rhi::Device& device, u32 vertex_count, u32 index_count) {
-    if (vertex_count <= vertex_capacity_ && index_count <= index_capacity_) {
+void Renderer2D::ensure_capacity(rhi::Device& device, u32 instance_count) {
+    if (instance_count <= instance_capacity_) {
         return;
     }
 
-    const u32 new_vertex_capacity = std::max(vertex_count, vertex_capacity_ * 2);
-    const u32 new_index_capacity = std::max(index_count, index_capacity_ * 2);
-
-    if (vertex_count > vertex_capacity_) {
-        auto buffer = device.create_vertex_buffer(rhi::VertexLayout::position_color_uv(),
-                                                  new_vertex_capacity * static_cast<u32>(sizeof(Vertex)));
-        if (buffer) {
-            vertex_buffer_ = buffer.value();
-            vertex_capacity_ = new_vertex_capacity;
-        } else {
-            FE_LOG_ERROR("renderer2d: could not grow vertex buffer: %s", buffer.error().message().c_str());
-        }
-    }
-
-    if (index_count > index_capacity_) {
-        auto buffer = device.create_index_buffer(new_index_capacity);
-        if (buffer) {
-            index_buffer_ = buffer.value();
-            index_capacity_ = new_index_capacity;
-        } else {
-            FE_LOG_ERROR("renderer2d: could not grow index buffer: %s", buffer.error().message().c_str());
-        }
+    const u32 new_capacity = std::max(instance_count, instance_capacity_ * 2);
+    auto buffer = device.create_vertex_buffer(rhi::VertexLayout::sprite_instance(),
+                                              new_capacity * static_cast<u32>(sizeof(Instance)));
+    if (buffer) {
+        instance_buffer_ = buffer.value();
+        instance_capacity_ = new_capacity;
+    } else {
+        FE_LOG_ERROR("renderer2d: could not grow instance buffer: %s", buffer.error().message().c_str());
     }
 }
 
@@ -173,35 +207,21 @@ Camera2D* Renderer2D::find_active_camera(Scene& scene) {
     return const_cast<Camera2D*>(find_active_camera(static_cast<const Scene&>(scene)));
 }
 
-void Renderer2D::append_quad(const render::SpriteInstance& instance) {
-    const u32 base = static_cast<u32>(vertices_.size());
-
-    // Local quad corners, centred on the origin. Corners go counter-clockwise.
-    const Vec2 half = instance.size * 0.5f;
-    const std::array<Vec2, 4> corners = {
-        Vec2{-half.x, -half.y},
-        Vec2{half.x, -half.y},
-        Vec2{half.x, half.y},
-        Vec2{-half.x, half.y},
-    };
-    const std::array<Vec2, 4> uvs = {
-        Vec2{instance.uv.x, instance.uv.w},
-        Vec2{instance.uv.z, instance.uv.w},
-        Vec2{instance.uv.z, instance.uv.y},
-        Vec2{instance.uv.x, instance.uv.y},
-    };
-
-    for (usize i = 0; i < 4; ++i) {
-        const Vec3 world_pos = transform_point(instance.world, Vec3{corners[i].x, corners[i].y, 0.0f});
-        vertices_.push_back(Vertex{Vec2{world_pos.x, world_pos.y}, instance.color, uvs[i]});
-    }
-
-    indices_.push_back(base + 0);
-    indices_.push_back(base + 1);
-    indices_.push_back(base + 2);
-    indices_.push_back(base + 2);
-    indices_.push_back(base + 3);
-    indices_.push_back(base + 0);
+void Renderer2D::append_instance(const render::SpriteInstance& instance) {
+    Instance record{};
+    // Column 0 and column 1 carry the sprite's size: the corner is a unit square,
+    // so folding size in here lets the shader scale without a separate uniform.
+    const Vec4 col0{instance.world.at(0, 0), instance.world.at(1, 0), instance.world.at(2, 0), instance.world.at(3, 0)};
+    const Vec4 col1{instance.world.at(0, 1), instance.world.at(1, 1), instance.world.at(2, 1), instance.world.at(3, 1)};
+    const Vec4 col3{instance.world.at(0, 3), instance.world.at(1, 3), instance.world.at(2, 3), instance.world.at(3, 3)};
+    record.world_x =
+        Vec4{col0.x * instance.size.x, col0.y * instance.size.x, col0.z * instance.size.x, col0.w * instance.size.x};
+    record.world_y =
+        Vec4{col1.x * instance.size.y, col1.y * instance.size.y, col1.z * instance.size.y, col1.w * instance.size.y};
+    record.world_z = col3;
+    record.color = instance.color;
+    record.uv = instance.uv;
+    instances_.push_back(record);
 }
 
 void Renderer2D::extract(const Scene& scene, std::vector<render::SpriteInstance>& out, JobSystem* jobs) const {
@@ -253,8 +273,45 @@ Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 vi
     return draw(device, scene, viewport_width, viewport_height, instances);
 }
 
+Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                 FrameArena& arena, JobSystem* jobs) {
+    FE_CHECK(shader_ != nullptr);
+    FE_CHECK(vertex_buffer_ != nullptr);
+    FE_CHECK(index_buffer_ != nullptr);
+    FE_CHECK(viewport_width > 0 && viewport_height > 0);
+
+    // Size the destination from a bound that can never be short, then let the
+    // extraction fill it. The bound is a walk of the scene and allocates nothing.
+    const usize bound = render::sprite_instance_bound(scene);
+    if (bound == 0) {
+        last_culled_ = 0;
+        return draw(device, scene, viewport_width, viewport_height, {});
+    }
+
+    auto* storage = static_cast<render::SpriteInstance*>(
+        arena.allocate(sizeof(render::SpriteInstance) * bound, alignof(render::SpriteInstance)));
+    if (storage == nullptr) {
+        // The arena cannot hold this frame's extraction. Fall back to the heap
+        // path: identical output, only the allocation differs. This is the
+        // documented overflow behaviour (ADR-0051/0054), not an error.
+        return render(device, scene, viewport_width, viewport_height, jobs);
+    }
+
+    std::span<render::SpriteInstance> instances(storage, bound);
+    usize used = render::extract_sprites_into(arena, scene, instances, jobs);
+    used = render::extract_tiles_into(arena, scene, instances, used, jobs);
+
+    const Frustum frustum =
+        Frustum::from_view_projection(sprite_view_projection(scene, viewport_width, viewport_height));
+    const usize before = used;
+    used = render::cull_sprites_in_place(arena, instances, used, &frustum, jobs);
+    last_culled_ = static_cast<u32>(before - used);
+
+    return draw(device, scene, viewport_width, viewport_height, instances.first(used));
+}
+
 Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
-                               std::vector<render::SpriteInstance>& instances) {
+                               std::span<render::SpriteInstance> instances) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(vertex_buffer_ != nullptr);
     FE_CHECK(index_buffer_ != nullptr);
@@ -264,33 +321,31 @@ Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 view
     // touches the scene.
     std::sort(instances.begin(), instances.end(), draw_order_less);
 
-    vertices_.clear();
-    indices_.clear();
+    instances_.clear();
     batches_.clear();
 
     rhi::Texture* current_texture = nullptr;
     for (const render::SpriteInstance& instance : instances) {
         if (batches_.empty() || current_texture != instance.texture) {
-            batches_.push_back(Batch{instance.texture, static_cast<u32>(indices_.size()), 0});
+            batches_.push_back(Batch{instance.texture, static_cast<u32>(instances_.size()), 0});
             current_texture = instance.texture;
         }
-        append_quad(instance);
-        batches_.back().index_count += 6;
+        append_instance(instance);
+        batches_.back().instance_count += 1;
     }
 
     last_draw_calls_ = 0;
     const usize sprite_count = instances.size();
-    if (vertices_.empty()) {
+    if (instances_.empty()) {
         return sprite_count;
     }
 
-    ensure_capacity(device, static_cast<u32>(vertices_.size()), static_cast<u32>(indices_.size()));
+    ensure_capacity(device, static_cast<u32>(instances_.size()));
 
     // --- Upload and draw ---------------------------------------------------
-    vertex_buffer_->update(
-        std::span<const u8>(reinterpret_cast<const u8*>(vertices_.data()), vertices_.size() * sizeof(Vertex)));
-    index_buffer_->update(
-        std::span<const u8>(reinterpret_cast<const u8*>(indices_.data()), indices_.size() * sizeof(u32)));
+    // Only the instance buffer is re-uploaded per frame; the quad is static.
+    instance_buffer_->update(
+        std::span<const u8>(reinterpret_cast<const u8*>(instances_.data()), instances_.size() * sizeof(Instance)));
 
     device.set_blend_mode(rhi::BlendMode::Alpha);
     device.set_depth_test(false);
@@ -300,12 +355,19 @@ Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 view
     device.bind_shader(*shader_);
     shader_->set_mat4("u_view_projection", view_projection);
     shader_->set_int("u_texture", 0);
+    // The per-vertex buffer is bound first: bind_vertex_buffer disables attributes
+    // the previous pass left enabled (the per-instance ones), so it must run before
+    // the instance buffer re-enables them. The instance buffer is then bound per
+    // batch, at that batch's offset into the one shared upload.
     device.bind_vertex_buffer(*vertex_buffer_);
     device.bind_index_buffer(*index_buffer_);
 
     for (const Batch& batch : batches_) {
+        device.bind_instance_buffer(*instance_buffer_, batch.instance_offset * static_cast<u32>(sizeof(Instance)));
         device.bind_texture(0, *batch.texture);
-        device.draw_indexed(batch.index_count);
+        // Every batch shares the same six indices; only the instance range and
+        // the texture differ.
+        device.draw_indexed_instanced(static_cast<u32>(kQuadIndices.size()), batch.instance_count);
         ++last_draw_calls_;
     }
 

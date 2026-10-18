@@ -54,6 +54,13 @@ struct VertexAttribute {
     u32 location = 0;
     VertexFormat format = VertexFormat::Float3;
     u32 offset = 0;
+
+    // Advance this attribute once per instance rather than once per vertex. The
+    // backend sets the divisor from this, so an instanced pass binds one buffer
+    // of per-instance data and the shader reads it per instance. Zero is the
+    // ordinary per-vertex case and the default, so a layout that does not think
+    // about instancing is unaffected.
+    u32 divisor = 0;
 };
 
 // Describes how the bytes of a vertex are interpreted.
@@ -69,6 +76,40 @@ struct VertexLayout {
             {0, VertexFormat::Float2, 0},
             {1, VertexFormat::Float4, 8},
             {2, VertexFormat::Float2, 24},
+        };
+        return layout;
+    }
+
+    // The instanced sprite path uses two buffers and two layouts.
+    //
+    // `sprite_quad()` is the shared per-vertex stream: four unit-square corners in
+    // [-0.5, 0.5], drawn once and instanced. It replaces the old four
+    // world-space vertices and six indices per sprite with four vertices and six
+    // indices total, regardless of how many sprites are drawn.
+    [[nodiscard]] static VertexLayout sprite_quad() {
+        VertexLayout layout;
+        layout.stride = 2 * 4;
+        layout.attributes = {
+            {0, VertexFormat::Float2, 0, 0},
+        };
+        return layout;
+    }
+
+    // `sprite_instance()` is the per-instance stream, one record per sprite. The
+    // attributes are, in order: the world matrix's columns 0, 1, and 3, the tint,
+    // and the uv rectangle. Columns 0 and 1 arrive already scaled by the sprite's
+    // size, so the shader needs no separate size. Column 3 is the translation.
+    // Column 2 is omitted because a 2D transform never writes a world z, which is
+    // the same reason `transform_point` reads only rows 0-2.
+    [[nodiscard]] static VertexLayout sprite_instance() {
+        VertexLayout layout;
+        layout.stride = 5 * 16;
+        layout.attributes = {
+            {1, VertexFormat::Float4, 0, 1},  // world column 0 * size.x
+            {2, VertexFormat::Float4, 16, 1}, // world column 1 * size.y
+            {3, VertexFormat::Float4, 32, 1}, // world column 3 (translation)
+            {4, VertexFormat::Float4, 48, 1}, // colour
+            {5, VertexFormat::Float4, 64, 1}, // uv rectangle (u0, v0, u1, v1)
         };
         return layout;
     }

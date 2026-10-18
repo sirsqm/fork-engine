@@ -403,10 +403,23 @@ prove it and protect it. Plan and trade-offs: [`STRATEGY.md`](STRATEGY.md),
       resets it once per frame before the systems run, and hands it to every
       system through `FrameContext::arena` (nullable, like `resources`/`input`),
       with headless tests pinning the per-frame reset and the disabled path
-      ([ADR-0054](adr/0054-frame-loop-arena.md)). Moving the extraction seam onto
-      the arena is the follow-on
-- [ ] GPU efficiency: instancing, material batching, and a render-graph seam for
-      passes and post-processing
+      ([ADR-0054](adr/0054-frame-loop-arena.md)). The extraction seam is now
+      arena-backed as well: `extract_sprites_into`/`extract_tiles_into`/
+      `cull_sprites_in_place` write into a caller-sized span, take their parallel
+      scratch from the arena, and `Application::render_frame` runs the 2D pass
+      with no heap allocation, falling back to the heap path on overflow
+      ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md))
+- [x] Parallel physics broad phase: the uniform-grid insert is chunked across the
+      job pool (count-then-write, so the entry buffer and the resulting pair set
+      are byte-identical to the serial build), above a measured threshold
+      ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md))
+- [x] GPU efficiency: instancing — `Renderer2D` uploads the unit-square corners
+      once and a per-instance transform/UV/colour record per sprite, and issues
+      one indexed instanced draw per texture batch, with the per-vertex UV
+      convention preserved so the image is unchanged. Material batching is part of
+      the batch key already; a render-graph seam for passes and post-processing
+      remains
+      ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md))
 - [x] An in-editor profiler panel fed by the profiler data — `ProfilerPanel` +
       `ProfilerPanelViewModel` in `editor`; the editor owns an optional
       `core::Profiler`, brackets its own frame with it, and the panel draws the

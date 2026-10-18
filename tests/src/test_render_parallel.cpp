@@ -15,6 +15,7 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/core/FrameArena.h"
 #include "fe/core/Frustum.h"
 #include "fe/jobs/JobSystem.h"
 #include "fe/mesh/Mesh.h"
@@ -352,4 +353,104 @@ TEST_CASE("render() reports the same draw and cull counts with and without a poo
     CHECK(parallel.value() == serial.value());
     CHECK(parallel_renderer.last_culled() == serial_renderer.last_culled());
     CHECK(parallel_renderer.last_draw_calls() == serial_renderer.last_draw_calls());
+}
+
+// ---------------------------------------------------------------------------
+// Arena-backed extraction (ADR-0054 follow-on): identical output, no heap.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("arena-backed extraction matches the vector path, serial and parallel") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+    auto texture = make_solid_texture(device, 8, 8);
+
+    // Past the parallel threshold, so the arena path's count-then-write fan-out
+    // is exercised, not just its serial branch.
+    Scene scene;
+    add_sprite_grid(scene, texture, 4000);
+
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    std::vector<render::SpriteInstance> reference;
+    renderer.extract(scene, reference, nullptr);
+    REQUIRE(reference.size() == 4000);
+
+    const usize bound = render::sprite_instance_bound(scene);
+    REQUIRE(bound >= reference.size());
+
+    FrameArena arena(sizeof(render::SpriteInstance) * bound + (1u << 16));
+    std::vector<render::SpriteInstance> storage(bound);
+    const usize written = render::extract_sprites_into(arena, scene, storage, nullptr);
+
+    REQUIRE(written == reference.size());
+    // Exact equality: the arena path must produce the same instance in the same
+    // slot, or the draw reads different data.
+    for (usize i = 0; i < reference.size(); ++i) {
+        CHECK(storage[i] == reference[i]);
+    }
+
+    // The same must hold with a real pool, where the two-pass count/write runs.
+    JobSystem jobs(4);
+    FrameArena parallel_arena(sizeof(render::SpriteInstance) * bound + (1u << 16));
+    std::vector<render::SpriteInstance> parallel_storage(bound);
+    const usize parallel_written = render::extract_sprites_into(parallel_arena, scene, parallel_storage, &jobs);
+
+    REQUIRE(parallel_written == reference.size());
+    for (usize i = 0; i < reference.size(); ++i) {
+        CHECK(parallel_storage[i] == reference[i]);
+    }
+}
+
+TEST_CASE("arena-backed extraction respects a short output bound") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+    auto texture = make_solid_texture(device, 8, 8);
+
+    Scene scene;
+    add_sprite_grid(scene, texture, 64);
+
+    FrameArena arena(1u << 16);
+    std::vector<render::SpriteInstance> storage(10);
+    const usize written = render::extract_sprites_into(arena, scene, storage, nullptr);
+
+    // The bound is smaller than the scene, so exactly the bound is written and
+    // nothing past it is touched. This is the documented "the caller sizes it"
+    // contract, and it must not overrun.
+    CHECK(written == 10);
+}
+
+TEST_CASE("arena-backed cull keeps the same survivors as the vector cull") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+    auto texture = make_solid_texture(device, 8, 8);
+
+    Scene scene;
+    add_sprite_grid(scene, texture, 4000);
+
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    std::vector<render::SpriteInstance> extracted;
+    renderer.extract(scene, extracted, nullptr);
+
+    // The scene's own camera drives the view, so some sprites are in view and
+    // some are not: the cull must have both keep and drop cases to agree on.
+    const Frustum frustum = Frustum::from_view_projection(Camera2D{}.view_projection(640, 480));
+
+    std::vector<render::SpriteInstance> vector_survivors = extracted;
+    const usize dropped = renderer2d::Renderer2D::cull(vector_survivors, &frustum, nullptr);
+
+    FrameArena arena(sizeof(render::SpriteInstance) * extracted.size() + (1u << 16));
+    std::vector<render::SpriteInstance> storage = extracted;
+    const usize kept = render::cull_sprites_in_place(arena, storage, storage.size(), &frustum, nullptr);
+
+    REQUIRE(kept == vector_survivors.size());
+    CHECK(extracted.size() - kept == dropped);
+    for (usize i = 0; i < kept; ++i) {
+        CHECK(storage[i] == vector_survivors[i]);
+    }
 }

@@ -75,6 +75,7 @@ rather than editing it.
 | [0067](0067-debouncing-a-module-build.md) | Debouncing a gameplay-module build | Accepted |
 | [0068](0068-job-system.md) | A job system: thread pool, `parallel_for`, and a task graph | Accepted |
 | [0069](0069-parallel-extraction-and-culling.md) | Parallel extraction and culling | Accepted |
+| [0070](0070-instancing-arena-seam-and-parallel-broadphase.md) | Instancing, an arena-backed extraction seam, and a parallel broad phase | Accepted |
 
 ## Format
 

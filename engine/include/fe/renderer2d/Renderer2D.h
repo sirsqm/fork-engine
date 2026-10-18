@@ -9,10 +9,12 @@
 #include "fe/rhi/Device.h"
 
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace fe {
 
+class FrameArena;
 class JobSystem;
 class Scene;
 class Node;
@@ -44,15 +46,32 @@ namespace renderer2d {
 // future revision can sort by (layer, texture) and use a texture atlas to cut
 // draw calls further, without changing this interface.
 //
-// The renderer owns its GPU resources (one shader, one dynamic vertex buffer,
-// one dynamic index buffer) and grows the buffers on demand.
+// Instancing model: every sprite is one *instance* of a single shared quad, so a
+// batch uploads one per-instance record per sprite and issues one
+// `draw_indexed_instanced` call. The per-sprite CPU cost is the record (the
+// world transform's columns, the tint, and the uv rectangle) rather than four
+// transformed vertices and six indices, and the vertex and index buffers stop
+// growing with the sprite count entirely.
+//
+// The renderer owns its GPU resources (one shader, one static quad vertex
+// buffer, one dynamic instance buffer, one index buffer) and grows the instance
+// buffer on demand.
 class Renderer2D {
 public:
-    // The sprite vertex format: position (vec2), colour (vec4), uv (vec2).
+    // One corner of the shared unit quad. The quad is in [-0.5, 0.5] so the
+    // instance's world columns carry the sprite's size.
     struct Vertex {
         Vec2 position;
+    };
+
+    // One sprite, as the GPU reads it. The world columns are stored with the
+    // sprite's size already folded in, so the shader needs no separate size.
+    struct Instance {
+        Vec4 world_x; // World matrix column 0 * size.x.
+        Vec4 world_y; // World matrix column 1 * size.y.
+        Vec4 world_z; // World matrix column 3 (translation).
         Vec4 color;
-        Vec2 uv;
+        Vec4 uv; // (u0, v0, u1, v1).
     };
 
     Renderer2D();
@@ -80,6 +99,19 @@ public:
     // empty scene).
     [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
                                        JobSystem* jobs = nullptr);
+
+    // The arena-backed render. Identical output to the overload above, but the
+    // extraction output and the cull scratch come from `arena` instead of the
+    // heap, so a frame driven by the runtime's per-frame arena performs no heap
+    // allocation in the 2D pass (ADR-0054 follow-on).
+    //
+    // The arena does not grow, so this sizes its destination from
+    // `render::sprite_instance_bound(scene)` and treats a short arena as an
+    // expected condition: if the arena cannot satisfy the bound, it falls back to
+    // the heap path above, so the image is never wrong -- only the allocation
+    // profile differs. That keeps the optimisation invisible to correctness.
+    [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                       FrameArena& arena, JobSystem* jobs = nullptr);
 
     // Number of draw calls issued by the most recent render(). Exposed for the
     // example's on-screen statistics and for tests that assert batching.
@@ -109,11 +141,20 @@ public:
 
     // Step 3: build geometry from `instances`, upload, and issue draws. Returns
     // the number of sprites drawn. Does no culling; the caller has done it.
+    //
+    // Takes a span rather than a vector so the caller can hand it either a
+    // `std::vector` (which converts implicitly) or a slice of the frame arena.
     [[nodiscard]] Result<usize> draw(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
-                                     std::vector<render::SpriteInstance>& instances);
+                                     std::span<render::SpriteInstance> instances);
 
     [[nodiscard]] u32 vertex_capacity() const noexcept { return vertex_capacity_; }
     [[nodiscard]] u32 index_capacity() const noexcept { return index_capacity_; }
+
+    // Capacity of the per-instance buffer, in instances. The buffer that grows
+    // with the sprite count is this one now, not the vertex buffer: the quad is
+    // static, so `vertex_capacity()` is a fixed four and this is what a large
+    // scene grows. Exposed for tests and the editor's statistics.
+    [[nodiscard]] u32 instance_capacity() const noexcept { return instance_capacity_; }
 
     // Selects the camera that should drive rendering for `scene`: the first
     // camera with `primary` set, or the first camera found if none is primary,
@@ -129,24 +170,31 @@ public:
     [[nodiscard]] static Camera2D* find_active_camera(Scene& scene);
 
 private:
-    // One contiguous run of quads that share a texture.
+    // One contiguous run of instances that share a texture.
     struct Batch {
         rhi::Texture* texture = nullptr;
-        u32 index_offset = 0; // In indices.
-        u32 index_count = 0;
+        u32 instance_offset = 0; // First instance of the run, in the instance buffer.
+        u32 instance_count = 0;
     };
 
-    void ensure_capacity(rhi::Device& device, u32 vertex_count, u32 index_count);
-    void append_quad(const render::SpriteInstance& instance);
+    void ensure_capacity(rhi::Device& device, u32 instance_count);
+    void append_instance(const render::SpriteInstance& instance);
 
     rhi::ShaderRef shader_;
+    // The shared quad: four vertices and six indices, built once in initialize()
+    // and never changed. Instancing is what makes a fixed quad correct: every
+    // sprite is the same geometry, so the vertex and index buffers stop growing
+    // with the scene.
     rhi::BufferRef vertex_buffer_;
     rhi::BufferRef index_buffer_;
+    // The per-instance buffer. This is the dynamic one; it grows with the sprite
+    // count.
+    rhi::BufferRef instance_buffer_;
     u32 vertex_capacity_ = 0;
     u32 index_capacity_ = 0;
+    u32 instance_capacity_ = 0;
 
-    std::vector<Vertex> vertices_;
-    std::vector<u32> indices_;
+    std::vector<Instance> instances_;
     std::vector<Batch> batches_;
     u32 last_draw_calls_ = 0;
     u32 last_culled_ = 0;

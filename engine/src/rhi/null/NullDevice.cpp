@@ -162,6 +162,7 @@ public:
     void bind_shader(Shader&) override {}
     void bind_vertex_buffer(Buffer&) override {}
     void bind_index_buffer(Buffer&) override {}
+    void bind_instance_buffer(Buffer&, u32 = 0) override {}
     void bind_texture(u32, Texture&) override {}
 
     // The draw is counted nowhere: there is nothing to submit to. A caller that
@@ -169,6 +170,10 @@ public:
     // (Renderer2D::last_draw_calls(), Renderer3D::last_draw_calls()), which are
     // the same values an interactive run reports.
     void draw_indexed(u32) override {}
+
+    // Same: an instanced draw is inert here, so the renderer's counters are what
+    // prove submission, not the device.
+    void draw_indexed_instanced(u32, u32) override {}
 
     // There is no framebuffer to read back. The output buffer is left untouched
     // on purpose: a caller must not mistake "no pixels" for "black pixels". A

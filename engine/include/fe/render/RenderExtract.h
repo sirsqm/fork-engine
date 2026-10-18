@@ -6,10 +6,12 @@
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 
+#include <span>
 #include <vector>
 
 namespace fe {
 
+class FrameArena;
 class JobSystem;
 class Mesh;
 class MeshRenderer3D;
@@ -162,6 +164,43 @@ void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out, JobSy
 // result identical to serial.
 void extract_tiles(const Scene& scene, std::vector<SpriteInstance>& out, JobSystem* jobs = nullptr);
 
+// --- Arena-backed extraction (ADR-0054 follow-on) --------------------------
+//
+// The `std::vector` overloads above are correct and remain the default. These
+// write the same instances into a caller-supplied span backed by the frame
+// arena, so a frame can build its extraction output with no heap traffic at all.
+//
+// The trade is explicit: the caller must size the destination, because the arena
+// does not grow. `out.size()` bounds how many are written, and the return value is
+// how many were (which may be fewer than the scene holds if the bound was too
+// small). `out` is overwritten from the front; any elements past the returned
+// count are untouched.
+//
+// The parallel path writes the same values in the same order as the serial one,
+// and neither allocates from the heap: the per-chunk lists the vector path uses
+// would each be a heap allocation, so these paths count the instances first and
+// then write each chunk straight into its final slice of `out`. Any scratch the
+// parallel path needs (the flattened node list, the per-chunk counts) comes from
+// `arena` too, so the whole step stays off the heap.
+//
+// `jobs` behaves as it does above, including the thresholds. A null or
+// non-threaded pool always takes the serial path.
+usize extract_sprites_into(FrameArena& arena, const Scene& scene, std::span<SpriteInstance> out,
+                           JobSystem* jobs = nullptr);
+
+// Appends tiles into `out` starting at `offset`, returning the new end index. It
+// appends rather than overwrites for the same reason the vector overload does:
+// tiles and sprites share one array so the layer sort orders them together. Pass
+// the count `extract_sprites_into` returned as `offset`.
+usize extract_tiles_into(FrameArena& arena, const Scene& scene, std::span<SpriteInstance> out, usize offset,
+                         JobSystem* jobs = nullptr);
+
+// An upper bound on the number of sprite instances `scene` can produce: one
+// sprite per node, plus one per non-empty cell of every tilemap. A caller sizing
+// an arena destination uses this so the extraction can never overflow the span.
+// It walks the scene once and allocates nothing.
+[[nodiscard]] usize sprite_instance_bound(const Scene& scene);
+
 // Collects every drawable mesh instance in `scene` into `out` (cleared first).
 // Each referenced mesh is also appended to `meshes_seen` (never cleared here),
 // which the renderer's buffer sweep uses to decide liveness: a mesh that is
@@ -197,6 +236,18 @@ void extract_meshes(const Scene& scene, std::vector<MeshInstance>& out, std::vec
 // The AABB is derived from the sprite's resolved size, so a sprite larger than
 // the frustum is kept, as it must be.
 usize cull_sprites(std::vector<SpriteInstance>& instances, const Frustum* frustum, JobSystem* jobs = nullptr);
+
+// The arena-destination cull. `instances` is a fixed span (the extraction wrote
+// `used` of it); survivors are compacted to the front and the count kept is
+// returned. Nothing is resized and nothing is allocated on the heap: the parallel
+// visibility mask comes from `arena`, so a frame whose extraction came from the
+// arena stays off the heap end to end. A null `frustum` keeps everything and
+// returns `used`.
+//
+// The result is the same survivors in the same order as the vector overload:
+// compaction preserves relative order in both.
+usize cull_sprites_in_place(FrameArena& arena, std::span<SpriteInstance> instances, usize used, const Frustum* frustum,
+                            JobSystem* jobs = nullptr);
 
 // Culls meshes using each instance's precomputed world AABB.
 usize cull_meshes(std::vector<MeshInstance>& instances, const Frustum* frustum, JobSystem* jobs = nullptr);

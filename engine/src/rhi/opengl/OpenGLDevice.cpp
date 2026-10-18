@@ -537,12 +537,54 @@ public:
             return;
         }
         const VertexLayout& layout = it->second;
+        u32 keep_mask = 0;
         for (const VertexAttribute& attribute : layout.attributes) {
             glEnableVertexAttribArray(attribute.location);
             const GLint components = static_cast<GLint>(component_count(attribute.format));
             glVertexAttribPointer(attribute.location, components, GL_FLOAT, GL_FALSE,
                                   static_cast<GLsizei>(layout.stride),
                                   reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset)));
+            glVertexAttribDivisor(attribute.location, attribute.divisor);
+            keep_mask |= 1u << attribute.location;
+        }
+
+        // Disable any attribute a *previous* pass left enabled that this layout
+        // does not use. Without this, an instanced pass's per-instance attributes
+        // would stay live into the next, non-instanced pass and read whatever
+        // buffer happens to be bound. The instance buffer's bind deliberately
+        // does not do this (see bind_instance_buffer), so a caller binds the
+        // per-vertex buffer first and the per-instance buffer second.
+        for (u32 location = 0; location < kMaxVertexAttributes; ++location) {
+            const u32 bit = 1u << location;
+            if ((enabled_attributes_ & bit) != 0 && (keep_mask & bit) == 0) {
+                glDisableVertexAttribArray(static_cast<GLuint>(location));
+            }
+        }
+        enabled_attributes_ = keep_mask;
+    }
+
+    void bind_instance_buffer(Buffer& buffer, u32 byte_offset = 0) override {
+        auto& gl_buffer = static_cast<OpenGLBuffer&>(buffer);
+        glBindBuffer(GL_ARRAY_BUFFER, gl_buffer.handle());
+
+        const auto it = layouts_.find(gl_buffer.handle());
+        if (it == layouts_.end()) {
+            return;
+        }
+        // Only add: the per-vertex attributes configured by bind_vertex_buffer
+        // belong to the other buffer and must stay live. Each attribute's divisor
+        // comes from its layout, so this call is what turns a plain layout into an
+        // instanced one. The offset is applied per attribute, which is what lets
+        // one shared buffer hold every batch of the frame.
+        const VertexLayout& layout = it->second;
+        for (const VertexAttribute& attribute : layout.attributes) {
+            glEnableVertexAttribArray(attribute.location);
+            const GLint components = static_cast<GLint>(component_count(attribute.format));
+            glVertexAttribPointer(
+                attribute.location, components, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(layout.stride),
+                reinterpret_cast<const void*>(static_cast<std::uintptr_t>(byte_offset) + attribute.offset));
+            glVertexAttribDivisor(attribute.location, attribute.divisor);
+            enabled_attributes_ |= 1u << attribute.location;
         }
     }
 
@@ -565,6 +607,15 @@ public:
         glDrawElements(mode, static_cast<GLsizei>(index_count), GL_UNSIGNED_INT, nullptr);
     }
 
+    void draw_indexed_instanced(u32 index_count, u32 instance_count) override {
+        if (index_count == 0 || instance_count == 0) {
+            return;
+        }
+        const GLenum mode = topology_ == PrimitiveTopology::Lines ? GL_LINES : GL_TRIANGLES;
+        glDrawElementsInstanced(mode, static_cast<GLsizei>(index_count), GL_UNSIGNED_INT, nullptr,
+                                static_cast<GLsizei>(instance_count));
+    }
+
     void read_pixels(u32 x, u32 y, u32 width, u32 height, std::span<u8> out) override {
         if (out.size() < static_cast<usize>(width) * height * 4U) {
             return;
@@ -575,6 +626,9 @@ public:
     }
 
 private:
+    // The GL 3.3 core profile guarantees at least 16 vertex attribute slots.
+    static constexpr u32 kMaxVertexAttributes = 16;
+
     Window* window_;
     GLuint vao_ = 0;
     GLuint bound_shader_ = 0;
@@ -582,6 +636,11 @@ private:
     u32 default_framebuffer_width_ = 0;
     u32 default_framebuffer_height_ = 0;
     PrimitiveTopology topology_ = PrimitiveTopology::Triangles;
+    // Which attribute locations are currently enabled on the single VAO. Tracked
+    // so bind_vertex_buffer can disable the ones a previous pass enabled that the
+    // new layout does not use -- an instanced pass leaves its per-instance
+    // attributes live otherwise, and the next pass reads a stale buffer.
+    u32 enabled_attributes_ = 0;
     std::unordered_map<GLuint, VertexLayout> layouts_;
 };
 

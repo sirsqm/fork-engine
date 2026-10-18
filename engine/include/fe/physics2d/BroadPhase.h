@@ -8,7 +8,11 @@
 #include <span>
 #include <vector>
 
-namespace fe::physics2d {
+namespace fe {
+
+class JobSystem;
+
+namespace physics2d {
 
 // A candidate overlapping pair, as indices into the bounds array the broad phase
 // was built from. `first < second` always, so a pair has one canonical form and
@@ -64,7 +68,15 @@ public:
     // Deterministic: the output order depends only on the input order and the
     // geometry, never on hash iteration or address. Scratch buffers are reused,
     // so a steady-state rebuild allocates nothing.
-    void build(std::span<const Aabb2D> bounds);
+    //
+    // `jobs` is optional and defaults to null (serial). With a real, threaded
+    // `JobSystem` and enough bounds to pay for it (`kParallelBuildThreshold`),
+    // the insertion step -- the O(n * cells-per-body) part -- is chunked across
+    // workers, and the pair emission and sort run serially as before. The result
+    // is byte-for-byte identical to the serial build: the chunked inserts land in
+    // the same buffer in the same order, and every later step sees exactly the
+    // array the serial path would have produced.
+    void build(std::span<const Aabb2D> bounds, JobSystem* jobs = nullptr);
 
     // The candidate pairs, sorted by (first, second) index and de-duplicated.
     [[nodiscard]] std::span<const BroadPhasePair> pairs() const noexcept { return pairs_; }
@@ -84,9 +96,17 @@ private:
 
     [[nodiscard]] static u64 cell_key(i32 x, i32 y) noexcept;
 
+    // The bound count at or above which a supplied `JobSystem` is used for the
+    // insertion step. Below it the serial path runs even with a pool: the fan-out
+    // is a fixed cost a small world does not repay, and the grid is already cheap
+    // there. The value matches the extraction threshold -- both are per-body walks
+    // with a similar per-item cost -- and is deliberately conservative.
+    static constexpr usize kParallelBuildThreshold = 1024;
+
     std::vector<CellEntry> entries_;
     std::vector<BroadPhasePair> pairs_;
     f32 cell_size_ = kMinCellSize;
 };
 
-} // namespace fe::physics2d
+} // namespace physics2d
+} // namespace fe
