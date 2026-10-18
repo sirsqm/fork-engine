@@ -92,12 +92,6 @@ constexpr std::array<Vec2, 4> kQuadCorners = {
     Vec2{0.5f, 0.5f},
     Vec2{-0.5f, 0.5f},
 };
-constexpr std::array<Vec2, 4> kQuadUVs = {
-    Vec2{0.0f, 0.0f},
-    Vec2{1.0f, 0.0f},
-    Vec2{1.0f, 1.0f},
-    Vec2{0.0f, 1.0f},
-};
 constexpr std::array<u32, 6> kQuadIndices = {0, 1, 2, 2, 3, 0};
 
 } // namespace
