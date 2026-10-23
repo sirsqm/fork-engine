@@ -47,7 +47,7 @@ struct Options {
     std::string pack_name;            // pack file name inside the output directory
     std::string scene_key;            // key the scene is stored under; default: project-relative
     std::vector<std::string> modules; // gameplay modules to copy in and record
-    bool prune = false;               // pack only what the startup scene references
+    bool prune = true;                // pack only what the startup scene references
     bool verbose = false;
 };
 
@@ -158,7 +158,7 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
 
 void print_usage() {
     std::puts("usage: fork_export --project DIR --out DIR [--player PATH] [--pack-name NAME]\n"
-              "                   [--scene-key PATH] [--module PATH ...] [--prune]\n"
+              "                   [--scene-key PATH] [--module PATH ...] [--no-prune]\n"
               "\n"
               "  --project DIR    a project directory or fork.project.json file\n"
               "  --out DIR        the directory to write the build into\n"
@@ -166,8 +166,9 @@ void print_usage() {
               "  --pack-name NAME the pack file's name (default: game.fepack)\n"
               "  --scene-key PATH the scene's key inside the pack (default: project-relative)\n"
               "  --module PATH    a gameplay module to copy in and record (repeatable)\n"
-              "  --prune          pack only the assets the startup scene references,\n"
-              "                   instead of the whole tree (ADR-0065)\n"
+              "  --no-prune       pack the whole asset tree instead of only the\n"
+              "                   assets the startup scene references. Pruning is\n"
+              "                   the default (ADR-0065)\n"
               "  --verbose        log at debug level");
 }
 
@@ -189,6 +190,8 @@ void print_usage() {
             out.modules.emplace_back(argv[++i]);
         } else if (arg == "--prune") {
             out.prune = true;
+        } else if (arg == "--no-prune") {
+            out.prune = false;
         } else if (arg == "--verbose") {
             out.verbose = true;
         } else if (arg == "--help" || arg == "-h") {

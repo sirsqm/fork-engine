@@ -19,6 +19,9 @@
 // With --project the asset root, the startup scene, and the scene's key in the
 // pack all come from the project file. The explicit form packs a bare tree, for
 // a caller that has no project file.
+//
+// Pruning is the default (ADR-0065): only the startup scene and the assets it
+// references are packed. Pass --no-prune to pack the whole asset tree.
 
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
@@ -47,7 +50,7 @@ struct Options {
     std::string scene;     // startup scene path, in the explicit form
     std::string scene_key; // key the scene is stored under in the pack
     std::string out;       // output pack path
-    bool prune = false;    // pack only what the startup scene references
+    bool prune = true;     // pack only what the startup scene references
     bool verbose = false;
 };
 
@@ -139,16 +142,17 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
 }
 
 void print_usage() {
-    std::puts("usage: fork_pack --project DIR --out FILE [--prune]\n"
-              "       fork_pack --assets DIR --scene FILE --out FILE [--scene-key PATH] [--prune]\n"
+    std::puts("usage: fork_pack --project DIR --out FILE [--no-prune]\n"
+              "       fork_pack --assets DIR --scene FILE --out FILE [--scene-key PATH] [--no-prune]\n"
               "\n"
               "  --project DIR     a project directory or fork.project.json file\n"
               "  --assets DIR      the asset root to pack (explicit form)\n"
               "  --scene FILE      the startup scene to pack (explicit form)\n"
               "  --scene-key PATH  the key the scene is stored under in the pack\n"
               "                    (default: the scene path relative to the asset root)\n"
-              "  --prune           pack only the assets the startup scene references,\n"
-              "                    instead of the whole tree (ADR-0065)\n"
+              "  --no-prune        pack the whole asset tree instead of only the\n"
+              "                    assets the startup scene references. Pruning is\n"
+              "                    the default (ADR-0065)\n"
               "  --out FILE        the pack file to write\n"
               "  --verbose         log at debug level");
 }
@@ -169,6 +173,8 @@ void print_usage() {
             out.out = argv[++i];
         } else if (arg == "--prune") {
             out.prune = true;
+        } else if (arg == "--no-prune") {
+            out.prune = false;
         } else if (arg == "--verbose") {
             out.verbose = true;
         } else if (arg == "--help" || arg == "-h") {

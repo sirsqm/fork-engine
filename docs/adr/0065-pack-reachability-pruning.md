@@ -75,19 +75,19 @@ what a loader asks for once mounted ([ADR-0030](0030-asset-pack-format.md)).
 ### The filter
 
 `PackWriter` gains a `PackOptions { bool prune; std::vector<std::string> include; }`.
-The default (`prune == false`) packs the whole tree, exactly as before, so every
-existing caller is unaffected. When pruning, only the listed paths are packed;
+The writer's own default (`prune == false`) packs the whole tree, exactly as
+before, so every existing caller is unaffected; the tools choose pruning. When pruning, only the listed paths are packed;
 the startup scene is always packed because it is the entry point. The writer still
 does not parse a scene: it receives a list of paths.
 
 ### The caller
 
-The tools (`fork_pack`, `fork_export`) gain `--prune`. Each reads the startup
-scene as text, traces it, resolves each reference, and passes the paths to the
-writer. A reference that resolves to neither an indexed asset nor a file present
-under the pack root is a hard error: shipping a build whose scene names an asset
-that is not in it produces a game that runs until it draws, which is worse than a
-failed pack. An unimported asset (a file with no sidecar) still resolves by path,
+The tools (`fork_pack`, `fork_export`) prune by default and take `--no-prune` to
+pack the whole tree. Each reads the startup scene as text, traces it, resolves
+each reference, and passes the paths to the writer. A reference that resolves to
+neither an indexed asset nor a file present under the pack root is a hard error:
+shipping a build whose scene names an asset that is not in it produces a game
+that runs until it draws, which is worse than a failed pack. An unimported asset (a file with no sidecar) still resolves by path,
 because the unpruned writer packs it too.
 
 ## Consequences
@@ -101,9 +101,9 @@ because the unpruned writer packs it too.
   loaded at pack time is covered by the string-candidate rule, at the cost of
   resolving every script string against the database. That is cheap (a hash
   lookup each) and safe (a miss is discarded).
-- Pruning is opt-in. A game that loads an asset only from runtime code the packer
-  cannot see passes `--prune` at its own risk, or names the extra path; the
-  default keeps the old, whole-tree behaviour.
+- Pruning is the tools' default; `--no-prune` keeps the old, whole-tree
+  behaviour. A game that loads an asset only from runtime code the packer cannot
+  see opts out at its own risk, or names the extra path.
 - **Not done:** transitive references. A packed asset that itself names another
   asset (a glTF that references an external `.bin` or image) is not followed, so
   pruning can drop a file such a loader would ask for. The default (no pruning)
