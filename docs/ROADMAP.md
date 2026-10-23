@@ -272,7 +272,7 @@ is the expensive one, and it waits.
       hot-reload without restarting the editor — a module is a shared library
       that registers behaviours through a versioned entry point
       (`ScriptModuleApi.h`); `ScriptLibrary` opens it through the platform layer's
-      new `DynamicLibrary` seam (the deferred "dynamic libraries" row of
+      new `DynamicLibrary` seam (the "dynamic libraries" row of
       [ADR-0041](adr/0041-platform-contract-and-null-backend.md)) and reloads it
       by destroying the live scripts first and rebinding them to the new code
       ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic
@@ -318,8 +318,9 @@ use, not merely that the editor runs on several OSes. Plan and trade-offs:
 - [x] Headless rendering: a null RHI device so the render extraction, batching,
       and draw submission run with no context, selected by an explicit
       `Engine::Config::headless_render` opt-in ([ADR-0042](adr/0042-null-rhi-device.md)).
-- [ ] The touch/gamepad, dynamic-library, and suspend/resume rows of the
-      platform contract, each implemented behind the existing seam
+- [ ] The touch/gamepad and suspend/resume rows of the platform contract, each
+      implemented behind the existing seam (the dynamic-library row landed with
+      `platform::DynamicLibrary`, [ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md))
 - [x] Asset packaging: a versioned pack format (`PackFile`), a writer that turns
       a project's asset tree and startup scene into one file, and a `PackSource`
       the runtime mounts so the loaders and the scene reader read from a pack as

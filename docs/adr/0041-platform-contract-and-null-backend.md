@@ -51,7 +51,7 @@ whether it is implemented now.
 | Filesystem | `core::fs` (+ `resources::ResourceSource`, `pack::PackSource`) | Implemented |
 | Threads | `core` (std only); the `jobs` module (`JobSystem`, ADR-0068) | Implemented |
 | Time | `runtime::Engine` (steady clock); `platform` is where a backend would inject it | Implemented, but in the runtime |
-| Dynamic libraries | — | Deferred |
+| Dynamic libraries | `platform::DynamicLibrary` ([ADR-0061](0061-cpp-gameplay-modules-hot-reload.md)) | Implemented |
 | Lifecycle (init/shutdown) | `Window::create`/destructor; `Engine::initialize`/`shutdown` | Implemented |
 | Lifecycle (suspend/resume, orientation) | — | Deferred (mobile) |
 
@@ -129,9 +129,9 @@ concrete need in hand, not before.
   succeed.
 - **The renderer path is unchanged.** An interactive run still creates a GLFW
   window and an OpenGL context, byte for byte as before.
-- **The audit is a living document.** Deferred rows (touch/gamepad, dynamic
-  libraries, suspend/resume) are named so they are planned, not forgotten, and
-  the module graph does not change: the null backend is still `platform`.
+- **The audit is a living document.** Deferred rows (touch/gamepad,
+  suspend/resume) are named so they are planned, not forgotten, and the module
+  graph does not change: the null backend is still `platform`.
 - **The graphics tests still skip cleanly without a context**, and the headless
   path is proven by tests that run with no display.
 
