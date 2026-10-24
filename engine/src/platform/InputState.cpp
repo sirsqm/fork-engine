@@ -11,6 +11,16 @@ void InputState::begin_frame() noexcept {
     keys_released_.fill(false);
     buttons_pressed_.fill(false);
     buttons_released_.fill(false);
+    for (TouchPoint& touch : touches_) {
+        // A slot whose contact ended last frame is freed here, after the end
+        // edge has been observable for one frame.
+        if (touch.ended) {
+            touch = TouchPoint{};
+            continue;
+        }
+        touch.began = false;
+        touch.delta = Vec2{};
+    }
     mouse_delta_ = Vec2{};
     scroll_delta_ = Vec2{};
 }
@@ -55,6 +65,82 @@ void InputState::on_scroll(f32 dx, f32 dy) noexcept {
     scroll_delta_ = Vec2{scroll_delta_.x + dx, scroll_delta_.y + dy};
 }
 
+usize InputState::find_touch(u32 id) const noexcept {
+    for (usize slot = 0; slot < kMaxTouchPoints; ++slot) {
+        if (touches_[slot].active && touches_[slot].id == id) {
+            return slot;
+        }
+    }
+    return kMaxTouchPoints;
+}
+
+void InputState::on_touch(TouchPhase phase, u32 id, f32 x, f32 y) noexcept {
+    FE_CHECK(phase == TouchPhase::Began || phase == TouchPhase::Moved || phase == TouchPhase::Ended);
+    usize slot = find_touch(id);
+    // A slot is reused only for a fresh contact, so a Began for an id we do not
+    // track (or one that ended earlier this frame) starts a new contact.
+    if (phase == TouchPhase::Began) {
+        if (slot == kMaxTouchPoints) {
+            for (usize candidate = 0; candidate < kMaxTouchPoints; ++candidate) {
+                if (!touches_[candidate].active) {
+                    slot = candidate;
+                    break;
+                }
+            }
+            if (slot == kMaxTouchPoints) {
+                return; // More simultaneous contacts than we track; drop the extra.
+            }
+        }
+        TouchPoint& fresh = touches_[slot];
+        fresh = TouchPoint{};
+        fresh.id = id;
+        fresh.active = true;
+        fresh.down = true;
+        fresh.began = true;
+        fresh.position = Vec2{x, y};
+        return;
+    }
+
+    // A Moved/Ended for an id we never saw is ignored.
+    if (slot == kMaxTouchPoints) {
+        return;
+    }
+    TouchPoint& touch = touches_[slot];
+    const Vec2 previous = touch.position;
+    touch.position = Vec2{x, y};
+    touch.delta =
+        Vec2{touch.delta.x + (touch.position.x - previous.x), touch.delta.y + (touch.position.y - previous.y)};
+    if (phase == TouchPhase::Ended) {
+        touch.down = false;
+        touch.ended = true;
+    }
+}
+
+bool InputState::is_touch_down(u32 id) const noexcept {
+    const usize slot = find_touch(id);
+    return slot != kMaxTouchPoints && touches_[slot].down;
+}
+
+bool InputState::was_touch_began(u32 id) const noexcept {
+    const usize slot = find_touch(id);
+    return slot != kMaxTouchPoints && touches_[slot].began;
+}
+
+bool InputState::was_touch_ended(u32 id) const noexcept {
+    const usize slot = find_touch(id);
+    return slot != kMaxTouchPoints && touches_[slot].ended;
+}
+
+Vec2 InputState::touch_position(u32 id) const noexcept {
+    const usize slot = find_touch(id);
+    return slot != kMaxTouchPoints ? touches_[slot].position : Vec2{};
+}
+
+Vec2 InputState::touch_delta(u32 id) const noexcept {
+    const usize slot = find_touch(id);
+    return slot != kMaxTouchPoints ? touches_[slot].delta : Vec2{};
+}
+
 bool InputState::is_key_down(Key key) const noexcept {
     return keys_down_[index_of(key)];
 }
@@ -82,6 +168,9 @@ bool InputState::was_mouse_released(MouseButton button) const noexcept {
 void InputState::release_all() noexcept {
     keys_down_.fill(false);
     buttons_down_.fill(false);
+    for (TouchPoint& touch : touches_) {
+        touch.down = false;
+    }
 }
 
 } // namespace fe

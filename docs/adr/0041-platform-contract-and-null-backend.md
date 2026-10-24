@@ -46,7 +46,7 @@ whether it is implemented now.
 | --- | --- | --- |
 | Window / surface | `platform::Window` (GLFW backend) | Implemented |
 | Input: keyboard, mouse, scroll | `platform::InputState`, fed by the window backend | Implemented |
-| Input: touch, gamepad | — | Deferred; see "Where touch and gamepad attach" |
+| Input: touch, gamepad | Touch: `platform::InputState` (`on_touch` + id-keyed queries); gamepad: — | Touch implemented (no backend feeds it yet); gamepad deferred; see "Where touch and gamepad attach" |
 | Graphics context | `rhi::Device` + `Window::get_proc_address` | Implemented (OpenGL 3.3 core) |
 | Filesystem | `core::fs` (+ `resources::ResourceSource`, `pack::PackSource`) | Implemented |
 | Threads | `core` (std only); the `jobs` module (`JobSystem`, ADR-0068) | Implemented |
@@ -73,8 +73,14 @@ attach to the existing seam rather than a new one:
   enum values, not native codes), so touch and gamepad map onto the same queries.
 - Nothing above `platform` branches on which device produced a value.
 
-That is the whole design; this ADR does not implement it. It is recorded here so
-the null backend and the GLFW backend are shaped to accept it without a rewrite.
+The touch half has landed: `InputState::on_touch(TouchPhase, u32 id, x, y)`
+takes a contact id and a `Began`/`Moved`/`Ended` phase, and the id-keyed queries
+`is_touch_down`/`was_touch_began`/`was_touch_ended`/`touch_position`/
+`touch_delta` read it back. The edge state is cleared by `begin_frame()` exactly
+as the mouse path's is. No backend feeds it yet — the null backend stays empty
+by construction and the GLFW backend does not yet translate native touch events
+— so the API is the recorded seam, not a shipped device path. Gamepad is still
+deferred and is the remaining half of this row.
 
 ### The null backend
 
@@ -129,7 +135,7 @@ concrete need in hand, not before.
   succeed.
 - **The renderer path is unchanged.** An interactive run still creates a GLFW
   window and an OpenGL context, byte for byte as before.
-- **The audit is a living document.** Deferred rows (touch/gamepad,
+- **The audit is a living document.** Deferred rows (gamepad,
   suspend/resume) are named so they are planned, not forgotten, and the module
   graph does not change: the null backend is still `platform`.
 - **The graphics tests still skip cleanly without a context**, and the headless

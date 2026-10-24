@@ -318,9 +318,11 @@ use, not merely that the editor runs on several OSes. Plan and trade-offs:
 - [x] Headless rendering: a null RHI device so the render extraction, batching,
       and draw submission run with no context, selected by an explicit
       `Engine::Config::headless_render` opt-in ([ADR-0042](adr/0042-null-rhi-device.md)).
-- [ ] The touch/gamepad and suspend/resume rows of the platform contract, each
-      implemented behind the existing seam (the dynamic-library row landed with
-      `platform::DynamicLibrary`, [ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md))
+- [ ] The gamepad and suspend/resume rows of the platform contract, each
+      implemented behind the existing seam. Touch has landed on the existing
+      `InputState` seam (`on_touch` plus id-keyed begin/update/end queries, with
+      no backend feeding it yet), the dynamic-library row landed with
+      `platform::DynamicLibrary`, [ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)
 - [x] Asset packaging: a versioned pack format (`PackFile`), a writer that turns
       a project's asset tree and startup scene into one file, and a `PackSource`
       the runtime mounts so the loaders and the scene reader read from a pack as
