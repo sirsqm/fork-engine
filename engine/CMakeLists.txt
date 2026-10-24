@@ -119,6 +119,7 @@ set(FE_ENGINE_SOURCES
     src/pack/PackFile.cpp
     src/pack/PackWriter.cpp
     src/pack/PackSource.cpp
+    src/pack/HttpFetchSource.cpp
     src/pack/ExportManifest.cpp
     src/serialization/Json.cpp
     src/serialization/PropertyJson.cpp

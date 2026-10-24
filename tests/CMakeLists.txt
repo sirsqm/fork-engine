@@ -38,6 +38,7 @@ add_executable(fork_engine_tests
     src/test_scene3d.cpp
     src/test_audio.cpp
     src/test_pack.cpp
+    src/test_pack_fetch.cpp
     src/test_resource_manager.cpp
     src/test_resource_reload.cpp
     src/test_asset_database.cpp
