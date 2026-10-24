@@ -78,6 +78,7 @@ rather than editing it.
 | [0070](0070-instancing-arena-seam-and-parallel-broadphase.md) | Instancing, an arena-backed extraction seam, and a parallel broad phase | Accepted |
 | [0071](0071-web-first-2d-shipping-path.md) | Shipping a 2D game to every platform — the web-first critical path | Accepted |
 | [0072](0072-glsl-dialect-seam.md) | A GLSL dialect translation seam in the RHI | Accepted |
+| [0073](0073-emscripten-toolchain.md) | The Emscripten toolchain and the web platform macro | Accepted |
 
 ## Format
 

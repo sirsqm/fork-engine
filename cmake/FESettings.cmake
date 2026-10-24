@@ -26,15 +26,14 @@ endif()
 # Symbol visibility: modules are linked statically for now, but the macro is
 # already in place so a future shared-library build is a configuration change,
 # not a source change.
-add_compile_definitions(FE_PLATFORM_DESKTOP=1)
-
-if(UNIX AND NOT APPLE)
-  add_compile_definitions(FE_PLATFORM_LINUX=1)
-elseif(APPLE)
-  add_compile_definitions(FE_PLATFORM_MACOS=1)
-elseif(WIN32)
-  add_compile_definitions(FE_PLATFORM_WINDOWS=1)
-endif()
+#
+# The platform macros live in FEPlatform.cmake, which classifies the target from
+# CMAKE_SYSTEM_NAME so a cross build (the Emscripten/web target) is classified
+# correctly, and defines exactly one of FE_PLATFORM_DESKTOP / FE_PLATFORM_WEB.
+# Keeping detection there is what lets cmake/tests/test_fe_platform.cmake drive it
+# in script mode; this file stays the place that applies the result.
+include(FEPlatform)
+fe_apply_platform_definitions()
 
 # Warnings-as-errors is applied through the fe_warnings interface target (see
 # FEWarnings.cmake), not here, so it cannot leak into third-party targets.

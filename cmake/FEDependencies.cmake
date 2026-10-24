@@ -26,46 +26,64 @@ set(FE_DOCTEST_TAG "v2.4.12" CACHE STRING "Pinned doctest release tag")
 # other, is used.
 set(FE_IMGUI_TAG "v1.92.9-docking" CACHE STRING "Pinned Dear ImGui docking tag")
 
+# FEPlatform is included before anything else so the platform macros are defined
+# and `fe_platform_is_web()` is available here; it is a no-op if FESettings
+# already included it.
+include(FEPlatform)
+
 # ---------------------------------------------------------------------------
 # glad - OpenGL function loader (vendored, generated once, committed).
 # ---------------------------------------------------------------------------
 # The generated loader is checked in so the build never needs Python, jinja2,
 # or network access. Regeneration instructions live in third_party/glad/README.md.
-add_library(glad_gl_core_33 STATIC "${PROJECT_SOURCE_DIR}/third_party/glad/src/gl.c")
-add_library(FE::glad ALIAS glad_gl_core_33)
-# SYSTEM so the generated loader headers do not warn inside our translation
-# units (their style is not ours to fix).
-target_include_directories(glad_gl_core_33 SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/glad/include")
-target_link_libraries(glad_gl_core_33 PUBLIC ${CMAKE_DL_LIBS})
-# Vendored C code: silence warnings we do not own.
-if(NOT MSVC)
-  target_compile_options(glad_gl_core_33 PRIVATE -w)
+#
+# glad is desktop-only. WebGL2 supplies its own entry points, so a web build
+# neither links the loader nor asks for it: a target that resolved GL symbols
+# through glad would fail to link for wasm, and the whole point of the web
+# target is that it takes the WebGL2 path (docs/adr/0073-emscripten-toolchain.md).
+fe_platform_is_web(FE_TARGETS_WEB)
+if(NOT FE_TARGETS_WEB)
+  add_library(glad_gl_core_33 STATIC "${PROJECT_SOURCE_DIR}/third_party/glad/src/gl.c")
+  add_library(FE::glad ALIAS glad_gl_core_33)
+  # SYSTEM so the generated loader headers do not warn inside our translation
+  # units (their style is not ours to fix).
+  target_include_directories(glad_gl_core_33 SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/glad/include")
+  target_link_libraries(glad_gl_core_33 PUBLIC ${CMAKE_DL_LIBS})
+  # Vendored C code: silence warnings we do not own.
+  if(NOT MSVC)
+    target_compile_options(glad_gl_core_33 PRIVATE -w)
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------
 # GLFW - windowing, input, and the OpenGL context (platform layer backend).
 # ---------------------------------------------------------------------------
+# GLFW is the *desktop* windowing backend. It cannot be compiled to wasm, so a
+# web build skips it entirely and takes the web window backend instead (a later
+# queue item); the platform layer's OS-free modules still compile.
 set(FE_GLFW_TARGET "")
-if(FE_USE_SYSTEM_DEPS)
-  find_package(glfw3 3.4 QUIET)
-  if(TARGET glfw)
+if(NOT FE_TARGETS_WEB)
+  if(FE_USE_SYSTEM_DEPS)
+    find_package(glfw3 3.4 QUIET)
+    if(TARGET glfw)
+      set(FE_GLFW_TARGET glfw)
+    endif()
+  endif()
+
+  if(NOT FE_GLFW_TARGET)
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+      glfw
+      GIT_REPOSITORY https://github.com/glfw/glfw.git
+      GIT_TAG ${FE_GLFW_TAG}
+      GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(glfw)
     set(FE_GLFW_TARGET glfw)
   endif()
-endif()
-
-if(NOT FE_GLFW_TARGET)
-  set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-  set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-  set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-  set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    glfw
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG ${FE_GLFW_TAG}
-    GIT_SHALLOW TRUE
-  )
-  FetchContent_MakeAvailable(glfw)
-  set(FE_GLFW_TARGET glfw)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -94,7 +112,7 @@ endif()
 # headers are marked SYSTEM so that including them from our translation units
 # never produces diagnostics we cannot fix.
 fe_mark_system(${FE_JSON_TARGET})
-fe_mark_system(glfw)
+fe_mark_system(${FE_GLFW_TARGET})
 
 # ---------------------------------------------------------------------------
 # stb_image - image decoding (single-header, public domain).

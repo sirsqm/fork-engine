@@ -106,6 +106,17 @@ set_source_files_properties(src/test_profiler_disabled.cpp PROPERTIES COMPILE_DE
 
 add_test(NAME engine_tests COMMAND fork_engine_tests)
 
+# Platform classification (cmake/FEPlatform.cmake) is a pure function, but the
+# desktop configure never takes the web branch, so it is tested by driving it in
+# CMake's script mode rather than by building. It is the one test that pins the
+# web target's classification down without an Emscripten toolchain installed.
+add_test(
+  NAME platform_detection
+  COMMAND
+    ${CMAKE_COMMAND} -DFE_PLATFORM_CMAKE=${CMAKE_SOURCE_DIR}/cmake/FEPlatform.cmake -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_fe_platform.cmake
+)
+
 # ---------------------------------------------------------------------------
 # Editor tests.
 #
