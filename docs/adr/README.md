@@ -76,6 +76,7 @@ rather than editing it.
 | [0068](0068-job-system.md) | A job system: thread pool, `parallel_for`, and a task graph | Accepted |
 | [0069](0069-parallel-extraction-and-culling.md) | Parallel extraction and culling | Accepted |
 | [0070](0070-instancing-arena-seam-and-parallel-broadphase.md) | Instancing, an arena-backed extraction seam, and a parallel broad phase | Accepted |
+| [0071](0071-web-first-2d-shipping-path.md) | Shipping a 2D game to every platform — the web-first critical path | Accepted |
 
 ## Format
 
