@@ -103,7 +103,9 @@ public:
 
         sockaddr_in address{};
         address.sin_family = AF_INET;
-        address.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+        // Unqualified: on macOS htonl/ntohs are macros from <sys/_endian.h>,
+        // so a `::` prefix does not parse. They are plain functions elsewhere.
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         address.sin_port = 0; // let the OS choose a free port
         if (::bind(listener_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
             test_close(listener_);
@@ -122,7 +124,7 @@ public:
             listener_ = kNoSocket;
             return;
         }
-        port_ = ::ntohs(bound.sin_port);
+        port_ = ntohs(bound.sin_port);
         thread_ = std::thread([this] { serve(); });
     }
 
@@ -226,7 +228,11 @@ private:
     std::atomic<bool> stop_{false};
     std::thread thread_;
     std::vector<std::pair<std::string, std::vector<u8>>> files_;
+#if defined(_WIN32)
+    // Only Windows needs WSAStartup/WSACleanup, so the flag is declared only
+    // there; elsewhere it would be an unused private field (-Wunused-private-field).
     bool wsa_started_ = false;
+#endif
 };
 
 } // namespace

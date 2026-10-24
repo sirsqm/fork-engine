@@ -182,5 +182,13 @@ target_link_libraries(fork_engine PRIVATE fe_warnings)
 find_package(Threads REQUIRED)
 target_link_libraries(fork_engine PUBLIC Threads::Threads)
 
+# The HTTP fetch source talks to a socket, which on Windows lives in Winsock.
+# Winsock is not part of the default link set, so an unreferenced winsock call
+# fails at link time with LNK2019 (__imp_accept, __imp_send, ...). Linked PUBLIC
+# because a consumer (a game, or the test that serves a pack) opens sockets too.
+if(WIN32)
+  target_link_libraries(fork_engine PUBLIC ws2_32)
+endif()
+
 # Generated version header; engine sources include it, so they must wait for it.
 target_sources(fork_engine PRIVATE "${CMAKE_BINARY_DIR}/generated/fe/version/Version.h")
