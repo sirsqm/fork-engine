@@ -211,6 +211,57 @@ jobs:
           clang-format --dry-run --Werror $files
 
   # ---------------------------------------------------------------------------
+  # Web target.
+  #
+  # Two things have to hold for the shipping path (ADR-0071): the engine must
+  # *build* for wasm, and the web window backend must actually obtain a WebGL2
+  # context in a browser. The first is a compile of the whole library with the
+  # Emscripten toolchain; the second is the smoke test, which compiles the real
+  # backend sources to wasm and runs them in headless Chromium with SwiftShader,
+  # so it needs no GPU.
+  #
+  # This job is why a web regression is caught at the point it is introduced
+  # rather than several queue items later, which is how the two CMake bugs this
+  # change fixes survived ADR-0073's own tests.
+  # ---------------------------------------------------------------------------
+  web:
+    name: Web / Emscripten / wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The runner images' Chrome is the dependable way to get a headless
+      # browser here: the Ubuntu `chromium` apt package is a snap stub on recent
+      # images and does not install cleanly. The action exports the binary's
+      # path, which is handed to the smoke script.
+      - name: Set up Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          # Pinned to the version the smoke test is verified against. `latest`
+          # would let an upstream emsdk release turn this job red with no change
+          # on our side, which is exactly the kind of failure the shipping
+          # automation must not inherit.
+          "$HOME/emsdk/emsdk" install 6.0.13
+          "$HOME/emsdk/emsdk" activate 6.0.13
+      - name: Build the engine for wasm
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh"
+          cmake -S . -B build-web \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/emscripten.cmake \
+            -DFE_BUILD_EXAMPLES=OFF
+          cmake --build build-web -j"$(nproc)"
+      - name: Run the web window smoke test in a headless browser
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh"
+          tests/web/run_web_smoke.sh
+
+  # ---------------------------------------------------------------------------
   # Sanitizers.
   #
   # A Debug build with -DFE_ENABLE_ASAN=ON (AddressSanitizer + UndefinedBehavior

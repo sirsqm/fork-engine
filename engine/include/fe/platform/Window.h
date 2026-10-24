@@ -24,6 +24,11 @@ enum class WindowBackend : u8 {
     // No OS and no graphics context. For CI, dedicated servers, and
     // deterministic tests that run with no display.
     Null,
+    // The web backend: an HTML canvas with a WebGL2 context, no GLFW. Selected
+    // by a web build (FE_PLATFORM_WEB), where GLFW cannot be compiled at all.
+    // Unlike Null this *does* own a graphics context, so a device is created for
+    // it; see docs/adr/0074-web-window-backend.md.
+    Web,
 };
 
 // Parameters for creating a window. Sensible defaults let a caller create a
@@ -45,17 +50,33 @@ struct WindowDesc {
     // Which backend to create. GLFW (the default) is the interactive path; Null
     // is a window with no OS surface and no graphics context, for a run with no
     // display. A Null window reports `has_context() == false`, so the runtime
-    // knows not to create a device.
+    // knows not to create a device. Web is the canvas-backed browser backend,
+    // available only in a web build.
     WindowBackend backend = WindowBackend::GLFW;
+
+    // The CSS selector of the canvas to render into, for the web backend only.
+    // Ignored by every other backend, which have their own surface. A web build
+    // defaults to "#canvas" and creates the element if the page has not, so a
+    // shell that provides its own canvas only needs this when it uses another
+    // id.
+    std::string canvas = "#canvas";
 };
 
 // An operating-system window with an associated graphics context.
 //
-// This is the only place in the engine that talks to a windowing library.
-// GLFW is a private implementation detail: it never appears in a public header,
-// so swapping windowing backends (or adding a second one) does not ripple
-// through the rest of the codebase. The null backend is the same interface with
-// no OS at all.
+// This is the only place in the engine that talks to a windowing library. GLFW
+// is a private implementation detail: it never appears in a public header, and
+// it lives entirely in the desktop backend (GlfwWindow), so a platform where
+// GLFW cannot be compiled — the web target — simply compiles a different
+// backend instead. Swapping windowing backends (or adding a second one) does
+// not ripple through the rest of the codebase.
+//
+// Three backends implement this interface: the GLFW desktop window, the null
+// (headless) window, and the web canvas window. The base class itself holds no
+// platform state: every OS call lives in a subclass, and the defaults below are
+// the no-op behaviour a window with no OS needs. See
+// docs/adr/0041-platform-contract-and-null-backend.md and
+// docs/adr/0074-web-window-backend.md.
 //
 // A Window is move-only. Create one with Window::create().
 class Window {
@@ -73,9 +94,10 @@ public:
 
     // Processes pending OS events. Must be called once per frame before reading
     // input. Dispatches events into the InputState and invokes user callbacks.
+    // The default does nothing: a backend with no OS has no events.
     virtual void poll_events();
 
-    // Presents the back buffer to the screen.
+    // Presents the back buffer to the screen. The default does nothing.
     virtual void swap_buffers();
 
     // True once the user (or the OS) has requested the window close.
@@ -105,9 +127,10 @@ public:
     [[nodiscard]] virtual void* get_proc_address(const char* name) const;
 
     // True when this window owns a graphics context (and therefore a device can
-    // be created). False for the null window. The runtime consults this to decide
-    // whether to bring up the graphics stack; it is the one honest branch on
-    // "is there a surface?", so no code has to pretend a null window can render.
+    // be created). False for the null window; true for GLFW and for web. The
+    // runtime consults this to decide whether to bring up the graphics stack; it
+    // is the one honest branch on "is there a surface?", so no code has to
+    // pretend a null window can render.
     [[nodiscard]] virtual bool has_context() const noexcept { return true; }
 
     // Opaque native window handle (e.g. GLFWwindow*). Exposed only for the
@@ -118,9 +141,13 @@ public:
     [[nodiscard]] const char* backend_name() const noexcept { return backend_name_; }
 
 protected:
-    // Constructs an unbound window and records the backend name. The GLFW
-    // factory and the null backend both construct this; a caller never does.
+    // Constructs an unbound window and records the backend name. Each backend's
+    // factory constructs this; a caller never does.
     explicit Window(const char* backend_name);
+
+    // Records the opaque native handle the backend created. Protected because
+    // the handle is backend-private state that only the creating backend knows.
+    void set_native_handle(void* handle) noexcept { native_handle_ = handle; }
 
 private:
     void* native_handle_ = nullptr;
@@ -129,9 +156,6 @@ private:
     // called from a destructor or before the vtable is established.
     const char* backend_name_ = "unknown";
     InputState input_{};
-    // Set by the resize callback so the runtime can react to framebuffer
-    // changes without polling the OS.
-    bool framebuffer_resized_ = false;
 };
 
 } // namespace fe

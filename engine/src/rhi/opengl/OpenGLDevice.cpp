@@ -5,7 +5,19 @@
 #include "fe/core/Log.h"
 #include "fe/platform/Window.h"
 
+// The GL declarations come from a different place per platform. On desktop they
+// come from glad, the vendored loader that resolves entry points against the
+// driver through the window. On web there is no loader to vendor: the browser
+// *is* the GL implementation, and Emscripten's own GLES3 header declares the
+// same names with the same types, with the entry points supplied by its WebGL2
+// binding. The device code below is identical either way; only the declarations
+// and the "load the pointers" step differ. See
+// docs/adr/0074-web-window-backend.md.
+#if defined(FE_PLATFORM_WEB)
+#include <GLES3/gl3.h>
+#else
 #include <glad/gl.h>
+#endif
 
 #include <cstring>
 #include <string>
@@ -660,18 +672,30 @@ private:
 
 namespace {
 
-// gladLoadGL wants a plain function pointer, but the entry-point resolver is a
-// member function. This trampoline bridges the two: it is only ever called
-// during create_opengl_device(), where the window is known.
+// Desktop only: gladLoadGL wants a plain function pointer, but the entry-point
+// resolver is a member function. This trampoline bridges the two: it is only
+// ever called during create_opengl_device(), where the window is known.
+//
+// On web there is nothing to load: Emscripten's WebGL2 binding supplies the
+// entry points directly, so the trampoline is compiled out rather than left as
+// dead code that would need a glad header.
+#if !defined(FE_PLATFORM_WEB)
 Window* g_loading_window = nullptr;
 
 void* load_gl_proc(const char* name) {
     return g_loading_window->get_proc_address(name);
 }
+#endif
 
 } // namespace
 
 Result<std::unique_ptr<Device>> create_opengl_device(Window& window) {
+#if defined(FE_PLATFORM_WEB)
+    // The browser resolves its own WebGL2 entry points; the context is already
+    // current, so there is nothing left to load. The parameter stays because the
+    // factory signature is the same on both platforms.
+    (void)window;
+#else
     // Resolve the OpenGL entry points through the window's loader. This must
     // happen after the context is current, which the window guarantees.
     g_loading_window = &window;
@@ -680,6 +704,7 @@ Result<std::unique_ptr<Device>> create_opengl_device(Window& window) {
     if (loaded == 0) {
         return Error("failed to load OpenGL entry points; an OpenGL 3.3 core context is required");
     }
+#endif
 
     auto device = std::make_unique<OpenGLDevice>(window);
     FE_LOG_INFO("graphics device: %s (%s)", device->backend_name(), device->info().c_str());

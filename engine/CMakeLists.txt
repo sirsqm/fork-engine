@@ -29,6 +29,24 @@
 # Its headers ship with the library through the public include directory below.
 # See docs/adr/0044-scripting-seam.md.
 
+
+# ---------------------------------------------------------------------------
+# The context-bearing window backend.
+#
+# Exactly one of these two is compiled. GLFW cannot be compiled to wasm at all,
+# so a web build must not merely refrain from *calling* it — it must not compile
+# it. The platform classifier (cmake/FEPlatform.cmake) already knows which target
+# this is, so the choice is made there, and Window.cpp's factory takes the same
+# branch from the same FE_PLATFORM_WEB macro. See
+# docs/adr/0074-web-window-backend.md.
+# ---------------------------------------------------------------------------
+fe_platform_is_web(FE_TARGETS_WEB)
+if(FE_TARGETS_WEB)
+  set(FE_WINDOW_BACKEND_SOURCE src/platform/WebWindow.cpp)
+else()
+  set(FE_WINDOW_BACKEND_SOURCE src/platform/GlfwWindow.cpp)
+endif()
+
 set(FE_ENGINE_SOURCES
     src/core/Log.cpp
     src/core/Assert.cpp
@@ -41,6 +59,11 @@ set(FE_ENGINE_SOURCES
     src/platform/NullWindow.cpp
     src/platform/DynamicLibrary.cpp
     src/platform/Window.cpp
+    # The context-bearing window backend is chosen by the platform: GLFW cannot
+    # be compiled to wasm, so a web build compiles the canvas backend instead and
+    # never sees GlfwWindow.cpp. Window.cpp's factory picks the same way, from the
+    # same macro. See docs/adr/0074-web-window-backend.md.
+    ${FE_WINDOW_BACKEND_SOURCE}
     src/rhi/Device.cpp
     src/rhi/ShaderDialect.cpp
     src/rhi/null/NullDevice.cpp
@@ -130,13 +153,17 @@ target_include_directories(
 
 target_link_libraries(
   fork_engine
-  PUBLIC FE::glad ${FE_JSON_TARGET} FE::stb
+  PUBLIC ${FE_GL_LOADER_TARGET} ${FE_JSON_TARGET} FE::stb
   PRIVATE ${FE_GLFW_TARGET} fe_warnings miniaudio
 )
 
 # The public headers must not leak GLFW. GLFW is a private implementation detail
 # of the platform layer; only forward-declared handles appear in public headers.
-target_compile_definitions(fork_engine PRIVATE GLFW_INCLUDE_NONE)
+# The define is harmless on web (nothing includes GLFW there) but it is only
+# meaningful on desktop, so it is applied where GLFW exists.
+if(NOT FE_TARGETS_WEB)
+  target_compile_definitions(fork_engine PRIVATE GLFW_INCLUDE_NONE)
+endif()
 
 target_compile_features(fork_engine PUBLIC cxx_std_20)
 

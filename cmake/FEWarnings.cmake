@@ -58,7 +58,15 @@ endif()
 # produce warnings inside our translation units. Accepts an alias target (for
 # example nlohmann_json::nlohmann_json) by resolving it to the real target,
 # because set_target_properties() cannot be applied to an alias.
+#
+# An empty name is a no-op, not an error: a platform that does not use a
+# dependency leaves its target variable empty (FE_GLFW_TARGET on the web target,
+# where GLFW is not fetched at all), and every such call site should read the
+# same as one that named a target.
 function(fe_mark_system target)
+  if("${target}" STREQUAL "")
+    return()
+  endif()
   if(NOT TARGET ${target})
     return()
   endif()

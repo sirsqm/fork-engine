@@ -41,10 +41,16 @@ include(FEPlatform)
 # neither links the loader nor asks for it: a target that resolved GL symbols
 # through glad would fail to link for wasm, and the whole point of the web
 # target is that it takes the WebGL2 path (docs/adr/0073-emscripten-toolchain.md).
+#
+# FE_GL_LOADER_TARGET is empty for web, so the engine's link line names no loader
+# there. It is an empty-string default rather than unset so the variable is
+# always defined and a caller can link it unconditionally.
+set(FE_GL_LOADER_TARGET "")
 fe_platform_is_web(FE_TARGETS_WEB)
 if(NOT FE_TARGETS_WEB)
   add_library(glad_gl_core_33 STATIC "${PROJECT_SOURCE_DIR}/third_party/glad/src/gl.c")
   add_library(FE::glad ALIAS glad_gl_core_33)
+  set(FE_GL_LOADER_TARGET FE::glad)
   # SYSTEM so the generated loader headers do not warn inside our translation
   # units (their style is not ours to fix).
   target_include_directories(glad_gl_core_33 SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/glad/include")
@@ -111,8 +117,13 @@ endif()
 # Third-party code is never given our warning flags (FEWarnings), and its
 # headers are marked SYSTEM so that including them from our translation units
 # never produces diagnostics we cannot fix.
-fe_mark_system(${FE_JSON_TARGET})
-fe_mark_system(${FE_GLFW_TARGET})
+#
+# The arguments are quoted because an unquoted empty variable expands to *no*
+# argument, which would make the call zero-arity and fail at the call site rather
+# than inside the helper. FE_GLFW_TARGET is legitimately empty on the web target,
+# where GLFW is not fetched at all.
+fe_mark_system("${FE_JSON_TARGET}")
+fe_mark_system("${FE_GLFW_TARGET}")
 
 # ---------------------------------------------------------------------------
 # stb_image - image decoding (single-header, public domain).
