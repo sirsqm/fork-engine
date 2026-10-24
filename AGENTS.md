@@ -33,6 +33,49 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+## Building for the web (Emscripten)
+
+Much of the shipping queue is web work, so most runs need this build as well as
+the desktop one. The web toolchain is Emscripten; it is **not** installed by
+default, and configuring without it fails at the toolchain check with a message
+that says so.
+
+```sh
+# Once per run, if emsdk is not already present and activated:
+git clone --depth 1 https://github.com/emscripten-core/emsdk.git /tmp/emsdk
+/tmp/emsdk/emsdk install 6.0.13
+/tmp/emsdk/emsdk activate 6.0.13
+source /tmp/emsdk/emsdk_env.sh
+
+# Then configure and build the engine for wasm:
+cmake -S . -B build-web \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/emscripten.cmake \
+  -DFE_BUILD_EXAMPLES=OFF
+cmake --build build-web --parallel
+```
+
+- Use the **checked-in toolchain file**, not `emcmake`; it makes the decisions
+  the web build needs (see its comments and ADR-0073).
+- `source /tmp/emsdk/emsdk_env.sh` must be re-run in every new shell, or
+  `EMSDK` is unset and the configure fails.
+- The web build defaults the editor, unit tests and benchmarks off; they are
+  desktop-only. Do not try to build the test suite for wasm.
+- The engine library building for wasm is not proof a browser will run it. The
+  web window smoke test is the acceptance check and needs a headless browser:
+
+```sh
+source /tmp/emsdk/emsdk_env.sh
+tests/web/run_web_smoke.sh      # compiles the backend to wasm, runs headless Chromium
+```
+
+- The smoke script needs `em++` on `PATH` and a Chromium/Chrome binary; it
+  honours `CHROME_BIN` and retries a slow browser start, so it is safe to run in
+  CI and in a run.
+- `clang-format` must never be allowed to see an `EM_ASM` body containing `===`:
+  it parses the body as C++, rewrites `a === b` to `a == = b`, and the result is
+  a JavaScript syntax error that breaks the module at run time with no build
+  error. Write such bodies without strict equality (use `startsWith`, `==`).
+
 CI builds every push on Linux/GCC (Debug+Release), macOS/Clang (Debug), and
 Windows/MSVC (Debug), with warnings as errors. It also runs a clang-format
 check. Two Linux-only jobs guard quality beyond a build: a sanitizer run
