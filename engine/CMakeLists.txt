@@ -42,6 +42,7 @@ set(FE_ENGINE_SOURCES
     src/platform/DynamicLibrary.cpp
     src/platform/Window.cpp
     src/rhi/Device.cpp
+    src/rhi/ShaderDialect.cpp
     src/rhi/null/NullDevice.cpp
     src/rhi/opengl/OpenGLDevice.cpp
     src/resources/ResourceManager.cpp

@@ -20,6 +20,7 @@ add_executable(fork_engine_tests
     src/test_input_state.cpp
     src/test_platform_null.cpp
     src/test_null_device.cpp
+    src/test_shader_dialect.cpp
     src/test_scene.cpp
     src/test_components.cpp
     src/test_serialization.cpp
