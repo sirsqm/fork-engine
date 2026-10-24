@@ -9,6 +9,13 @@
 
 namespace fe::rhi {
 
+std::string Device::compiled_shader_source(ShaderStage stage, std::string_view source) const {
+    // The one place the dialect is applied. A backend only has to answer
+    // shader_dialect(); everything that compiles a shader goes through here, so
+    // no caller can forget the translation or pick a dialect of its own.
+    return translate_shader_source(shader_dialect(), stage, source);
+}
+
 Result<std::unique_ptr<Device>> create_device(Window& window) {
     // Backend selection lives here and nowhere else. Adding a second backend
     // means adding a factory and a branch, not touching the rest of the engine.

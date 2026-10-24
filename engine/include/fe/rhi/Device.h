@@ -5,11 +5,13 @@
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
 #include "fe/rhi/Resources.h"
+#include "fe/rhi/ShaderDialect.h"
 #include "fe/rhi/Types.h"
 
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace fe {
 
@@ -34,6 +36,21 @@ public:
 
     // A short human-readable description: API version and renderer string.
     [[nodiscard]] virtual std::string info() const = 0;
+
+    // --- Shader dialect ----------------------------------------------------
+    // The GLSL dialect this device compiles its shaders for. A backend chooses
+    // it once, when the device is created, and every shader that device builds
+    // is translated for it: the dialect is never a parameter of create_shader
+    // and never named by a renderer or a shader string.
+    [[nodiscard]] virtual ShaderDialect shader_dialect() const noexcept = 0;
+
+    // The source this device hands its compiler for `stage`: `source` translated
+    // for shader_dialect(). create_shader() calls this, so the dialect is applied
+    // at creation rather than being something a caller has to do. It is public
+    // because a shader-debug dump wants exactly these bytes, and because it makes
+    // the device's dialect choice observable in a test. For a desktop device it
+    // is the identity, byte for byte, so the desktop path cannot regress.
+    [[nodiscard]] std::string compiled_shader_source(ShaderStage stage, std::string_view source) const;
 
     // --- Resource creation -------------------------------------------------
     [[nodiscard]] virtual Result<ShaderRef> create_shader(const ShaderDesc& desc) = 0;

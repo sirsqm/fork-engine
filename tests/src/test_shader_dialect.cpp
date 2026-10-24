@@ -11,9 +11,13 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/rhi/Device.h"
 #include "fe/rhi/ShaderDialect.h"
 
+#include <memory>
+#include <span>
 #include <string>
+#include <string_view>
 
 using namespace fe;
 using namespace fe::rhi;
@@ -120,4 +124,115 @@ TEST_CASE("an ES source with no version directive still gets one") {
     CHECK(out.starts_with("#version 300 es\n"));
     CHECK(count_occurrences(out, "#version") == 1);
     CHECK(count_occurrences(out, "precision highp float;") == 1);
+}
+
+// ---------------------------------------------------------------------------
+// Wiring the seam into the device (docs/SHIPPING_QUEUE.md,
+// `shader-dialect-wiring`).
+//
+// The dialect is a property of the device, chosen once where the device is
+// created, not a parameter of create_shader. These tests prove that: the same
+// descriptor, unchanged, compiles differently through two devices that differ
+// only in the dialect they report.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A device double that overrides only the dialect. It calls the base class's
+// compiled_shader_source(), which is the code the real backends share, so this
+// exercises production code rather than a reimplementation.
+class DialectDevice final : public rhi::Device {
+public:
+    explicit DialectDevice(rhi::ShaderDialect dialect) : dialect_(dialect) {}
+
+    [[nodiscard]] const char* backend_name() const noexcept override { return "dialect-test"; }
+    [[nodiscard]] std::string info() const override { return "dialect test device"; }
+    [[nodiscard]] rhi::ShaderDialect shader_dialect() const noexcept override { return dialect_; }
+
+    Result<rhi::ShaderRef> create_shader(const rhi::ShaderDesc& desc) override {
+        vertex_seen = compiled_shader_source(rhi::ShaderStage::Vertex, desc.vertex_source);
+        fragment_seen = compiled_shader_source(rhi::ShaderStage::Fragment, desc.fragment_source);
+        return std::static_pointer_cast<rhi::Shader>(std::make_shared<InertShader>(desc.name));
+    }
+
+    Result<rhi::BufferRef> create_vertex_buffer(const rhi::VertexLayout&, u32) override { return Error("unused"); }
+    Result<rhi::BufferRef> create_index_buffer(u32) override { return Error("unused"); }
+    Result<rhi::TextureRef> create_texture(const rhi::TextureDesc&) override { return Error("unused"); }
+    Result<rhi::RenderTargetRef> create_render_target(const rhi::RenderTargetDesc&) override { return Error("unused"); }
+
+    void begin_frame(u32, u32, const rhi::ClearColor&) override {}
+    void end_frame() override {}
+    void bind_render_target(rhi::RenderTarget*) override {}
+    [[nodiscard]] rhi::RenderTarget* bound_render_target() const noexcept override { return nullptr; }
+    void set_viewport(u32, u32, u32, u32) override {}
+    void set_blend_mode(rhi::BlendMode) override {}
+    void set_depth_test(bool) override {}
+    void set_primitive_topology(rhi::PrimitiveTopology) override {}
+    void bind_shader(rhi::Shader&) override {}
+    void bind_vertex_buffer(rhi::Buffer&) override {}
+    void bind_index_buffer(rhi::Buffer&) override {}
+    void bind_instance_buffer(rhi::Buffer&, u32 = 0) override {}
+    void bind_texture(u32, rhi::Texture&) override {}
+    void draw_indexed(u32) override {}
+    void draw_indexed_instanced(u32, u32) override {}
+    void read_pixels(u32, u32, u32, u32, std::span<u8>) override {}
+
+    std::string vertex_seen;
+    std::string fragment_seen;
+
+private:
+    class InertShader final : public rhi::Shader {
+    public:
+        explicit InertShader(std::string name) : name_(std::move(name)) {}
+        [[nodiscard]] const std::string& name() const noexcept override { return name_; }
+        void set_mat4(std::string_view, const Mat4&) override {}
+        void set_mat3(std::string_view, const f32*) override {}
+        void set_vec4(std::string_view, const Vec4&) override {}
+        void set_vec3(std::string_view, const Vec3&) override {}
+        void set_int(std::string_view, i32) override {}
+        void set_float(std::string_view, f32) override {}
+        void set_vec4_array(std::string_view, const Vec4*, u32) override {}
+
+    private:
+        std::string name_;
+    };
+
+    rhi::ShaderDialect dialect_;
+};
+
+} // namespace
+
+TEST_CASE("the device applies its dialect at creation, not the caller") {
+    rhi::ShaderDesc desc;
+    desc.name = "wired";
+    desc.vertex_source = kDesktopVertex;
+    desc.fragment_source = kDesktopFragment;
+
+    DialectDevice desktop(rhi::ShaderDialect::DesktopCore);
+    DialectDevice es(rhi::ShaderDialect::Es);
+
+    // The same descriptor, unchanged, through two devices.
+    REQUIRE(desktop.create_shader(desc).ok());
+    REQUIRE(es.create_shader(desc).ok());
+
+    CHECK(desktop.shader_dialect() == rhi::ShaderDialect::DesktopCore);
+    CHECK(es.shader_dialect() == rhi::ShaderDialect::Es);
+
+    // Desktop: byte for byte the authored source, so nothing regressed.
+    CHECK(desktop.vertex_seen == std::string(kDesktopVertex));
+    CHECK(desktop.fragment_seen == std::string(kDesktopFragment));
+
+    // ES: translated by the device, with no change at the call site.
+    CHECK(es.vertex_seen.find("#version 300 es") != std::string::npos);
+    CHECK(es.vertex_seen.find("#version 330 core") == std::string::npos);
+    CHECK(es.fragment_seen.find("#version 300 es") != std::string::npos);
+    CHECK(count_occurrences(es.fragment_seen, "precision highp float;") == 1);
+}
+
+TEST_CASE("compiled_shader_source is exactly translate_shader_source for the device dialect") {
+    DialectDevice es(rhi::ShaderDialect::Es);
+    CHECK(es.compiled_shader_source(rhi::ShaderStage::Vertex, kDesktopVertex) ==
+          translate_shader_source(rhi::ShaderDialect::Es, rhi::ShaderStage::Vertex, kDesktopVertex));
+    CHECK(es.compiled_shader_source(rhi::ShaderStage::Fragment, kDesktopFragment) ==
+          translate_shader_source(rhi::ShaderDialect::Es, rhi::ShaderStage::Fragment, kDesktopFragment));
 }

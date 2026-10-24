@@ -369,13 +369,25 @@ public:
                std::string(renderer != nullptr ? renderer : "unknown");
     }
 
+    // This backend creates a desktop OpenGL 3.3 core context (see
+    // create_opengl_device), so it compiles the desktop dialect. The choice is
+    // made here, once per device, and the translation is the identity, so the
+    // bytes reaching the driver are the ones the shader was written with.
+    [[nodiscard]] ShaderDialect shader_dialect() const noexcept override { return ShaderDialect::DesktopCore; }
+
     Result<ShaderRef> create_shader(const ShaderDesc& desc) override {
+        // Translate at the seam: the caller supplied desktop sources and never
+        // names a dialect, and the compiler sees what this device's dialect
+        // requires. For the desktop dialect these are byte-for-byte copies.
+        const std::string vertex_source = compiled_shader_source(ShaderStage::Vertex, desc.vertex_source);
+        const std::string fragment_source = compiled_shader_source(ShaderStage::Fragment, desc.fragment_source);
+
         std::string error;
-        const GLuint vertex = compile_stage(GL_VERTEX_SHADER, desc.vertex_source, error);
+        const GLuint vertex = compile_stage(GL_VERTEX_SHADER, vertex_source, error);
         if (vertex == 0) {
             return Error("vertex shader '" + desc.name + "' failed to compile:\n" + error);
         }
-        const GLuint fragment = compile_stage(GL_FRAGMENT_SHADER, desc.fragment_source, error);
+        const GLuint fragment = compile_stage(GL_FRAGMENT_SHADER, fragment_source, error);
         if (fragment == 0) {
             glDeleteShader(vertex);
             return Error("fragment shader '" + desc.name + "' failed to compile:\n" + error);

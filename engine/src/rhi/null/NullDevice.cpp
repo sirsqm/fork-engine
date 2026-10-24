@@ -102,6 +102,12 @@ public:
 
     [[nodiscard]] std::string info() const override { return "null device (no rasterisation)"; }
 
+    // There is no GLSL compiler behind this device, so the dialect it "uses" is
+    // never handed to a driver. It reports the desktop dialect, which keeps
+    // compiled_shader_source() the identity here and so preserves the existing
+    // behaviour: a headless caller's source is accepted unchanged.
+    [[nodiscard]] ShaderDialect shader_dialect() const noexcept override { return ShaderDialect::DesktopCore; }
+
     Result<ShaderRef> create_shader(const ShaderDesc& desc) override {
         return std::static_pointer_cast<Shader>(std::make_shared<NullShader>(desc.name));
     }
