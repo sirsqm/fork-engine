@@ -121,6 +121,7 @@ set(FE_ENGINE_SOURCES
     src/pack/PackSource.cpp
     src/pack/HttpFetchSource.cpp
     src/pack/ExportManifest.cpp
+    src/pack/WebExportTemplate.cpp
     src/serialization/Json.cpp
     src/serialization/PropertyJson.cpp
     src/serialization/SceneSerializer.cpp

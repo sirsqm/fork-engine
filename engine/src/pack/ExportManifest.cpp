@@ -22,6 +22,11 @@ Result<std::string> ExportManifest::to_json() const {
     if (!name.empty()) {
         document["name"] = name;
     }
+    // Written only when it is not the default, so a desktop export's manifest is
+    // byte-for-byte what it was before targets existed.
+    if (target != kTargetDesktop) {
+        document["target"] = target;
+    }
     document["pack"] = pack;
     document["scene"] = scene;
     // Omitted when empty, so a data-only build's manifest stays as small and as
@@ -56,6 +61,13 @@ Error ExportManifest::from_json(std::string_view text, ExportManifest& out) {
 
     ExportManifest parsed;
     parsed.name = document.value("name", std::string{});
+    // A document from before targets existed has no target and can only have
+    // been a desktop build, so the default is the honest reading rather than a
+    // guess.
+    parsed.target = document.value("target", std::string(kTargetDesktop));
+    if (parsed.target != kTargetDesktop && parsed.target != kTargetWeb) {
+        return Error("export manifest: unknown target '" + parsed.target + "'");
+    }
     parsed.pack = document.value("pack", std::string{});
     parsed.scene = document.value("scene", std::string{});
     if (parsed.pack.empty()) {

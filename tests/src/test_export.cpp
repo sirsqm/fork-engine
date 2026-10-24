@@ -12,6 +12,7 @@
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/PackSource.h"
 #include "fe/pack/PackWriter.h"
+#include "fe/pack/WebExportTemplate.h"
 #include "fe/reflect/PropertyBuilders.h"
 #include "fe/resources/AssetDatabase.h"
 #include "fe/resources/ImageLoader.h"
@@ -173,6 +174,103 @@ TEST_CASE("an export manifest round-trips its module list") {
         out));
     CHECK(ExportManifest::from_json(
         R"({"format":"fork_export","format_version":1,"pack":"g.fepack","scene":"s.fescene","modules":[1]})", out));
+}
+
+// The web export template: the shell a browser loads. The test checks the one
+// thing that can silently break a build - the file names the shell fetches
+// against the names the export writes - and that a manifest from before targets
+// existed still reads as desktop.
+TEST_CASE("an export manifest records the target it was built for") {
+    ExportManifest desktop;
+    desktop.pack = "game.fepack";
+    desktop.scene = "scenes/main.fescene";
+    auto desktop_text = desktop.to_json();
+    REQUIRE(desktop_text);
+    // A desktop build is the default and is not written, so its document is what
+    // it was before targets existed.
+    CHECK(desktop_text.value().find("target") == std::string::npos);
+
+    ExportManifest web;
+    web.pack = "game.fepack";
+    web.scene = "scenes/main.fescene";
+    web.target = ExportManifest::kTargetWeb;
+    auto web_text = web.to_json();
+    REQUIRE(web_text);
+    CHECK(web_text.value().find("\"target\": \"web\"") != std::string::npos);
+
+    ExportManifest parsed;
+    REQUIRE_FALSE(ExportManifest::from_json(web_text.value(), parsed));
+    CHECK(parsed.target == ExportManifest::kTargetWeb);
+
+    // A document with no target is a desktop build: that is the only target that
+    // could have produced it.
+    ExportManifest legacy;
+    REQUIRE_FALSE(ExportManifest::from_json(
+        R"({"format":"fork_export","format_version":1,"pack":"g.fepack","scene":"s.fescene"})", legacy));
+    CHECK(legacy.target == ExportManifest::kTargetDesktop);
+
+    // A target from the future is rejected rather than guessed at.
+    ExportManifest unknown;
+    CHECK(ExportManifest::from_json(
+        R"({"format":"fork_export","format_version":1,"pack":"g.fepack","scene":"s.fescene","target":"dreamcast"})",
+        unknown));
+}
+
+TEST_CASE("the web shell fetches exactly the files the export writes") {
+    // The names are the contract between the shell's fetch and the export's
+    // writes. A mismatch is a 404 at load, which looks like a broken game rather
+    // than a broken build, so it is asserted directly.
+    const std::string js = web_shell_js();
+    CHECK(js.find(std::string("\"") + WebExportNames::kRuntimeJs + "\"") != std::string::npos);
+    CHECK(js.find(std::string("\"") + ExportManifest::kDefaultFileName + "\"") != std::string::npos);
+
+    ExportManifest manifest;
+    manifest.name = "ShellTest";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetWeb;
+
+    const std::string html = web_index_html(manifest);
+    // The page loads the shell, and the shell is what the export writes.
+    CHECK(html.find(std::string(WebExportNames::kShellJs)) != std::string::npos);
+    // The canvas the engine's web backend defaults to must exist in the page, or
+    // the backend creates one at the wrong size.
+    CHECK(html.find("id=\"canvas\"") != std::string::npos);
+    // The project's name reaches the tab title.
+    CHECK(html.find("ShellTest") != std::string::npos);
+
+    // The shell refuses a build that is not its own, so serving a desktop export
+    // from a web server fails with a sentence instead of a blank canvas.
+    CHECK(js.find("manifest.target") != std::string::npos);
+}
+
+TEST_CASE("writing the web shell produces the page and its loader") {
+    TempDir dir("web_shell");
+
+    ExportManifest manifest;
+    manifest.name = "Written";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetWeb;
+
+    // A manifest that names no pack or scene is refused: the shell would have
+    // nothing to load, and writing a page that fetches an empty name is worse
+    // than not writing one.
+    ExportManifest incomplete;
+    incomplete.target = ExportManifest::kTargetWeb;
+    CHECK(write_web_shell(dir.str(), incomplete));
+
+    REQUIRE_FALSE(write_web_shell(dir.str(), manifest));
+    CHECK(fs::exists(fs::join(dir.str(), WebExportNames::kIndexHtml)));
+    CHECK(fs::exists(fs::join(dir.str(), WebExportNames::kShellJs)));
+
+    auto index = fs::read_text_file(fs::join(dir.str(), WebExportNames::kIndexHtml));
+    REQUIRE(index);
+    CHECK(index.value().find("Written") != std::string::npos);
+
+    auto shell = fs::read_text_file(fs::join(dir.str(), WebExportNames::kShellJs));
+    REQUIRE(shell);
+    CHECK(shell.value().find(WebExportNames::kRuntimeJs) != std::string::npos);
 }
 
 // The shipping flow, in process: author a scene with a bound script, pack the

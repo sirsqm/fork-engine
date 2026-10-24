@@ -6,27 +6,40 @@
 // The export step of M8 (docs/adr/0064-export-runtime-and-player.md). A project
 // directory goes in; a directory a player can be handed comes out:
 //
-//   build/export/<name>/
+//   build/export/<name>/          --target desktop (the default)
 //     fork_player[.exe]     the runtime
 //     game.fepack           the assets and the startup scene
 //     fork.export.json      the manifest naming the pack and the scene
 //
+//   build/export/<name>/          --target web
+//     index.html            the page a player opens
+//     fork_shell.js         the loader that starts the wasm runtime
+//     fork_player.js        the wasm runtime's JS glue
+//     fork_player.wasm      the wasm binary
+//     game.fepack           the assets and the startup scene
+//     fork.export.json      the manifest, naming the target and the pack
+//
 // The pack is written by the engine's PackWriter, the same code fork_pack uses,
-// so the two tools cannot disagree about the format. The player is copied, not
-// rebuilt: the runtime is generic and driven by the pack, so export has no
-// compiler in it and cannot fail for toolchain reasons.
+// so the two tools cannot disagree about the format. On desktop the player is
+// copied, not rebuilt: the runtime is generic and driven by the pack, so export
+// has no compiler in it and cannot fail for toolchain reasons. A web build cannot
+// copy a runtime, because the player is a wasm module the page loads
+// asynchronously; the export assembles the wasm pair Emscripten produced and
+// writes a shell beside it (docs/adr/0071-web-first-2d-shipping-path.md).
 //
 // Usage:
-//   fork_export --project DIR --out DIR [--player PATH] [--pack-name NAME]
-//               [--scene-key PATH]
+//   fork_export --project DIR --out DIR [--target desktop|web] [--player PATH]
+//               [--pack-name NAME] [--scene-key PATH]
 //
-// --player names the runtime to copy. It defaults to the fork_player beside this
-// executable, which is where the build puts it.
+// --player names the runtime to copy (desktop) or to assemble (web). It defaults
+// to the fork_player beside this executable, or fork_player.js for web, which is
+// where the build puts it.
 
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/PackWriter.h"
+#include "fe/pack/WebExportTemplate.h"
 #include "fe/resources/AssetDatabase.h"
 #include "fe/serialization/SceneReferences.h"
 
@@ -46,6 +59,7 @@ struct Options {
     std::string player;               // runtime to copy; default: beside this executable
     std::string pack_name;            // pack file name inside the output directory
     std::string scene_key;            // key the scene is stored under; default: project-relative
+    std::string target = "desktop";   // "desktop" (copy the player) or "web" (assemble a shell)
     std::vector<std::string> modules; // gameplay modules to copy in and record
     bool prune = true;                // pack only what the startup scene references
     bool verbose = false;
@@ -157,12 +171,18 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
 }
 
 void print_usage() {
-    std::puts("usage: fork_export --project DIR --out DIR [--player PATH] [--pack-name NAME]\n"
-              "                   [--scene-key PATH] [--module PATH ...] [--no-prune]\n"
+    std::puts("usage: fork_export --project DIR --out DIR [--target desktop|web] [--player PATH]\n"
+              "                   [--pack-name NAME] [--scene-key PATH] [--module PATH ...] [--no-prune]\n"
               "\n"
               "  --project DIR    a project directory or fork.project.json file\n"
               "  --out DIR        the directory to write the build into\n"
-              "  --player PATH    the runtime to copy (default: fork_player beside this tool)\n"
+              "  --target NAME    the platform to build for (default: desktop)\n"
+              "                     desktop  copy the native player beside the pack\n"
+              "                     web      assemble a wasm runtime, a pack, and an\n"
+              "                              HTML/JS shell a browser loads\n"
+              "  --player PATH    the runtime to copy or, for --target web, the wasm\n"
+              "                   runtime to assemble (default: fork_player beside\n"
+              "                   this tool, or fork_player.js for web)\n"
               "  --pack-name NAME the pack file's name (default: game.fepack)\n"
               "  --scene-key PATH the scene's key inside the pack (default: project-relative)\n"
               "  --module PATH    a gameplay module to copy in and record (repeatable)\n"
@@ -186,6 +206,8 @@ void print_usage() {
             out.pack_name = argv[++i];
         } else if (arg == "--scene-key" && has_value) {
             out.scene_key = argv[++i];
+        } else if (arg == "--target" && has_value) {
+            out.target = argv[++i];
         } else if (arg == "--module" && has_value) {
             out.modules.emplace_back(argv[++i]);
         } else if (arg == "--prune") {
@@ -219,6 +241,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "fork_export: --project and --out are required\n");
         return 2;
     }
+    // The target decides what "the runtime" is: a native executable to copy, or
+    // a wasm module plus a shell. Rejecting an unknown target here means the
+    // rest of the tool has exactly two cases to reason about.
+    const bool web = options.target == fe::pack::ExportManifest::kTargetWeb;
+    if (!web && options.target != fe::pack::ExportManifest::kTargetDesktop) {
+        std::fprintf(stderr, "fork_export: unknown target '%s' (expected 'desktop' or 'web')\n",
+                     options.target.c_str());
+        return 2;
+    }
 
     auto project = read_project(options.project);
     if (!project) {
@@ -238,18 +269,35 @@ int main(int argc, char** argv) {
         options.scene_key.empty() ? fe::fs::relative_to(pack_root, project.value().startup_scene) : options.scene_key;
     const std::string pack_name = options.pack_name.empty() ? "game.fepack" : options.pack_name;
 
-    // Resolve the runtime to copy. The default is the fork_player the build put
-    // beside this tool, which is what makes the ordinary invocation a single
-    // command with no path bookkeeping.
+    // Resolve the runtime. For desktop the default is the fork_player the build
+    // put beside this tool, which is what makes the ordinary invocation a single
+    // command with no path bookkeeping. For web there is no native executable to
+    // copy - the runtime is the wasm module Emscripten emits - so the default is
+    // the JS glue beside this tool, and its .wasm is expected next to it.
     std::string player = options.player;
     if (player.empty()) {
         const std::string directory = executable_directory(argv[0]);
-        player = fe::fs::join(directory.empty() ? "." : directory, player_file_name());
+        player = fe::fs::join(directory.empty() ? "." : directory,
+                              web ? fe::pack::WebExportNames::kRuntimeJs : player_file_name());
     }
     if (!fe::fs::exists(player)) {
-        std::fprintf(stderr, "fork_export: no runtime at '%s'. Build fork_player, or pass --player PATH.\n",
-                     player.c_str());
+        std::fprintf(stderr, "fork_export: no runtime at '%s'. Build fork_player%s, or pass --player PATH.\n",
+                     player.c_str(), web ? " for the web target (emcmake)" : "");
         return 1;
+    }
+    // For web the .wasm sits beside the JS glue; Emscripten writes both, so a
+    // missing one means the build was not a web build and the export should say
+    // so now rather than leave a shell that 404s at load.
+    std::string wasm_source;
+    if (web) {
+        wasm_source = fe::fs::join(fe::fs::parent_path(player), fe::pack::WebExportNames::kWasmBinary);
+        if (!fe::fs::exists(wasm_source)) {
+            std::fprintf(stderr,
+                         "fork_export: no '%s' beside '%s'. A web runtime is built with emcmake; "
+                         "build fork_player for the web target, or pass --player PATH.\n",
+                         fe::pack::WebExportNames::kWasmBinary, player.c_str());
+            return 1;
+        }
     }
 
     // Index the project tree so every imported asset goes into the pack with its
@@ -297,18 +345,36 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Copy the runtime in. Copied byte for byte, with its permission bits, so
-    // the exported player is executable: the export must not depend on a
-    // toolchain, and the same player serves every game (ADR-0064).
-    const std::string player_out = fe::fs::join(options.out, player_file_name());
-    if (fe::Error error = fe::fs::copy_file(player, player_out); error) {
-        std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
-        return 1;
+    // Assemble the runtime. Desktop copies the native player byte for byte, with
+    // its permission bits, so the exported player is executable: the export must
+    // not depend on a toolchain, and the same player serves every game
+    // (ADR-0064). Web copies the wasm pair instead - there is no executable, and
+    // the page loads the JS glue and its .wasm - and then writes the shell.
+    if (web) {
+        const std::string js_out = fe::fs::join(options.out, fe::pack::WebExportNames::kRuntimeJs);
+        if (fe::Error error = fe::fs::copy_file(player, js_out); error) {
+            std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
+            return 1;
+        }
+        const std::string wasm_out = fe::fs::join(options.out, fe::pack::WebExportNames::kWasmBinary);
+        if (fe::Error error = fe::fs::copy_file(wasm_source, wasm_out); error) {
+            std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
+            return 1;
+        }
+    } else {
+        const std::string player_out = fe::fs::join(options.out, player_file_name());
+        if (fe::Error error = fe::fs::copy_file(player, player_out); error) {
+            std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
+            return 1;
+        }
     }
 
     // The manifest names what to run, so a launcher does not have to infer it.
+    // The target is recorded too: the web shell refuses a build that is not its
+    // own, and a desktop launcher can tell the two apart without probing names.
     fe::pack::ExportManifest manifest;
     manifest.name = project.value().name;
+    manifest.target = options.target;
     manifest.pack = pack_name;
     manifest.scene = scene_key;
 
@@ -317,6 +383,15 @@ int main(int argc, char** argv) {
     // on the command line rather than discovered: which libraries a game needs
     // is a property of the game, and a build should record exactly what it was
     // told to ship.
+    //
+    // A web build has no shared-library loader, so a module cannot be loaded in
+    // a browser. Refusing rather than recording a module the shell would never
+    // load keeps a build from claiming gameplay it cannot run.
+    if (web && !options.modules.empty()) {
+        std::fprintf(stderr, "fork_export: gameplay modules are not supported for the web target "
+                             "(a browser has no shared-library loader)\n");
+        return 1;
+    }
     for (const std::string& module : options.modules) {
         if (!fe::fs::exists(module)) {
             std::fprintf(stderr, "fork_export: module '%s' does not exist\n", module.c_str());
@@ -335,7 +410,17 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    FE_LOG_INFO("fork_export: wrote '%s' (%llu pack entries) with runtime '%s'", options.out.c_str(),
-                static_cast<unsigned long long>(built.value().entry_count()), player_file_name().c_str());
+    // The shell is written last, after the manifest it reads, so a failure above
+    // leaves no page pointing at files that were never written. The shell takes
+    // the pack and scene from the manifest, so the two cannot disagree.
+    if (web) {
+        if (fe::Error error = fe::pack::write_web_shell(options.out, manifest); error) {
+            std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
+            return 1;
+        }
+    }
+
+    FE_LOG_INFO("fork_export: wrote '%s' (%llu pack entries) for the %s target", options.out.c_str(),
+                static_cast<unsigned long long>(built.value().entry_count()), options.target.c_str());
     return 0;
 }

@@ -37,8 +37,20 @@ struct ExportManifest {
     // directory rather than a pack.
     static constexpr const char* kDefaultFileName = "fork.export.json";
 
+    // The target an export was built for. The web template (ADR-0071, item 5)
+    // writes "web"; everything else writes the default. A launcher reads this to
+    // know what it has without probing file names, and the web shell refuses a
+    // build that is not its own so a desktop export served by mistake fails with
+    // a sentence rather than a blank canvas.
+    static constexpr const char* kTargetDesktop = "desktop";
+    static constexpr const char* kTargetWeb = "web";
+
     // The project's name, for a launcher to display. Not used to find anything.
     std::string name;
+    // What this build runs on: kTargetDesktop or kTargetWeb. Absent in a
+    // document written before targets existed, which reads as desktop - the
+    // only target that could have produced it.
+    std::string target = kTargetDesktop;
     // The pack file to mount, relative to the manifest's directory.
     std::string pack;
     // The key the startup scene is stored under inside the pack, which is the
