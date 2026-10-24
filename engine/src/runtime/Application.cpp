@@ -13,16 +13,34 @@ Application::Application(Engine::Config config) : engine_(), config_(config), sc
 Application::~Application() = default;
 
 int Application::run() {
+    if (Error error = initialize(); error) {
+        // initialize() logged the specific failure; a failed start needs no
+        // shutdown, so the run ends here.
+        return 1;
+    }
+
+    while (step_frame()) {
+    }
+
+    shutdown();
+    return 0;
+}
+
+Error Application::initialize() {
+    if (initialized_) {
+        return Error("Application::initialize called twice");
+    }
+
     if (Error error = engine_.initialize(config_); error) {
         FE_LOG_CRITICAL("failed to start engine: %s", error.message().c_str());
-        return 1;
+        return error;
     }
 
     if (Error error = on_start(); error) {
         FE_LOG_CRITICAL("failed to start application: %s", error.message().c_str());
         scene_.clear();
         engine_.shutdown();
-        return 1;
+        return error;
     }
 
     // Create the frame's arena once, before the loop, and keep it for the run.
@@ -37,8 +55,8 @@ int Application::run() {
     // Create the run's job system. With worker_count_ == 0 it is single-threaded
     // and every job runs inline on the frame thread, so a run that did not ask
     // for workers behaves exactly as it did before the pool existed. The pool is
-    // joined at the end of the run (below), so no job outlives the frame loop
-    // (ADR-0017, ADR-0068).
+    // joined in shutdown(), so no job outlives the frame loop (ADR-0017,
+    // ADR-0068).
     jobs_ = std::make_unique<JobSystem>(worker_count_);
     FE_LOG_INFO("job system: %u worker threads", jobs_->worker_count());
 
@@ -46,85 +64,107 @@ int Application::run() {
 
     // Install the application's profiler on this thread for the whole run, so
     // the frame loop and every system that records through FE_PROFILE_SCOPE land
-    // in the same ring. Cleared on exit so a later test cannot reach a destroyed
-    // Application. (Recording is per-thread: a worker thread would set its own.)
+    // in the same ring. Cleared in shutdown() so a later test cannot reach a
+    // destroyed Application. (Recording is per-thread: a worker thread would set
+    // its own.)
     if (profiling_enabled_) {
         Profiler::set_current(&profiler_);
     }
 
-    u32 frame_index = 0;
-    while (!exit_requested_) {
-        if (headless_ && headless_frames_ > 0 && frame_index >= headless_frames_) {
-            break;
-        }
-        if (!headless_ && engine_.window().should_close()) {
-            break;
-        }
+    frames_stepped_ = 0;
+    initialized_ = true;
+    return Error::none();
+}
 
-        // Bracket the whole frame so the report has a total to compare the parts
-        // against. When profiling is off this is a no-op, and begin_frame() is
-        // skipped, so no frame is committed.
-        const bool recording = profiling_enabled_ && profiler_.begin_frame();
-        const ProfileScope frame_scope("frame");
-
-        engine_.tick();
-
-        // Ordering: advance the input edges, then let the OS deliver this
-        // frame's events into that fresh state.
-        engine_.window().input().begin_frame();
-        engine_.window().poll_events();
-
-        {
-            const ProfileScope update_scope("frame/update");
-            on_update(engine_.delta_time());
-
-            // Run the user's systems for this frame. This is the whole execution
-            // model: after the per-frame hook, before rendering, in the order the
-            // systems were added. Each system is timed by the schedule.
-            //
-            // Reset the frame arena first: everything a system allocated from it
-            // last frame is dead by definition (nothing may outlive the frame), so
-            // the whole buffer is reclaimed in one pointer move before this
-            // frame's systems allocate. Resetting before the systems run, not
-            // after, means a system can allocate and the last system's data is
-            // still valid while it runs.
-            if (frame_arena_ != nullptr) {
-                frame_arena_->reset();
-            }
-            FrameContext frame;
-            frame.delta_time = engine_.delta_time();
-            frame.elapsed_time = engine_.elapsed_time();
-            frame.resources = &engine_.resources();
-            frame.input = &engine_.input();
-            frame.arena = frame_arena_.get();
-            frame.jobs = jobs_.get();
-            schedule_.update(frame, scene_);
-        }
-
-        {
-            const ProfileScope render_scope("frame/render");
-            // A plain headless engine has no device or renderer, so there is
-            // nothing to draw: the frame still advances the clock, the input
-            // edges and the systems. A headless engine that asked to render has
-            // a null RHI device, so the render path (extraction, batching, draw
-            // submission) runs and only rasterisation is absent. Both cases are
-            // explicit here rather than a no-op device pretending to render.
-            if (engine_.has_graphics() || engine_.headless_render()) {
-                render_frame();
-                // Presents the back buffer. With a real window this flips the
-                // surface; with the null backend it is a no-op.
-                engine_.device().end_frame();
-            }
-        }
-
-        if (recording) {
-            if (Result<void> ended = profiler_.end_frame(); !ended) {
-                FE_LOG_WARN("profiler: end_frame failed: %s", ended.error().message().c_str());
-            }
-        }
-
-        ++frame_index;
+bool Application::step_frame() {
+    if (!initialized_) {
+        return false;
     }
+
+    // The same stop conditions run()'s loop tests at the top of each iteration,
+    // in the same order: an explicit exit, then the headless frame count, then
+    // the window. Reaching one means the loop is done and the caller must stop.
+    if (exit_requested_) {
+        return false;
+    }
+    if (headless_ && headless_frames_ > 0 && frames_stepped_ >= headless_frames_) {
+        return false;
+    }
+    if (!headless_ && engine_.window().should_close()) {
+        return false;
+    }
+
+    // Bracket the whole frame so the report has a total to compare the parts
+    // against. When profiling is off this is a no-op, and begin_frame() is
+    // skipped, so no frame is committed.
+    const bool recording = profiling_enabled_ && profiler_.begin_frame();
+    const ProfileScope frame_scope("frame");
+
+    engine_.tick();
+
+    // Ordering: advance the input edges, then let the OS deliver this frame's
+    // events into that fresh state.
+    engine_.window().input().begin_frame();
+    engine_.window().poll_events();
+
+    {
+        const ProfileScope update_scope("frame/update");
+        on_update(engine_.delta_time());
+
+        // Run the user's systems for this frame. This is the whole execution
+        // model: after the per-frame hook, before rendering, in the order the
+        // systems were added. Each system is timed by the schedule.
+        //
+        // Reset the frame arena first: everything a system allocated from it
+        // last frame is dead by definition (nothing may outlive the frame), so
+        // the whole buffer is reclaimed in one pointer move before this frame's
+        // systems allocate. Resetting before the systems run, not after, means a
+        // system can allocate and the last system's data is still valid while it
+        // runs.
+        if (frame_arena_ != nullptr) {
+            frame_arena_->reset();
+        }
+        FrameContext frame;
+        frame.delta_time = engine_.delta_time();
+        frame.elapsed_time = engine_.elapsed_time();
+        frame.resources = &engine_.resources();
+        frame.input = &engine_.input();
+        frame.arena = frame_arena_.get();
+        frame.jobs = jobs_.get();
+        schedule_.update(frame, scene_);
+    }
+
+    {
+        const ProfileScope render_scope("frame/render");
+        // A plain headless engine has no device or renderer, so there is nothing
+        // to draw: the frame still advances the clock, the input edges and the
+        // systems. A headless engine that asked to render has a null RHI device,
+        // so the render path (extraction, batching, draw submission) runs and
+        // only rasterisation is absent. Both cases are explicit here rather than
+        // a no-op device pretending to render.
+        if (engine_.has_graphics() || engine_.headless_render()) {
+            render_frame();
+            // Presents the back buffer. With a real window this flips the
+            // surface; with the null backend it is a no-op.
+            engine_.device().end_frame();
+        }
+    }
+
+    if (recording) {
+        if (Result<void> ended = profiler_.end_frame(); !ended) {
+            FE_LOG_WARN("profiler: end_frame failed: %s", ended.error().message().c_str());
+        }
+    }
+
+    ++frames_stepped_;
+    return true;
+}
+
+void Application::shutdown() {
+    if (!initialized_) {
+        return;
+    }
+    initialized_ = false;
 
     if (profiling_enabled_) {
         Profiler::set_current(nullptr);
@@ -150,7 +190,6 @@ int Application::run() {
     // undefined behaviour.
     scene_.clear();
     engine_.shutdown();
-    return 0;
 }
 
 Result<FrameReport> Application::last_frame_report(usize frame_offset) const {

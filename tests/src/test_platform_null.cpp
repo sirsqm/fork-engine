@@ -139,6 +139,39 @@ protected:
     return config;
 }
 
+// An Application driven by hand instead of by run(): the host calls
+// initialize()/step_frame()/shutdown() itself, the way a browser's
+// requestAnimationFrame callback or a test would. It records what each frame
+// saw, so a test can compare stepping against run().
+class SteppedApp final : public Application {
+public:
+    explicit SteppedApp(Engine::Config config) : Application(config) {}
+
+    u64 updates = 0;
+    u64 render_hook_calls = 0;
+    bool started = false;
+    bool stopped = false;
+    bool arena_present_each_frame = true;
+
+protected:
+    Error on_start() override {
+        started = true;
+        (void)scene().create_node("Node");
+        schedule().add_system<CountSystem>();
+        return Error::none();
+    }
+
+    void on_update(f32) override {
+        ++updates;
+        // The arena exists for the whole run, so every stepped frame must see it.
+        arena_present_each_frame = arena_present_each_frame && (arena() != nullptr);
+    }
+
+    void on_render(f32) override { ++render_hook_calls; }
+
+    void on_stop() override { stopped = true; }
+};
+
 } // namespace
 
 TEST_CASE("the default window backend is the real one") {
@@ -286,4 +319,92 @@ TEST_CASE("a disabled frame arena leaves systems with a null arena") {
 
     // No arena existed, so on_stop() saw none.
     CHECK_FALSE(app.arena_present_at_stop);
+}
+
+TEST_CASE("stepping the frame loop by hand matches run()") {
+    // The browser cannot call run(): its page owns the frame schedule, so the
+    // engine exposes initialize()/step_frame()/shutdown() as the primitives the
+    // host drives. This test drives N frames that way and asserts the result is
+    // the same as run() would produce.
+    SteppedApp app(null_config());
+    app.set_headless(7);
+    REQUIRE(app.initialize().ok());
+    CHECK(app.started);
+
+    // run() with a headless count stops *after* N frames, so the N+1st step must
+    // report the loop is done and no frame may be run for it.
+    u64 stepped = 0;
+    while (app.step_frame()) {
+        ++stepped;
+        REQUIRE(stepped <= 64); // guard: the loop must terminate on its own
+    }
+
+    CHECK(app.updates == stepped);
+    CHECK(stepped == 7);
+    const System* system = app.schedule().find("CountSystem");
+    REQUIRE(system != nullptr);
+    CHECK(static_cast<const CountSystem*>(system)->runs() == stepped);
+
+    app.shutdown();
+    CHECK(app.stopped);
+}
+
+TEST_CASE("a stepped loop stops at the headless frame count and runs on_stop") {
+    SteppedApp app(null_config());
+    app.set_headless(5);
+    REQUIRE(app.initialize().ok());
+
+    CHECK(app.step_frame());
+    CHECK(app.step_frame());
+    CHECK(app.step_frame());
+    CHECK(app.step_frame());
+    CHECK(app.step_frame());
+
+    // The sixth step is past the requested count: it runs no frame and reports
+    // the loop is finished. Stepping again keeps reporting false (idempotent),
+    // so a host that ignores the return value cannot run an extra frame.
+    CHECK_FALSE(app.step_frame());
+    CHECK_FALSE(app.step_frame());
+    CHECK(app.updates == 5);
+
+    app.shutdown();
+    CHECK(app.stopped);
+    // shutdown() is idempotent and step_frame() after it is inert.
+    app.shutdown();
+    CHECK_FALSE(app.step_frame());
+}
+
+TEST_CASE("a stepped loop honours request_exit and reports it") {
+    SteppedApp app(null_config());
+    app.set_headless(0); // unlimited frames: only request_exit() can stop it
+    REQUIRE(app.initialize().ok());
+
+    CHECK(app.step_frame());
+    app.request_exit();
+    CHECK_FALSE(app.step_frame());
+    CHECK(app.updates == 1);
+
+    app.shutdown();
+}
+
+TEST_CASE("the frame primitives are inert outside an initialised run") {
+    SteppedApp app(null_config());
+
+    // Before initialize(): stepping does nothing and shutdown() is a safe no-op,
+    // so a host that tears down a run it never started cannot crash or report
+    // progress it did not make.
+    CHECK_FALSE(app.step_frame());
+    app.shutdown();
+    CHECK_FALSE(app.stopped);
+
+    // initialize() runs on_start() and brings the arena up.
+    REQUIRE(app.initialize().ok());
+    CHECK(app.arena_present_each_frame);
+    CHECK(app.step_frame());
+
+    // A second initialize() is an error rather than a silent restart.
+    CHECK_FALSE(app.initialize().ok());
+
+    app.shutdown();
+    CHECK(app.stopped);
 }

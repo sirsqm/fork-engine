@@ -37,7 +37,32 @@ public:
 
     // Runs until the window closes or request_exit() is called. Returns the
     // process exit code (0 on a clean run). Never throws.
+    //
+    // This is the desktop driver: initialize(), step until the loop is done,
+    // shutdown(). A host that owns the frame schedule -- a browser page calling
+    // requestAnimationFrame, a test stepping by hand -- uses those three
+    // primitives directly instead of run(), which is why they are public.
     [[nodiscard]] int run();
+
+    // --- Driving the loop yourself -----------------------------------------
+    // Brings the engine up, runs on_start(), creates the frame arena and the
+    // job system, and installs the profiler: everything run() does before its
+    // first frame. Returns the first failure and leaves nothing half-started, so
+    // a failed start needs no shutdown(). Calling it twice is an error.
+    [[nodiscard]] Error initialize();
+
+    // Advances exactly one frame -- the same order of work run() performs
+    // (profiler bracket, clock, input edges, events, update hooks and systems,
+    // render, present) -- and returns true. Returns false when the loop is
+    // finished for the same reasons run() stops: an exit was requested, a
+    // window asked to close, or a headless run reached its frame count. A caller
+    // that gets false must not step again.
+    bool step_frame();
+
+    // Tears the run down in the order run() used: on_stop(), then the arena, the
+    // job system, the scene, and the engine. Safe after initialize(); a second
+    // call, or a call after a failed initialize(), is a no-op.
+    void shutdown();
 
     void request_exit() noexcept { exit_requested_ = true; }
 
@@ -172,6 +197,14 @@ private:
     bool profiling_enabled_ = true;
     bool exit_requested_ = false;
     bool headless_ = false;
+    // True between initialize() and shutdown(). step_frame() and shutdown() are
+    // no-ops outside that window, so a caller that never started the loop cannot
+    // advance or tear down a run that does not exist.
+    bool initialized_ = false;
+    // Frames completed since initialize(). This is the headless stop counter: it
+    // replaces run()'s local frame_index now that the loop body lives in
+    // step_frame().
+    u32 frames_stepped_ = 0;
     u32 headless_frames_ = 0;
     usize last_sprite_count_ = 0;
 };
