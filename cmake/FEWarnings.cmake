@@ -29,6 +29,18 @@ else()
               -Wdouble-promotion
               -Wformat=2
   )
+
+  # GCC 15.2.0 mis-reports -Wfree-nonheap-object (pulled in by -Wextra) on a
+  # correct std::vector<std::string> destruction: it inlines a sized delete on
+  # a stack temporary in new_allocator.h and claims the pointer has a nonzero
+  # offset. The same code builds clean under GCC 13 and 14, and the Debug,
+  # ASan/UBSan and TSan jobs - which would catch an actual bad free - all pass
+  # on it, so there is no real defect to fix. Disable the check only for the
+  # compiler versions that mis-report it; a genuine bad free on those versions
+  # is still caught by the sanitizer jobs.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+    target_compile_options(fe_warnings INTERFACE -Wno-free-nonheap-object)
+  endif()
 endif()
 
 # Warnings-as-errors also belongs to the interface, not to a directory, so that

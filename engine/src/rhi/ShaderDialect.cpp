@@ -8,7 +8,6 @@
 namespace fe::rhi {
 namespace {
 
-constexpr std::string_view kDesktopVersion = "#version 330 core";
 constexpr std::string_view kEsVersion = "#version 300 es";
 
 // A version directive is only recognised on its own line, ignoring leading
