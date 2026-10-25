@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// Tests for the GLSL dialect translation seam (docs/SHIPPING_QUEUE.md,
+// Tests for the GLSL dialect translation seam (docs/ROADMAP.md,
 // `glsl-dialect-seam`).
 //
 // The translation is a pure function of (dialect, stage, source), so these are

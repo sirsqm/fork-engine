@@ -20,7 +20,7 @@ not settle is *who decides the order*. Two clients editing at once will each
 apply their own edit first; without a single order they diverge, and no amount of
 per-replica cleverness fixes it. Something has to be the arbiter.
 
-ADR-0019 and STRATEGY.md (C4) already chose the shape: a `net` module with a
+ADR-0019 already chose the shape: a `net` module with a
 transport abstraction, an in-process loopback for tests and a WebSocket for
 production, and a session server that orders structural operations and applies
 last-writer-wins to property edits. This record lands the module and the server

@@ -29,8 +29,8 @@ reasoning, and anyone can propose a change.
 
 Three capabilities shape where the project is going — performance, shipping to
 every platform players use, and collaborative editing — and are planned in
-[`docs/STRATEGY.md`](docs/STRATEGY.md). Work that advances one of them is
-especially welcome; check [`docs/ROADMAP.md`](docs/ROADMAP.md) first so we do
+[`docs/ROADMAP.md`](docs/ROADMAP.md). Work that advances one of them is
+especially welcome; check the roadmap's shipping queue first so we do
 not duplicate effort.
 
 ## Getting started

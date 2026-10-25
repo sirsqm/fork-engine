@@ -11,8 +11,8 @@
 [ADR-0017](0017-performance-strategy.md) makes measurement the first move and
 names the memory work plainly: *"A per-frame arena for transient data
 (extraction arrays, command lists), reset each frame, to remove per-frame heap
-churn. Allocation counters make churn observable."* `docs/STRATEGY.md` pillar P5
-is the same commitment, with its verify clause: an arena correctness test and
+churn. Allocation counters make churn observable."* The roadmap's performance
+pillar is the same commitment, with its verify clause: an arena correctness test and
 counter assertions.
 
 The forces are specific. The engine's frame does real per-frame work that

@@ -4,7 +4,7 @@
 // The `core` frame arena: a linear (bump) allocator over one pre-allocated
 // buffer. These tests pin the correctness the ADR promises -- alignment,
 // non-overlap, reset reuse, overflow as nullptr, mark/restore, create<T> -- and
-// the counter assertion STRATEGY P5 asks for: the steady-state allocate/reset
+// the counter assertion the performance pillar asks for: the steady-state allocate/reset
 // loop performs no heap allocation. No mocks; every path runs the real arena.
 //
 // The heap-allocation counter is a global operator new/delete replacement in
@@ -323,6 +323,6 @@ TEST_CASE("the steady-state allocate/reset loop performs no heap allocation") {
     const std::size_t allocations_after = g_heap_allocations;
 
     // The loop allocated nothing from the heap. This is the counter assertion
-    // STRATEGY P5 asks for: churn is observable, and here it is zero.
+    // the performance pillar asks for: churn is observable, and here it is zero.
     CHECK(allocations_after == allocations_before);
 }

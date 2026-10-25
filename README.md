@@ -26,8 +26,8 @@ eventually features:
 - **Editing is collaborative.** Several people open the same project, edit it
   live, see each other's changes and presence, and never run a manual merge.
 
-The plan for these is in [`docs/STRATEGY.md`](docs/STRATEGY.md). The order the
-next work is taken in — a vertical slice, scripting, then the pillars — is in
+The plan for all of this — the pillars, the milestone order, and the shipping
+queue the daily automation works through — is in
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 The project is young and honest about it. The repository currently contains the

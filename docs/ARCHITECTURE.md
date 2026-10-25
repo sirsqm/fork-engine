@@ -21,7 +21,7 @@ ship complete 2D and 3D games. That sets the priorities:
 - The editor is a first-class part of the product, not a bolted-on tool.
 
 Three capabilities shape the architecture as much as they shape the roadmap, and
-are planned in [`STRATEGY.md`](STRATEGY.md):
+are planned in [`ROADMAP.md`](ROADMAP.md):
 
 - **Performance is a product feature.** The engine is fast by construction and
   by measurement, not by a late optimization pass. The authoring model (the
@@ -949,7 +949,7 @@ the `fork export` step remain open.
 The goal is that several people edit one project at once, see each other's
 changes and presence live, and never run a manual merge — see
 [ADR-0019](adr/0019-collaborative-editing.md) and
-[`STRATEGY.md`](STRATEGY.md). The editor is already shaped for it:
+[`ROADMAP.md`](ROADMAP.md). The editor is already shaped for it:
 
 - Every edit goes through the command stack rather than mutating the scene
   ([ADR-0015](adr/0015-editor-undo-redo.md)), so an edit is already a discrete,
@@ -1108,7 +1108,7 @@ and is not scattered through the engine.
 The goal is not that the editor runs on several operating systems; it is that a
 game built here reaches every platform its players use — see
 [ADR-0018](adr/0018-multi-platform-shipping.md) and
-[`STRATEGY.md`](STRATEGY.md). That raises the bar on the layer:
+[`ROADMAP.md`](ROADMAP.md). That raises the bar on the layer:
 
 - **The contract is complete.** Beyond window and input, it covers touch and
   gamepad input, threads, time, dynamic libraries, and application lifecycle
