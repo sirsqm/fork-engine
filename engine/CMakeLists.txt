@@ -13,6 +13,9 @@
 #   core, scene, systems  <-  script
 #   core, scene, systems, platform  <-  script (the module loader; see ADR-0061)
 #   core, scene, systems, serialization  <-  script (script binding persistence; see ADR-0063)
+#   core, scene, systems, reflect, platform, script  <-  player (the shipped
+#     behaviours; compiled into every target including wasm, where no gameplay
+#     module can be loaded — see ADR-0078)
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, reflect  <-  physics3d
 #   core, scene, systems, resources  <-  audio
@@ -145,6 +148,7 @@ set(FE_ENGINE_SOURCES
     src/jobs/JobSystem.cpp
     src/script/ScriptLibrary.cpp
     src/script/ScriptBinding.cpp
+    src/player/BuiltinBehaviours.cpp
 )
 
 add_library(fork_engine STATIC ${FE_ENGINE_SOURCES})

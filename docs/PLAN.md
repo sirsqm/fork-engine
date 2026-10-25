@@ -636,6 +636,18 @@ Chromium with no GL error, a pruned 3D export carries its mesh and texture, and
 the web game check runs both renderers. See
 [ADR-0076](adr/0076-3d-in-the-browser.md).
 
+### `web-gameplay-logic`
+
+A 3D scene rendered in a browser but nothing responded to input: gameplay logic
+lived only in C++ modules, and a browser has no dynamic loader, so a web export
+had no logic to consume the actions the input path was already delivering.
+Compile a small, useful set of behaviours into the engine and register them
+in-process, so every target — including wasm — has gameplay to run.
+
+**Done when** a web build runs a scene whose bound behaviour reads the movement
+actions and moves its node, verified by the browser input probe. See
+[ADR-0078](adr/0078-engine-shipped-gameplay-behaviours.md).
+
 ### `web-resize-and-dpr`
 
 A browser canvas is resized by the page, not by the game, and a phone reports a

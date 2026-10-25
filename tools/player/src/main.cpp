@@ -33,6 +33,7 @@
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/HttpFetchSource.h"
 #include "fe/pack/PackSource.h"
+#include "fe/player/BuiltinBehaviours.h"
 #include "fe/renderer3d/Renderer3D.h"
 #include "fe/runtime/Application.h"
 #include "fe/scene/Scene.h"
@@ -131,10 +132,29 @@ protected:
             return error;
         }
 
-        // Load the gameplay modules named on the command line. Each registers the
+        // The engine's built-in behaviours are registered before any scene is
+        // read, for every target. On desktop a game may also ship its own logic
+        // as a gameplay module; on the web there is no dynamic loader, so these
+        // are the only behaviours a browser build can run — which is what gives
+        // an exported game logic to consume input at all (ADR-0078). A scene
+        // binds them by name like any other behaviour, so nothing downstream
+        // knows or cares which side of the process boundary they came from.
+        fe::player::register_builtin_behaviours(library_.registry());
+
+        // Declare the standard actions and bind them to a keyboard and a
+        // touchscreen. This is what makes the built-in behaviours actually
+        // respond to a player: the behaviours read actions, not keys, so a scene
+        // that binds FlyCamera3D is playable on a desktop and a phone from the
+        // same declaration (ADR-0075). A game's own module may add more actions
+        // or rebind these; the standard names are the built-ins' contract.
+        fe::player::declare_builtin_actions(actions());
+
+        // The gameplay modules named on the command line. Each registers the
         // behaviours it provides into the registry the scene's script bindings
         // resolve through, so a scene that records a behaviour by name gets a live
-        // instance back (ADR-0061).
+        // instance back (ADR-0061). A module may override a built-in by
+        // registering the same name, which is the documented replace-on-collision
+        // rule.
         for (const std::string& module : options_.modules) {
             // A module that will not load is fatal: the scene almost certainly
             // needs its behaviours, and running half a game is worse than saying
