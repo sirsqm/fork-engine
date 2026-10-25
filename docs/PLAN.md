@@ -667,6 +667,17 @@ the engine pin a fixed simulation step so a run is reproducible.
 same delta every frame, and the web input probe reports the same distance across
 repeated runs. See [ADR-0079](adr/0079-fixed-simulation-step.md).
 
+### `web-renderer3d-frame-allocations`
+
+The 3D renderer rebuilt its per-frame working set — the extracted instances, the
+mesh-liveness list, and the light lists — on the heap every frame, and swept
+cached mesh buffers with a scan that was quadratic in the number of on-screen
+meshes. Reuse the buffers across frames and make the sweep linear, so a 3D game's
+frame time is not dominated by allocator noise.
+
+**Done when** a steady-state frame reuses capacity rather than allocating and the
+mesh-buffer sweep visits each cached mesh once.
+
 ### `web-resize-and-dpr`
 
 A browser canvas is resized by the page, not by the game, and a phone reports a

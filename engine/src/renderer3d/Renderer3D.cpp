@@ -518,8 +518,13 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     }
 
     // --- 1. Extract --------------------------------------------------------
-    std::vector<render::MeshInstance> instances;
-    std::vector<const Mesh*> meshes_seen;
+    // The working set is a member, so a steady-state frame refills the same
+    // vectors instead of allocating. extract() clears `out` itself, and the
+    // mesh-liveness list is cleared here, so a reused buffer cannot carry the
+    // previous frame's entries into this one.
+    std::vector<render::MeshInstance>& instances = frame_instances_;
+    std::vector<const Mesh*>& meshes_seen = frame_meshes_seen_;
+    meshes_seen.clear();
     extract(scene, instances, &meshes_seen, jobs);
 
     // --- 2. Cull -----------------------------------------------------------
@@ -556,25 +561,12 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     // the node's forward direction), so they are collected here where the node
     // is still in hand. Brightness is intensity scaled by range, which is a
     // cheap proxy for influence used only to pick which lights survive the cap.
-    struct PointLightEntry {
-        Vec3 position;
-        Vec3 color;
-        f32 intensity;
-        f32 range;
-        f32 brightness;
-    };
-    struct SpotLightEntry {
-        Vec3 position;
-        Vec3 direction; // Direction the light travels.
-        Vec3 color;
-        f32 intensity;
-        f32 range;
-        f32 cos_inner;
-        f32 cos_outer;
-        f32 brightness;
-    };
-    std::vector<PointLightEntry> point_lights;
-    std::vector<SpotLightEntry> spot_lights;
+    // The lists are members reused across frames, so the gather does not
+    // allocate once their capacity covers the scene's lights.
+    std::vector<PointLightEntry>& point_lights = frame_point_lights_;
+    std::vector<SpotLightEntry>& spot_lights = frame_spot_lights_;
+    point_lights.clear();
+    spot_lights.clear();
 
     scene.for_each_node([&](Node& node) {
         const Mat4 world = node.world_matrix();
@@ -775,10 +767,16 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     // A buffer is stale when its mesh is no longer referenced by any renderer in
     // the scene. Liveness is checked against every mesh seen this frame, culled
     // or not, so a mesh that is simply off screen keeps its buffers.
-    std::erase_if(buffers_, [&](const auto& entry) {
-        return std::none_of(meshes_seen.begin(), meshes_seen.end(),
-                            [&](const Mesh* mesh) { return mesh == entry.first; });
-    });
+    //
+    // The live set is built once into a hash set rather than scanned per cached
+    // buffer: the previous `none_of` was O(cached meshes x instances seen), which
+    // is quadratic in a scene whose meshes are all on screen -- exactly the
+    // steady state of a game, and the case that must stay cheap. Building the set
+    // is O(instances seen) and the sweep is O(cached meshes).
+    live_meshes_.clear();
+    live_meshes_.reserve(meshes_seen.size() * 2);
+    live_meshes_.insert(meshes_seen.begin(), meshes_seen.end());
+    std::erase_if(buffers_, [&](const auto& entry) { return !live_meshes_.contains(entry.first); });
 
     return static_cast<usize>(drawn);
 }

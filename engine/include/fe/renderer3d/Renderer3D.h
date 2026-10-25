@@ -13,6 +13,7 @@
 
 #include <array>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace fe {
@@ -208,6 +209,27 @@ private:
         u32 index_count = 0;
     };
 
+    // A point or spot light gathered from the scene for the shader, before the
+    // per-frame cap. Named here rather than locally in draw() so the gathered
+    // lists can be reused buffers (see frame_point_lights_ below).
+    struct PointLightEntry {
+        Vec3 position;
+        Vec3 color;
+        f32 intensity;
+        f32 range;
+        f32 brightness;
+    };
+    struct SpotLightEntry {
+        Vec3 position;
+        Vec3 direction; // Direction the light travels.
+        Vec3 color;
+        f32 intensity;
+        f32 range;
+        f32 cos_inner;
+        f32 cos_outer;
+        f32 brightness;
+    };
+
     // Returns the GPU buffers for `mesh`, uploading on first use.
     [[nodiscard]] Result<const GpuMesh*> acquire_mesh(rhi::Device& device, const Mesh& mesh);
 
@@ -315,6 +337,28 @@ private:
     std::array<Vec4, kMaxSpotLights * 2> spot_light_data_{};
     std::array<Vec4, kMaxSpotLights> spot_color_data_{};
     std::array<Vec4, kMaxSpotLights> spot_cone_data_{};
+
+    // --- Per-frame scratch, reused across frames ---------------------------
+    // render() runs every frame and its working set -- the extracted instance
+    // array, the mesh-liveness list, and the gathered light lists -- has the same
+    // shape from one frame to the next. Holding them as members means a
+    // steady-state frame reuses capacity instead of allocating, which is what
+    // keeps a 3D game's frame time free of allocator noise. They are cleared, not
+    // freed, at the top of each use; the extracted instances in particular are
+    // cleared by extract(), which is the documented contract of that step.
+    //
+    // A caller that wants to run render()'s steps itself still passes its own
+    // vectors to extract()/cull()/draw(); these buffers only serve the
+    // single-call render() path.
+    std::vector<render::MeshInstance> frame_instances_;
+    std::vector<const Mesh*> frame_meshes_seen_;
+    std::vector<PointLightEntry> frame_point_lights_;
+    std::vector<SpotLightEntry> frame_spot_lights_;
+
+    // The live mesh set for one frame's buffer sweep, reused across frames so the
+    // sweep does not allocate. Rebuilt from frame_meshes_seen_ each frame; see
+    // the sweep at the end of draw().
+    std::unordered_set<const Mesh*> live_meshes_;
 };
 
 } // namespace renderer3d
