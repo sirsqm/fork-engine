@@ -361,16 +361,6 @@ const Camera3D* Renderer3D::find_active_camera(const Scene& scene) {
     return found != nullptr ? found : fallback;
 }
 
-const DirectionalLight3D* Renderer3D::find_directional_light(const Scene& scene) {
-    const DirectionalLight3D* found = nullptr;
-    scene.for_each_node([&](Node& node) {
-        if (found == nullptr) {
-            found = node.get_component<DirectionalLight3D>();
-        }
-    });
-    return found;
-}
-
 Result<const Renderer3D::GpuMesh*> Renderer3D::acquire_mesh(rhi::Device& device, const Mesh& mesh) {
     const auto it = buffers_.find(&mesh);
     if (it != buffers_.end()) {
@@ -568,21 +558,31 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     point_lights.clear();
     spot_lights.clear();
 
+    // The directional light is picked up on the same walk as the point and spot
+    // lights rather than by a second traversal: the loop already visits every
+    // node, and a directional light is global, so the first one seen is the one
+    // used. One walk instead of two, and the scene's node count is what a frame
+    // pays for it.
+    const DirectionalLight3D* light = nullptr;
+
     scene.for_each_node([&](Node& node) {
         const Mat4 world = node.world_matrix();
-        if (const auto* light = node.get_component<PointLight3D>(); light != nullptr) {
-            point_lights.push_back(PointLightEntry{transform_point(world, Vec3{}), light->color, light->intensity,
-                                                   light->range, light->intensity * light->range});
+        if (light == nullptr) {
+            light = node.get_component<DirectionalLight3D>();
         }
-        if (const auto* light = node.get_component<SpotLight3D>(); light != nullptr) {
+        if (const auto* point = node.get_component<PointLight3D>(); point != nullptr) {
+            point_lights.push_back(PointLightEntry{transform_point(world, Vec3{}), point->color, point->intensity,
+                                                   point->range, point->intensity * point->range});
+        }
+        if (const auto* spot = node.get_component<SpotLight3D>(); spot != nullptr) {
             // The node's local -Z is the cone axis, matching Camera3D. A zero
             // scale would collapse it, so normalise defensively.
             const Vec3 forward = transform_direction(world, Vec3{0.0f, 0.0f, -1.0f}).normalized();
-            const f32 inner = radians(light->inner_cone_degrees);
-            const f32 outer = radians(light->outer_cone_degrees);
-            spot_lights.push_back(SpotLightEntry{transform_point(world, Vec3{}), forward, light->color,
-                                                 light->intensity, light->range, std::cos(inner), std::cos(outer),
-                                                 light->intensity * light->range});
+            const f32 inner = radians(spot->inner_cone_degrees);
+            const f32 outer = radians(spot->outer_cone_degrees);
+            spot_lights.push_back(SpotLightEntry{transform_point(world, Vec3{}), forward, spot->color, spot->intensity,
+                                                 spot->range, std::cos(inner), std::cos(outer),
+                                                 spot->intensity * spot->range});
         }
     });
 
@@ -600,7 +600,6 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     last_point_lights_ = static_cast<u32>(point_lights.size());
     last_spot_lights_ = static_cast<u32>(spot_lights.size());
 
-    const DirectionalLight3D* light = find_directional_light(scene);
     const Vec3 light_direction = light != nullptr ? light->direction.normalized() : Vec3{0.0f, -1.0f, 0.0f};
     const Vec3 light_color = light != nullptr ? light->color : Vec3{1.0f, 1.0f, 1.0f};
     const f32 light_intensity = light != nullptr ? light->intensity : 1.0f;

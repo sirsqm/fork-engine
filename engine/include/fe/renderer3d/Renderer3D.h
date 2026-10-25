@@ -180,7 +180,9 @@ public:
 
     // The first directional light, or nullptr. A scene may have more, but the
     // first is used; a directional light is global, so one is the common case.
-    [[nodiscard]] static const DirectionalLight3D* find_directional_light(const Scene& scene);
+    // The renderer picks it up on its per-node light gather rather than walking
+    // the scene a second time, so there is no standalone lookup to call: the
+    // first directional light in the gather is the one that lights the frame.
 
     // The per-frame light budget. Point and spot lights are forwarded to the
     // shader in fixed-size arrays, so a scene with more lights than this renders
