@@ -7,29 +7,47 @@
       "name": "Camera",
       "type": "Node",
       "transform": {
-        "position": [0.0, 2.2, 7.5],
-        "rotation": [-0.2, 0.0, 0.0],
-        "scale": [1.0, 1.0, 1.0]
+        "position": [
+          0.0,
+          3.2,
+          7.0
+        ],
+        "rotation": [
+          -0.18,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       },
       "components": [
         {
           "type": "Camera3D",
           "fov_degrees": 60.0,
           "near_plane": 0.1,
-          "far_plane": 100.0,
-          "clear_color": [0.05, 0.06, 0.1, 1.0],
+          "far_plane": 120.0,
+          "clear_color": [
+            0.05,
+            0.06,
+            0.1,
+            1.0
+          ],
           "primary": true
         }
       ],
       "scripts": [
         {
-          "behaviour": "FlyCamera3D",
+          "behaviour": "FollowCamera3D",
           "properties": {
-            "move_speed": 5.0,
-            "run_multiplier": 3.0,
-            "look_speed": 2.2,
-            "mouse_sensitivity": 0.0025,
-            "enable_mouse_look": true
+            "target": "Player",
+            "distance": 7.0,
+            "height": 3.2,
+            "look_ahead": 1.5,
+            "look_height": 1.0,
+            "smoothing": 8.0
           }
         }
       ]
@@ -38,17 +56,37 @@
       "name": "Sun",
       "type": "Node",
       "transform": {
-        "position": [0.0, 0.0, 0.0],
-        "rotation": [0.0, 0.0, 0.0],
-        "scale": [1.0, 1.0, 1.0]
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       },
       "components": [
         {
           "type": "DirectionalLight3D",
-          "direction": [-0.4, -1.0, -0.35],
-          "color": [1.0, 0.97, 0.9],
+          "direction": [
+            -0.4,
+            -1.0,
+            -0.35
+          ],
+          "color": [
+            1.0,
+            0.97,
+            0.9
+          ],
           "intensity": 1.0,
-          "ambient": 0.2
+          "ambient": 0.25
         }
       ]
     },
@@ -56,17 +94,44 @@
       "name": "Floor",
       "type": "Node",
       "transform": {
-        "position": [0.0, -0.55, 0.0],
-        "rotation": [0.0, 0.0, 0.0],
-        "scale": [14.0, 0.1, 14.0]
+        "position": [
+          0.0,
+          -0.5,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          24.0,
+          1.0,
+          24.0
+        ]
       },
       "components": [
         {
           "type": "MeshRenderer3D",
-          "base_color": [0.5, 0.53, 0.6, 1.0],
-          "specular": 0.06,
+          "base_color": [
+            0.42,
+            0.46,
+            0.52
+          ],
+          "specular": 0.05,
           "mesh": "obj:assets/meshes/cube.obj",
           "texture": "tex:assets/textures/checker.png"
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            12.0,
+            0.5,
+            12.0
+          ],
+          "restitution": 0.0,
+          "friction": 0.9
         }
       ]
     },
@@ -74,100 +139,735 @@
       "name": "Player",
       "type": "Node",
       "transform": {
-        "position": [0.0, 0.0, 0.0],
-        "rotation": [0.0, 0.0, 0.0],
-        "scale": [0.9, 0.9, 0.9]
+        "position": [
+          0.0,
+          0.55,
+          4.0
+        ],
+        "rotation": [
+          0.0,
+          3.14159265,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       },
       "components": [
         {
           "type": "MeshRenderer3D",
-          "base_color": [0.95, 0.5, 0.15, 1.0],
-          "specular": 0.4,
+          "base_color": [
+            0.95,
+            0.55,
+            0.2
+          ],
+          "specular": 0.45,
           "mesh": "obj:assets/meshes/cube.obj",
           "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            0.45,
+            0.55,
+            0.45
+          ],
+          "restitution": 0.0,
+          "friction": 0.7
+        },
+        {
+          "type": "RigidBody3D",
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angular_velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "torque": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 2.0,
+          "inertia": 0.0,
+          "linear_damping": 0.0,
+          "angular_damping": 0.0,
+          "kinematic": false,
+          "affected_by_gravity": false,
+          "fixed_rotation": true
         }
       ],
       "scripts": [
         {
-          "behaviour": "MoveNode3D",
+          "behaviour": "CharacterController3D",
           "properties": {
-            "speed": 4.0,
-            "run_multiplier": 2.5,
-            "lock_vertical": true
+            "speed": 5.0,
+            "run_multiplier": 2.0,
+            "turn_speed": 160.0,
+            "jump_speed": 7.0,
+            "gravity": 20.0,
+            "ground_probe": 0.12,
+            "slide_along_walls": true
           }
         }
       ]
     },
     {
-      "name": "SpinnerA",
+      "name": "Ramp",
       "type": "Node",
       "transform": {
-        "position": [-3.0, 0.0, -2.0],
-        "rotation": [0.0, 0.0, 0.0],
-        "scale": [1.0, 1.0, 1.0]
+        "position": [
+          -6.0,
+          0.35,
+          -3.0
+        ],
+        "rotation": [
+          0.0,
+          0.5,
+          0.0
+        ],
+        "scale": [
+          4.0,
+          0.7,
+          2.5
+        ]
       },
       "components": [
         {
           "type": "MeshRenderer3D",
-          "base_color": [0.25, 0.7, 0.95, 1.0],
-          "specular": 0.5,
+          "base_color": [
+            0.35,
+            0.62,
+            0.4
+          ],
+          "specular": 0.15,
           "mesh": "obj:assets/meshes/cube.obj",
           "texture": ""
-        }
-      ],
-      "scripts": [
+        },
         {
-          "behaviour": "SpinNode3D",
-          "properties": {
-            "axis_x": 0.0,
-            "axis_y": 1.0,
-            "axis_z": 0.0,
-            "degrees_per_second": 90.0
-          }
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            2.0,
+            0.35,
+            1.25
+          ],
+          "restitution": 0.0,
+          "friction": 0.85
         }
       ]
     },
     {
-      "name": "SpinnerB",
+      "name": "Platform",
       "type": "Node",
       "transform": {
-        "position": [3.0, 0.6, -2.5],
-        "rotation": [0.0, 0.0, 0.0],
-        "scale": [1.2, 1.2, 1.2]
+        "position": [
+          6.5,
+          1.2,
+          -5.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          3.0,
+          0.5,
+          3.0
+        ]
       },
       "components": [
         {
           "type": "MeshRenderer3D",
-          "base_color": [0.55, 0.9, 0.4, 1.0],
-          "specular": 0.35,
+          "base_color": [
+            0.6,
+            0.5,
+            0.85
+          ],
+          "specular": 0.25,
           "mesh": "obj:assets/meshes/cube.obj",
           "texture": ""
-        }
-      ],
-      "scripts": [
+        },
         {
-          "behaviour": "SpinNode3D",
-          "properties": {
-            "axis_x": 0.4,
-            "axis_y": 1.0,
-            "axis_z": 0.0,
-            "degrees_per_second": -140.0
-          }
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            1.5,
+            0.25,
+            1.5
+          ],
+          "restitution": 0.0,
+          "friction": 0.8
         }
       ]
     },
     {
-      "name": "Tower",
+      "name": "WallWest",
       "type": "Node",
       "transform": {
-        "position": [0.0, 1.1, -6.0],
-        "rotation": [0.0, 0.6, 0.0],
-        "scale": [1.0, 2.4, 1.0]
+        "position": [
+          -12.0,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.5,
+          2.0,
+          24.0
+        ]
       },
       "components": [
         {
           "type": "MeshRenderer3D",
-          "base_color": [0.85, 0.35, 0.5, 1.0],
+          "base_color": [
+            0.55,
+            0.4,
+            0.4
+          ],
+          "specular": 0.1,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            0.25,
+            1.0,
+            12.0
+          ],
+          "restitution": 0.0,
+          "friction": 0.8
+        }
+      ]
+    },
+    {
+      "name": "WallEast",
+      "type": "Node",
+      "transform": {
+        "position": [
+          12.0,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.5,
+          2.0,
+          24.0
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.55,
+            0.4,
+            0.4
+          ],
+          "specular": 0.1,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            0.25,
+            1.0,
+            12.0
+          ],
+          "restitution": 0.0,
+          "friction": 0.8
+        }
+      ]
+    },
+    {
+      "name": "WallNorth",
+      "type": "Node",
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          -12.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          24.0,
+          2.0,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.55,
+            0.4,
+            0.4
+          ],
+          "specular": 0.1,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            12.0,
+            1.0,
+            0.25
+          ],
+          "restitution": 0.0,
+          "friction": 0.8
+        }
+      ]
+    },
+    {
+      "name": "WallSouth",
+      "type": "Node",
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          12.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          24.0,
+          2.0,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.55,
+            0.4,
+            0.4
+          ],
+          "specular": 0.1,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            12.0,
+            1.0,
+            0.25
+          ],
+          "restitution": 0.0,
+          "friction": 0.8
+        }
+      ]
+    },
+    {
+      "name": "Crate1",
+      "type": "Node",
+      "transform": {
+        "position": [
+          -2.0,
+          0.6,
+          -1.5
+        ],
+        "rotation": [
+          0.0,
+          0.3,
+          0.0
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.85,
+            0.68,
+            0.3
+          ],
+          "specular": 0.2,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            0.6,
+            0.6,
+            0.6
+          ],
+          "restitution": 0.05,
+          "friction": 0.6
+        },
+        {
+          "type": "RigidBody3D",
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angular_velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "torque": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 1.0,
+          "inertia": 0.0,
+          "linear_damping": 0.05,
+          "angular_damping": 0.05,
+          "kinematic": false,
+          "affected_by_gravity": true,
+          "fixed_rotation": false
+        }
+      ]
+    },
+    {
+      "name": "Crate2",
+      "type": "Node",
+      "transform": {
+        "position": [
+          1.5,
+          0.6,
+          -2.5
+        ],
+        "rotation": [
+          0.0,
+          -0.2,
+          0.0
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.85,
+            0.68,
+            0.3
+          ],
+          "specular": 0.2,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            0.6,
+            0.6,
+            0.6
+          ],
+          "restitution": 0.05,
+          "friction": 0.6
+        },
+        {
+          "type": "RigidBody3D",
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angular_velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "torque": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 1.0,
+          "inertia": 0.0,
+          "linear_damping": 0.05,
+          "angular_damping": 0.05,
+          "kinematic": false,
+          "affected_by_gravity": true,
+          "fixed_rotation": false
+        }
+      ]
+    },
+    {
+      "name": "Crate3",
+      "type": "Node",
+      "transform": {
+        "position": [
+          3.5,
+          0.6,
+          0.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.85,
+            0.68,
+            0.3
+          ],
+          "specular": 0.2,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            0.6,
+            0.6,
+            0.6
+          ],
+          "restitution": 0.05,
+          "friction": 0.6
+        },
+        {
+          "type": "RigidBody3D",
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angular_velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "torque": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 1.0,
+          "inertia": 0.0,
+          "linear_damping": 0.05,
+          "angular_damping": 0.05,
+          "kinematic": false,
+          "affected_by_gravity": true,
+          "fixed_rotation": false
+        }
+      ]
+    },
+    {
+      "name": "Crate4",
+      "type": "Node",
+      "transform": {
+        "position": [
+          -4.0,
+          0.6,
+          2.0
+        ],
+        "rotation": [
+          0.0,
+          0.5,
+          0.0
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.85,
+            0.68,
+            0.3
+          ],
+          "specular": 0.2,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 0,
+          "half_extent": [
+            0.6,
+            0.6,
+            0.6
+          ],
+          "restitution": 0.05,
+          "friction": 0.6
+        },
+        {
+          "type": "RigidBody3D",
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angular_velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "torque": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 1.0,
+          "inertia": 0.0,
+          "linear_damping": 0.05,
+          "angular_damping": 0.05,
+          "kinematic": false,
+          "affected_by_gravity": true,
+          "fixed_rotation": false
+        }
+      ]
+    },
+    {
+      "name": "Ball",
+      "type": "Node",
+      "transform": {
+        "position": [
+          -4.5,
+          1.6,
+          1.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.3,
+            0.75,
+            0.9
+          ],
+          "specular": 0.6,
+          "mesh": "obj:assets/meshes/sphere.obj",
+          "texture": ""
+        },
+        {
+          "type": "Collider3D",
+          "shape": 1,
+          "half_extent": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "radius": 0.5,
+          "restitution": 0.55,
+          "friction": 0.4
+        },
+        {
+          "type": "RigidBody3D",
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angular_velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "torque": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 0.6,
+          "inertia": 0.0,
+          "linear_damping": 0.1,
+          "angular_damping": 0.1,
+          "kinematic": false,
+          "affected_by_gravity": true,
+          "fixed_rotation": false
+        }
+      ]
+    },
+    {
+      "name": "Spinner",
+      "type": "Node",
+      "transform": {
+        "position": [
+          -8.5,
+          1.5,
+          -8.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.4,
+          1.4,
+          1.4
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.9,
+            0.35,
+            0.5
+          ],
           "specular": 0.3,
           "mesh": "obj:assets/meshes/cube.obj",
           "texture": ""
@@ -178,9 +878,9 @@
           "behaviour": "SpinNode3D",
           "properties": {
             "axis_x": 0.0,
-            "axis_y": 0.0,
-            "axis_z": 1.0,
-            "degrees_per_second": 40.0
+            "axis_y": 1.0,
+            "axis_z": 0.0,
+            "degrees_per_second": 70.0
           }
         }
       ]
