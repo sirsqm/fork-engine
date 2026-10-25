@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/core/Uuid.h"
 #include "fe/platform/InputActions.h"
 #include "fe/script/Script.h"
 #include "fe/script/ScriptRegistry.h"
 
+#include <string>
 #include <string_view>
 
 namespace fe {
@@ -64,6 +66,7 @@ inline constexpr std::string_view kLookDown = "LookDown";
 inline constexpr std::string_view kLookLeft = "LookLeft";
 inline constexpr std::string_view kLookRight = "LookRight";
 inline constexpr std::string_view kRun = "Run";
+inline constexpr std::string_view kJump = "Jump";
 } // namespace actions
 
 // Declares the standard actions on `map` and binds each to the devices a player
@@ -179,6 +182,145 @@ public:
     // Keeps the node's Y fixed, so a "walking" object does not drift off the
     // floor when the up/down actions are pressed by a player exploring the keys.
     bool lock_vertical = true;
+};
+
+// A third-person character controller: the "player controller" a game ships.
+//
+// Why this is engine-shipped
+// --------------------------
+// A character controller is the one behaviour every game needs and no game
+// should have to write from scratch. It is here rather than in a gameplay module
+// for the reason ADR-0078 gives: a browser has no dynamic loader, so a module is
+// exactly what an exported web game cannot load. A controller that lived only in
+// a module would make "a playable 3D game in the browser" impossible to ship.
+//
+// The model
+// ---------
+// This is a *kinematic* controller: it decides the velocity the character should
+// have and hands that to the physics step, rather than applying forces and hoping
+// the solver lands the character where the player pointed. That is the standard
+// model for a platformer or a third-person action game, and it is what makes the
+// movement feel the same on every machine: the character moves at `speed`, not at
+// "whatever the impulse integrates to".
+//
+// It is written to drive a node that carries a `RigidBody3D` and a `Collider3D`,
+// with the body's gravity left *off* (`affected_by_gravity = false`): the script
+// owns the vertical velocity, so it can decide what "grounded" means and how a
+// jump feels, and so the fall is frame-rate independent and testable. A body left
+// under the solver's gravity would fight the script for the Y axis.
+//
+// Ground and walls are found with the read-only `physics3d` queries against the
+// scene the node belongs to, so the controller needs no contact callback and
+// works whether or not a `Physics3DSystem` ever ran. The scene comes from
+// `Node::scene()`, so the behaviour needs nothing beyond its own node.
+//
+// Orientation
+// -----------
+// The character stays upright: its yaw is kept as state and written back as a
+// pure Y rotation, and pitch and roll are never touched. That is both what a
+// character wants (it should not tip over) and what keeps the axis-aligned
+// collider honest, since the solver collides the unrotated box (ADR-0043).
+//
+// Turning is by action, not by mouse: `MoveLeft`/`MoveRight` yaw the character,
+// `MoveForward`/`MoveBack` walk along its facing. A third-person game is played
+// with the camera behind the character, so this is the layout that needs no mouse
+// capture — which a browser only grants after a user gesture, and which a phone
+// does not have at all. A mouse-look variant is a later behaviour, not a change
+// to this one.
+//
+// It reads gameplay actions, never keys, so the identical behaviour serves a
+// keyboard and a touchscreen (ADR-0075).
+class CharacterController3D final : public Script {
+public:
+    [[nodiscard]] std::string_view name() const noexcept override { return "CharacterController3D"; }
+
+    [[nodiscard]] Error attach(Node& node) override;
+    [[nodiscard]] Error update(const FrameContext& context) override;
+
+    // Walk speed, in world units per second.
+    f32 speed = 4.5f;
+    // Multiplier applied while the run action is held.
+    f32 run_multiplier = 2.0f;
+    // Turn rate, in degrees per second, for the left/right actions.
+    f32 turn_speed = 150.0f;
+    // Upward velocity given at the start of a jump, in world units per second.
+    // A larger value jumps higher; the height reached is v^2 / (2 g).
+    f32 jump_speed = 6.0f;
+    // Downward acceleration, in world units per second squared. Positive here is
+    // a downward pull, so the sign is written the way a designer says it.
+    f32 gravity = 20.0f;
+    // How far below the character's centre the ground probe looks, beyond the
+    // collider's own half-height. A small margin lets the probe find the floor
+    // across a frame's fall without reaching through it.
+    f32 ground_probe = 0.1f;
+    // Whether the character may step over a low obstacle by itself. When true a
+    // blocked move slides along the obstacle instead of stopping dead, which is
+    // what keeps a character from sticking to a wall it walks into at an angle.
+    bool slide_along_walls = true;
+
+    // Whether the character was on the ground at the end of the last update. Read
+    // by a test and by a follow camera that wants to know when to steady itself.
+    [[nodiscard]] bool grounded() const noexcept { return grounded_; }
+
+    // The character's facing, in radians about Y. Positive turns left, matching
+    // the engine's Y rotation (FlyCamera3D's convention).
+    [[nodiscard]] f32 yaw() const noexcept { return yaw_; }
+
+private:
+    bool grounded_ = false;
+    f32 yaw_ = 0.0f;
+    // The fall speed the script owns, kept between frames so a jump arcs rather
+    // than teleporting. It is separate from the body's velocity, which the solver
+    // also writes; the script's value is authoritative for Y.
+    f32 vertical_velocity_ = 0.0f;
+};
+
+// A camera that trails a named node, looking at it from behind and above.
+//
+// The companion to CharacterController3D: a third-person game needs a camera
+// that follows the character, and the follow logic (a smoothed offset behind the
+// target's facing) is the same in every game, so it ships here too.
+//
+// The target is named rather than referenced by a stored pointer, so a scene
+// records `target = "Player"` and the behaviour resolves it by name. It resolves
+// lazily on the first update and re-resolves if the node goes away, so the order
+// of nodes in the scene file does not matter and a reloaded scene reconnects
+// without the camera holding a stale pointer.
+//
+// The offset is expressed in the target's own frame (behind it and above it) and
+// rotated by the target's yaw, so the camera swings round behind the character as
+// it turns. The camera's position is smoothed towards the desired one, so a turn
+// or a jump does not snap the view.
+class FollowCamera3D final : public Script {
+public:
+    [[nodiscard]] std::string_view name() const noexcept override { return "FollowCamera3D"; }
+
+    [[nodiscard]] Error update(const FrameContext& context) override;
+
+    // The node to follow, by name. A scene sets this to the character's node
+    // name. Empty means "follow nothing", and the behaviour is inert.
+    std::string target = "Player";
+    // How far behind the target the camera sits, in world units. Positive is
+    // behind (the engine's forward is -Z, so "behind" is +Z in the target's
+    // frame).
+    f32 distance = 7.0f;
+    // How far above the target the camera sits.
+    f32 height = 3.2f;
+    // How far ahead of the target the camera aims, so the character is not dead
+    // centre and the player can see where they are going.
+    f32 look_ahead = 1.5f;
+    // How far above the target's own position the camera aims.
+    f32 look_height = 1.0f;
+    // How quickly the camera catches up to its desired position, per second. A
+    // larger value tracks more tightly; 0 disables smoothing (the camera snaps).
+    f32 smoothing = 8.0f;
+
+private:
+    // The resolved target's id. A name is resolved once and then kept as an id,
+    // because ids are stable across a reload and the id lookup is a hash rather
+    // than a walk of the scene.
+    Uuid target_id_{};
+    bool resolved_ = false;
 };
 
 } // namespace player
