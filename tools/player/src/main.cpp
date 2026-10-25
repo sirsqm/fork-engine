@@ -85,6 +85,12 @@ struct Options {
     // The node whose movement the input probe measures. A scene names its camera
     // "Camera" by convention; a game that does not can override it.
     std::string probe_node = "Camera";
+    // A fixed simulation step in seconds, or 0 to step by the measured frame
+    // time. The input probe pins it, so the distance it measures is a property of
+    // the input and the behaviour rather than of how fast the browser happened to
+    // run: a run under a headless browser has a wall-clock delta that varies
+    // wildly, and a probe measuring it would be flaky by construction.
+    fe::f32 fixed_step = 0.0f;
     bool headless = false;
     bool render = false;
     bool verbose = false;
@@ -416,6 +422,8 @@ void print_usage() {
             out.probe_input = true;
         } else if (arg == "--probe-node" && has_value) {
             out.probe_node = argv[++i];
+        } else if (arg == "--fixed-step" && has_value) {
+            out.fixed_step = static_cast<fe::f32>(std::strtod(argv[++i], nullptr));
         } else if (arg == "--headless" && has_value) {
             out.headless = true;
             out.headless_frames = static_cast<fe::u32>(std::strtoul(argv[++i], nullptr, 10));
@@ -455,6 +463,15 @@ void print_usage() {
         config.window.visible = false;
         config.window.vsync = false;
         config.headless_render = options.render;
+    }
+    // A fixed step is what makes a verification run reproducible, so the input
+    // probe pins one by default: its reported distance is then a property of the
+    // input and the behaviour, not of the browser's frame timing. A caller can
+    // override it, and a plain run leaves it at 0 and steps by the measured
+    // delta as a game does.
+    config.fixed_delta_time = options.fixed_step;
+    if (config.fixed_delta_time <= 0.0f && options.probe_input) {
+        config.fixed_delta_time = 1.0f / 60.0f;
     }
     return config;
 }

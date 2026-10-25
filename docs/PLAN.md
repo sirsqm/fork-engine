@@ -657,6 +657,16 @@ behaviours with a keyboard and a touchscreen.
 **Done when** the project exports for the web, runs in headless Chromium, and the
 input probe observes the player node move in response to a synthetic key.
 
+### `fixed-simulation-step`
+
+The browser input probe measured wall-clock distance, so the same run reported
+different values on a loaded runner and the check was flaky by construction. Let
+the engine pin a fixed simulation step so a run is reproducible.
+
+**Done when** a test drives the frame loop with a fixed step and observes the
+same delta every frame, and the web input probe reports the same distance across
+repeated runs. See [ADR-0079](adr/0079-fixed-simulation-step.md).
+
 ### `web-resize-and-dpr`
 
 A browser canvas is resized by the page, not by the game, and a phone reports a

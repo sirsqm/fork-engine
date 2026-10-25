@@ -61,6 +61,14 @@ public:
         // is the ADR-0041 behaviour. Nothing is rasterised, so this proves
         // submission, not pixels. See docs/adr/0042-null-rhi-device.md.
         bool headless_render = false;
+        // A fixed simulation step, in seconds. Zero (the default) steps by the
+        // measured wall-clock delta, which is what a game wants. A positive value
+        // makes every frame advance by exactly that much regardless of how long
+        // the frame took, so a run is reproducible: the same scene and the same
+        // input produce the same state on any machine, at any frame rate. It is
+        // what a verification run and a headless capture need, and what a game
+        // that wants a stable simulation would pin. See docs/adr/0079.
+        f32 fixed_delta_time = 0.0f;
     };
 
     // Declared but not defined here: the unique_ptr members need their types
@@ -142,7 +150,8 @@ public:
 
     // Seconds elapsed since the previous frame, clamped to a sane maximum so a
     // long stall (a debugger breakpoint, a window drag) does not produce a huge
-    // simulation step.
+    // simulation step. When Config::fixed_delta_time is set this is that value,
+    // so a run advances by a fixed step rather than by how long the frame took.
     [[nodiscard]] f32 delta_time() const noexcept { return delta_time_; }
 
     // Seconds elapsed since initialize().
@@ -163,6 +172,7 @@ private:
     std::unique_ptr<audio::AudioSystem> audio_system_;
 
     f32 delta_time_ = 0.0f;
+    f32 fixed_delta_time_ = 0.0f;
     f64 elapsed_time_ = 0.0;
     f64 last_tick_time_ = 0.0;
 };

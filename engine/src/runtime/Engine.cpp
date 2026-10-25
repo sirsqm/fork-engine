@@ -69,6 +69,10 @@ Error Engine::initialize(const Config& config) {
     // docs/adr/0042-null-rhi-device.md.
     has_graphics_ = window_->has_context();
     headless_render_ = !has_graphics_ && config.headless_render;
+    fixed_delta_time_ = config.fixed_delta_time > 0.0f ? config.fixed_delta_time : 0.0f;
+    if (fixed_delta_time_ > 0.0f) {
+        FE_LOG_INFO("fixed simulation step: %.4f s", static_cast<double>(fixed_delta_time_));
+    }
     const bool wants_device = has_graphics_ || headless_render_;
 
     if (has_graphics_) {
@@ -171,9 +175,15 @@ void Engine::tick() {
     const f64 now = now_seconds();
     const f64 elapsed = now - last_tick_time_;
     last_tick_time_ = now;
-    elapsed_time_ += elapsed;
 
-    const auto frame = static_cast<f32>(elapsed);
+    // A fixed step makes the simulation advance by that much on every frame,
+    // whatever the frame actually took. elapsed_time() then measures simulated
+    // time, not wall-clock time, which is the point: a run that pinned the step
+    // is reproducible, and one that did not is unchanged.
+    const f64 step = fixed_delta_time_ > 0.0f ? static_cast<f64>(fixed_delta_time_) : elapsed;
+    elapsed_time_ += step;
+
+    const auto frame = static_cast<f32>(step);
     delta_time_ = frame > kMaxDeltaTime ? kMaxDeltaTime : frame;
 }
 

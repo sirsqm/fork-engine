@@ -21,6 +21,7 @@
 #include "fe/systems/System.h"
 
 #include <string_view>
+#include <vector>
 
 using namespace fe;
 
@@ -385,6 +386,42 @@ TEST_CASE("a stepped loop honours request_exit and reports it") {
     CHECK(app.updates == 1);
 
     app.shutdown();
+}
+
+TEST_CASE("a fixed simulation step makes the frame delta independent of wall time") {
+    // A scene that records the delta it is handed each frame. Under a fixed step
+    // every frame must see the same value, whatever the wall clock did; without
+    // one the loop is free to advance by the measured time. This is the property
+    // the browser verification relies on: the input probe measures motion, and a
+    // measured wall-clock delta would make that measurement flaky.
+    class DeltaApp final : public Application {
+    public:
+        explicit DeltaApp(Engine::Config config) : Application(config) {}
+
+        std::vector<f32> deltas;
+
+    protected:
+        Error on_start() override {
+            (void)scene().create_node("Node");
+            return Error::none();
+        }
+        void on_update(f32 delta_time) override { deltas.push_back(delta_time); }
+    };
+
+    Engine::Config config = null_config();
+    config.fixed_delta_time = 1.0f / 60.0f;
+    DeltaApp app(config);
+    app.set_headless(6);
+    REQUIRE(app.run() == 0);
+
+    REQUIRE(app.deltas.size() == 6);
+    for (f32 delta : app.deltas) {
+        CHECK(delta == doctest::Approx(1.0f / 60.0f));
+    }
+
+    // The step is also what elapsed_time() advances by, so simulated time is the
+    // frame count times the step rather than a wall-clock measurement.
+    CHECK(app.deltas.front() == app.deltas.back());
 }
 
 TEST_CASE("the frame primitives are inert outside an initialised run") {

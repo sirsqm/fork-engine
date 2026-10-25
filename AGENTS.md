@@ -77,7 +77,8 @@ tests/web/run_web_game.sh       # exports the 2D demo and the playable 3D game, 
   `examples/game3d_project`; set `FE_WEB_GAME_PROJECT=DIR` for a single focused
   run. The 3D run turns on the player's input probe (`?probe=1&probeNode=Player`)
   and fails when the watched node does not move, so "a synthetic key reaches
-  gameplay in a browser" is checked, not assumed.
+  gameplay in a browser" is checked, not assumed. The probe pins a fixed
+  simulation step (ADR-0079), so its reported distance is reproducible.
 - The game script exports with the native `fork_export` when one exists and
   otherwise with the wasm one under node, so it works in the web CI job, which
   has no desktop build. The player reports what it drew into the page title

@@ -84,3 +84,9 @@ The page title then reads
 behaviour. `tests/web/run_web_game.sh` runs this project with the probe on and
 fails the run when `moved` is zero, so "input works in the browser" is checked on
 every push rather than asserted in prose.
+
+The probe pins a fixed simulation step (`--fixed-step`, defaulting to 1/60 s when
+the probe is on; ADR-0079), so the distance it reports is a property of the input
+and the behaviour rather than of how fast the browser happened to run the frames.
+Two frames are therefore enough, and the same run reports the same `moved` every
+time. A plain run steps by the measured frame time as a game does.
