@@ -1,0 +1,7 @@
+{
+  "format": "fork_project",
+  "format_version": 1,
+  "name": "Demo3D",
+  "asset_root": "assets",
+  "startup_scene": "scenes/main3d.fescene"
+}

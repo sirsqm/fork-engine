@@ -220,10 +220,18 @@ public:
     // Allocates a depth-only texture. The shadow pass renders into it and then
     // samples it as a plain float depth, so compare mode stays NONE: the shader
     // does the comparison itself, which keeps it backend-agnostic.
+    //
+    // The pixel type is GL_UNSIGNED_INT, not GL_FLOAT: the pair
+    // (GL_DEPTH_COMPONENT24, GL_FLOAT) is legal on a desktop GL 3.3 core context
+    // but is *not* a valid combination in GLSL ES 3.0, which is what a WebGL2
+    // context enforces. There glTexImage2D fails with GL_INVALID_OPERATION, the
+    // texture keeps no storage, and the framebuffer is left incomplete. The pair
+    // used here is valid on both, so one allocation serves the desktop and the
+    // browser. See docs/adr/0076-3d-in-the-browser.md.
     void allocate_depth(u32 width, u32 height) {
         glBindTexture(GL_TEXTURE_2D, handle_);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, static_cast<GLsizei>(width), static_cast<GLsizei>(height),
-                     0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+                     0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
         // Nearest: depth must not be interpolated across the shadow map, and a
         // shadow-map texel is a single depth value, not a gradient.
         set_sampling(TextureFilter::Nearest, TextureWrap::ClampToEdge, TextureWrap::ClampToEdge);
@@ -269,8 +277,9 @@ private:
 // texture (sampleable, for the shadow pass), chosen by `sample_depth`.
 class OpenGLRenderTarget final : public RenderTarget {
 public:
-    OpenGLRenderTarget(std::string name, u32 width, u32 height, bool depth, bool sample_depth)
-        : name_(std::move(name)), width_(width), height_(height), depth_(depth), sample_depth_(sample_depth) {}
+    OpenGLRenderTarget(std::string name, u32 width, u32 height, bool color, bool depth, bool sample_depth)
+        : name_(std::move(name)), width_(width), height_(height), has_color_(color), depth_(depth),
+          sample_depth_(sample_depth) {}
 
     ~OpenGLRenderTarget() override {
         if (depth_buffer_ != 0) {
@@ -298,21 +307,30 @@ public:
 
     void clear(const ClearColor& color) override {
         glClearColor(color.r, color.g, color.b, color.a);
-        glClear(GL_COLOR_BUFFER_BIT | (depth_ ? GL_DEPTH_BUFFER_BIT : 0));
+        glClear((has_color_ ? GL_COLOR_BUFFER_BIT : 0) | (depth_ ? GL_DEPTH_BUFFER_BIT : 0));
     }
 
     // Allocates the attachments. Separate from the constructor so creation can
     // fail with an Error instead of asserting: an incomplete framebuffer is a
     // driver or size problem the caller should see.
     [[nodiscard]] Error create_attachments() {
-        color_ = std::make_shared<OpenGLTexture>(name_ + ".color", width_, height_);
-        // Render targets are sampled at a different scale than they are drawn,
-        // so linear filtering avoids a blocky downsample.
-        color_->allocate(width_, height_, TextureFilter::Linear);
-
         glGenFramebuffers(1, &framebuffer_);
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_->handle(), 0);
+
+        if (has_color_) {
+            color_ = std::make_shared<OpenGLTexture>(name_ + ".color", width_, height_);
+            // Render targets are sampled at a different scale than they are drawn,
+            // so linear filtering avoids a blocky downsample.
+            color_->allocate(width_, height_, TextureFilter::Linear);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_->handle(), 0);
+        } else {
+            // A depth-only target (the shadow map) has no colour attachment, so
+            // tell the framebuffer so explicitly. Without this a WebGL2 context
+            // keeps GL_COLOR_ATTACHMENT0 enabled and rejects every draw whose
+            // fragment shader has no output (the shadow pass has none) with
+            // "Active draw buffers with missing fragment shader outputs".
+            glDrawBuffers(0, nullptr);
+        }
 
         if (depth_) {
             if (sample_depth_) {
@@ -340,6 +358,7 @@ private:
     std::string name_;
     u32 width_;
     u32 height_;
+    bool has_color_ = true;
     bool depth_;
     bool sample_depth_;
     GLuint framebuffer_ = 0;
@@ -476,7 +495,7 @@ public:
         if (desc.width == 0 || desc.height == 0) {
             return Error("create_render_target: dimensions must be non-zero");
         }
-        auto target = std::make_shared<OpenGLRenderTarget>(desc.name, desc.width, desc.height, desc.depth,
+        auto target = std::make_shared<OpenGLRenderTarget>(desc.name, desc.width, desc.height, desc.color, desc.depth,
                                                            desc.depth && desc.sample_depth);
         if (Error error = target->create_attachments(); error) {
             return error;

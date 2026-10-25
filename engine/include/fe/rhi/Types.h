@@ -218,6 +218,14 @@ struct RenderTargetDesc {
     std::string name;
     u32 width = 0;
     u32 height = 0;
+    // Allocate a colour attachment. On for everything that draws colour -- the
+    // window, the editor viewport, the post-process target. A depth-only pass
+    // (the shadow map) turns it off: the pass writes no colour, and a WebGL2
+    // context rejects a draw whose program has no fragment output when the
+    // framebuffer it is bound to has a colour attachment enabled. A target with
+    // `color = false` must have `depth = true` and `sample_depth = true`, since a
+    // target with no attachment at all would be incomplete.
+    bool color = true;
     // Allocate a depth buffer. Off for the 2D viewport, on for future 3D
     // passes; it costs memory that a 2D-only target does not need.
     bool depth = false;

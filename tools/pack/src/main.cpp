@@ -29,6 +29,7 @@
 #include "fe/pack/PackWriter.h"
 #include "fe/resources/AssetDatabase.h"
 #include "fe/resources/ResourceManager.h"
+#include "fe/runtime/ComponentRegistration.h"
 #include "fe/scene/Scene.h"
 #include "fe/serialization/Json.h"
 #include "fe/serialization/SceneReferences.h"
@@ -197,6 +198,11 @@ int main(int argc, char** argv) {
         return 2;
     }
     fe::log::set_min_level(options.verbose ? fe::LogLevel::Debug : fe::LogLevel::Info);
+    // Make every component type visible before the scene is traced for
+    // pruning: a tool that registered only the 2D builtins would see a 3D
+    // scene reference nothing and ship an empty pack. See
+    // docs/adr/0076-3d-in-the-browser.md.
+    fe::runtime::register_all_component_types();
 
     if (options.out.empty()) {
         std::fprintf(stderr, "fork_pack: --out is required\n");

@@ -136,7 +136,9 @@ void collect_node_references(const json& node_json, std::vector<std::string>& ou
 Result<std::vector<std::string>> collect_resource_references(std::string_view scene_json) {
     // The builtin 2D types are the floor, exactly as they are for the reader, so
     // a plain scene is traced with no setup. A caller that uses a 3D or audio
-    // component registers that module's types (the engine's own startup does).
+    // component must register that module's types first; `runtime::
+    // register_all_component_types()` is the aggregate for a caller that wants
+    // all of them (the pack and export tools call it before tracing).
     reflect::register_builtin_types();
 
     json document;

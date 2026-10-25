@@ -68,12 +68,14 @@ cmake --build build-web --parallel
 ```sh
 source /tmp/emsdk/emsdk_env.sh
 tests/web/run_web_smoke.sh      # compiles the backend to wasm, runs headless Chromium
-tests/web/run_web_game.sh       # exports a 2D project, runs it in headless Chromium
+tests/web/run_web_game.sh       # exports the 2D and 3D demos, runs them in headless Chromium
 ```
 
 - The smoke script proves the window backend can get a WebGL2 context; the game
   script proves a whole exported game runs on it (export template, pack fetched
-  over HTTP, ES shaders, the 2D renderer). Run both when touching the web path.
+  over HTTP, ES shaders, both renderers). Run both when touching the web path.
+  The game script runs `examples/demo_project` and `examples/demo3d_project`;
+  set `FE_WEB_GAME_PROJECT=DIR` for a single focused run.
 - The game script exports with the native `fork_export` when one exists and
   otherwise with the wasm one under node, so it works in the web CI job, which
   has no desktop build. The player reports what it drew into the page title
@@ -122,6 +124,13 @@ defect, not noise.
 
 ## Portability traps seen before
 
+- A construct that is legal on a desktop GL 3.3 core context can be illegal in
+  WebGL2 (GLSL ES 3.00), and the browser reports it only at run time. Two seen so
+  far: a depth texture's format/type pair must be legal in ES (`GL_DEPTH_COMPONENT`
+  with `GL_UNSIGNED_INT`, not `GL_FLOAT`), and a draw whose fragment shader has no
+  output needs a framebuffer with no colour attachment (`glDrawBuffers(0, nullptr)`,
+  `RenderTargetDesc::color = false`). See ADR-0076. When touching GL, run
+  `tests/web/run_web_game.sh`, not just the desktop build.
 - Raw-pointer identity checks in doctest (`CHECK(a == b)` on `T*`) fail to
   compile on MSVC because it tries the `shared_ptr` `operator<<`. Wrap the
   expression in an extra pair of parentheses: `CHECK((a == b))`.

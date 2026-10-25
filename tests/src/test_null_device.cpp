@@ -259,6 +259,28 @@ TEST_CASE("a null render target exposes color and sampleable depth textures") {
     CHECK(device.bound_render_target() == nullptr);
 }
 
+TEST_CASE("a null render target with color disabled has no color attachment") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+
+    // A depth-only target (the shadow map) sets color = false. The backend must
+    // agree with the OpenGL one: no colour attachment, but the depth texture it
+    // samples still there. A target that reported a colour texture it never
+    // allocated would let a caller bind a null attachment.
+    rhi::RenderTargetDesc desc;
+    desc.name = "shadow_depth_only";
+    desc.width = 128;
+    desc.height = 128;
+    desc.color = false;
+    desc.depth = true;
+    desc.sample_depth = true;
+    auto target = device.create_render_target(desc);
+    REQUIRE(target.ok());
+    CHECK(target.value()->color_texture() == nullptr);
+    REQUIRE(target.value()->depth_texture() != nullptr);
+}
+
 TEST_CASE("read_pixels leaves the caller's buffer untouched") {
     auto created = rhi::create_null_device();
     REQUIRE(created.ok());

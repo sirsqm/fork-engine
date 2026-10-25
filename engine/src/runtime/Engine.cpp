@@ -2,23 +2,18 @@
 // SPDX-License-Identifier: MIT
 #include "fe/runtime/Engine.h"
 
-#include "fe/anim/AnimationTypes.h"
+#include "fe/runtime/ComponentRegistration.h"
+
 #include "fe/audio/AudioSystem.h"
-#include "fe/audio/AudioTypes.h"
 #include "fe/audio/WavLoader.h"
 #include "fe/core/Assert.h"
 #include "fe/core/Log.h"
 #include "fe/mesh/GltfLoader.h"
 #include "fe/mesh/ObjLoader.h"
-#include "fe/physics2d/PhysicsTypes.h"
-#include "fe/physics3d/Physics3DTypes.h"
-#include "fe/reflect/ComponentTypes.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/renderer3d/Renderer3D.h"
 #include "fe/resources/ImageLoader.h"
 #include "fe/resources/Texture2DLoader.h"
-#include "fe/scene/TilemapTypes.h"
-#include "fe/scene3d/Scene3DTypes.h"
 #include "fe/version/Version.h"
 
 #include <chrono>
@@ -56,13 +51,7 @@ Error Engine::initialize(const Config& config) {
 
     // Make the engine's component types visible to the serializer, the
     // inspector, and any scene loaded later. Idempotent.
-    reflect::register_builtin_types();
-    reflect::register_tilemap_types();
-    reflect::register_anim_types();
-    reflect::register_physics_types();
-    reflect::register_physics3d_types();
-    reflect::register_scene3d_types();
-    reflect::register_audio_types();
+    runtime::register_all_component_types();
 
     auto window = Window::create(config.window);
     if (!window) {

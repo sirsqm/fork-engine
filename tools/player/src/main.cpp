@@ -51,7 +51,6 @@
 #include <emscripten.h>
 #endif
 
-#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -213,24 +212,26 @@ protected:
     }
 
 private:
-    // Reads the middle of the last frame and reports how varied it is, then hands
-    // the verdict to the page on web. A blank frame has one colour; a rendered 2D
-    // scene has several, so the distinct-colour count is a blankness check that
-    // needs no golden image and does not change when a game's art changes.
+    // Reads the last frame and reports how varied it is, then hands the verdict
+    // to the page on web. A blank frame has one colour; a rendered scene has
+    // several, so the distinct-colour count is a blankness check that needs no
+    // golden image and does not change when a game's art changes.
+    //
+    // The whole frame is read, not a centred patch. A patch is cheaper, but it
+    // is only sound when the geometry is guaranteed to cover the middle of the
+    // screen: a 3D scene framed with its geometry off-centre -- or simply a
+    // camera pointing at the sky -- leaves a centred patch on the clear colour
+    // and reports a rendered frame as blank. The cost is one readback at the end
+    // of a bounded run, which is negligible next to the frames themselves, and a
+    // game that runs unbounded never calls this at all.
     void report_frame() {
         const fe::u32 width = engine().window().framebuffer_width();
         const fe::u32 height = engine().window().framebuffer_height();
         if (width == 0 || height == 0) {
             return;
         }
-        // A centred window of the frame, small enough to read cheaply on a
-        // software renderer and large enough to cover the middle of the screen.
-        const fe::u32 sample_w = std::min<fe::u32>(width, 64);
-        const fe::u32 sample_h = std::min<fe::u32>(height, 64);
-        const fe::u32 x = (width - sample_w) / 2;
-        const fe::u32 y = (height - sample_h) / 2;
-        std::vector<fe::u8> pixels(static_cast<std::size_t>(sample_w) * sample_h * 4);
-        engine().device().read_pixels(x, y, sample_w, sample_h, pixels);
+        std::vector<fe::u8> pixels(static_cast<std::size_t>(width) * height * 4);
+        engine().device().read_pixels(0, 0, width, height, pixels);
 
         std::set<std::uint32_t> distinct;
         for (std::size_t i = 0; i + 3 < pixels.size(); i += 4) {
@@ -240,8 +241,8 @@ private:
             distinct.insert(packed);
         }
 
-        FE_LOG_INFO("fork_player: frame readback %ux%u, %llu distinct colour(s)", static_cast<unsigned int>(sample_w),
-                    static_cast<unsigned int>(sample_h), static_cast<unsigned long long>(distinct.size()));
+        FE_LOG_INFO("fork_player: frame readback %ux%u, %llu distinct colour(s)", static_cast<unsigned int>(width),
+                    static_cast<unsigned int>(height), static_cast<unsigned long long>(distinct.size()));
 
 #if defined(FE_PLATFORM_WEB)
         // The report a headless-browser check reads back out of the page. The

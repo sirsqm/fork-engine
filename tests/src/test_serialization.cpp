@@ -6,6 +6,7 @@
 #include "fe/resources/Resource.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/resources/Texture2DLoader.h"
+#include "fe/runtime/ComponentRegistration.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -400,6 +401,31 @@ TEST_CASE("the reference collector descends a node tree and skips empty referenc
     // The unset texture on the child contributes nothing; the parent's does.
     REQUIRE(references.value().size() == 1);
     CHECK(references.value()[0] == "tex:assets/bg.png");
+}
+
+TEST_CASE("the reference collector finds a 3D mesh and texture once the 3D types are registered") {
+    // The collector registers only the 2D builtins itself; a 3D scene needs the
+    // aggregate first, exactly as the pack and export tools now do. Without it a
+    // MeshRenderer3D is an unknown type and the scene traces to zero references,
+    // which is how a pruned 3D export once shipped an empty pack.
+    runtime::register_all_component_types();
+
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Cube", "type": "Node",
+              "components": [ { "type": "MeshRenderer3D",
+                                "mesh": "obj:assets/meshes/cube.obj",
+                                "texture": "tex:assets/textures/checker.png" } ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    REQUIRE(references.value().size() == 2);
+    CHECK(references.value()[0] == "obj:assets/meshes/cube.obj");
+    CHECK(references.value()[1] == "tex:assets/textures/checker.png");
 }
 
 TEST_CASE("the reference collector reads a script's property strings as candidates") {

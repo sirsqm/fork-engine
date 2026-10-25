@@ -72,9 +72,9 @@ private:
 
 class NullRenderTarget final : public RenderTarget {
 public:
-    NullRenderTarget(std::string name, u32 width, u32 height, bool sample_depth)
+    NullRenderTarget(std::string name, u32 width, u32 height, bool color, bool sample_depth)
         : name_(std::move(name)), width_(width), height_(height),
-          color_(std::make_shared<NullTexture>(name_ + ".color", width, height)),
+          color_(color ? std::make_shared<NullTexture>(name_ + ".color", width, height) : nullptr),
           depth_(sample_depth ? std::make_shared<NullTexture>(name_ + ".depth", width, height) : nullptr) {}
 
     [[nodiscard]] const std::string& name() const noexcept override { return name_; }
@@ -144,8 +144,8 @@ public:
         if (desc.width == 0 || desc.height == 0) {
             return Error("create_render_target: dimensions must be non-zero");
         }
-        return std::static_pointer_cast<RenderTarget>(
-            std::make_shared<NullRenderTarget>(desc.name, desc.width, desc.height, desc.depth && desc.sample_depth));
+        return std::static_pointer_cast<RenderTarget>(std::make_shared<NullRenderTarget>(
+            desc.name, desc.width, desc.height, desc.color, desc.depth && desc.sample_depth));
     }
 
     void begin_frame(u32, u32, const ClearColor&) override {

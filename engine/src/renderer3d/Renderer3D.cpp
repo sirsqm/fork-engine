@@ -415,6 +415,11 @@ Error Renderer3D::ensure_shadow_target(rhi::Device& device) {
     desc.name = "renderer3d_shadow_map";
     desc.width = kShadowMapSize;
     desc.height = kShadowMapSize;
+    // Depth-only: the shadow pass writes no colour, so the target has no colour
+    // attachment. A WebGL2 context otherwise rejects every draw into it, because
+    // the shadow fragment shader has no output while the framebuffer has a colour
+    // attachment enabled. See docs/adr/0076-3d-in-the-browser.md.
+    desc.color = false;
     desc.depth = true;
     desc.sample_depth = true; // The main pass samples this depth; a renderbuffer would not do.
     auto target = device.create_render_target(desc);

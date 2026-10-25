@@ -108,6 +108,22 @@ Load the exported build in headless Chromium and assert the game renders.
 **Done when** the check runs in CI against a real export and fails when the
 renderer is deliberately broken.
 
+### `3d-in-the-browser`
+
+Phase 1's bar is met by the 2D path, but the 3D renderer shares the whole
+shipping path with it and had never been run in a browser. Three desktop-only
+assumptions in it fail on a WebGL2 context, none with a build-time signal: the
+shadow map's depth texture used a format/type pair GLSL ES 3.00 rejects, the
+shadow pass drew into a framebuffer with a colour attachment enabled, and the
+pruning tracer registered only the 2D builtins so a 3D scene traced to zero
+references and shipped an empty pack. Make 3D render in a browser and cover it
+in the web check.
+
+**Done when** an exported 3D project renders a non-blank frame in headless
+Chromium with no GL error, a pruned 3D export carries its mesh and texture, and
+the web game check runs both renderers. See
+[ADR-0076](adr/0076-3d-in-the-browser.md).
+
 ### `web-resize-and-dpr`
 
 A browser canvas is resized by the page, not by the game, and a phone reports a

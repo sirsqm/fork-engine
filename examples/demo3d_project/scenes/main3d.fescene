@@ -1,0 +1,98 @@
+{
+  "format": "fork_scene",
+  "format_version": 4,
+  "name": "Main3D",
+  "roots": [
+    {
+      "name": "Camera",
+      "type": "Node",
+      "transform": {
+        "position": [0.0, 1.4, 5.0],
+        "rotation": [-0.16, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "components": [
+        {
+          "type": "Camera3D",
+          "fov_degrees": 60.0,
+          "near_plane": 0.1,
+          "far_plane": 100.0,
+          "clear_color": [0.09, 0.1, 0.13, 1.0],
+          "primary": true
+        }
+      ]
+    },
+    {
+      "name": "Sun",
+      "type": "Node",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "components": [
+        {
+          "type": "DirectionalLight3D",
+          "direction": [-0.4, -1.0, -0.35],
+          "color": [1.0, 0.97, 0.9],
+          "intensity": 1.0,
+          "ambient": 0.18
+        }
+      ]
+    },
+    {
+      "name": "Floor",
+      "type": "Node",
+      "transform": {
+        "position": [0.0, -0.55, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [6.0, 0.1, 6.0]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [0.55, 0.57, 0.62, 1.0],
+          "specular": 0.08,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": "tex:assets/textures/checker.png"
+        }
+      ]
+    },
+    {
+      "name": "Cube",
+      "type": "Node",
+      "transform": {
+        "position": [-1.1, 0.0, 0.0],
+        "rotation": [0.0, 0.6, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [0.95, 0.45, 0.2, 1.0],
+          "specular": 0.35,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        }
+      ]
+    },
+    {
+      "name": "Column",
+      "type": "Node",
+      "transform": {
+        "position": [1.1, 0.15, -0.2],
+        "rotation": [0.0, -0.5, 0.0],
+        "scale": [0.6, 1.5, 0.6]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [0.25, 0.65, 0.9, 1.0],
+          "specular": 0.5,
+          "mesh": "obj:assets/meshes/cube.obj",
+          "texture": ""
+        }
+      ]
+    }
+  ]
+}
