@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  The page the web build of Breakout runs in.
+
+  It provides the #canvas the engine's web backend renders into, then loads the
+  Emscripten module. The canvas is sized by the engine (the backend sets the
+  drawing buffer from the canvas's CSS box and the device pixel ratio), so the
+  CSS here only gives it a box to live in and must not fight the engine's
+  width/height attributes.
+
+  The page owns the frame schedule: the module's main() installs a frame
+  callback with emscripten_set_main_loop_arg and returns, so nothing blocks.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fork Engine Breakout</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #101014;
+        overflow: hidden;
+      }
+      /* The canvas fills the viewport; the engine maps CSS pixels to device
+         pixels, so the game stays sharp on a high-DPI screen. */
+      #canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        /* A touch on the canvas drives the game rather than panning the page. */
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <!-- Emscripten replaces this with the module's script tag; it must not be a
+         hardcoded <script src>, or the build fails and the module never loads. -->
+    {{{ SCRIPT }}}
+  </body>
+</html>

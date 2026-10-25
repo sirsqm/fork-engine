@@ -51,6 +51,13 @@
 #include <string>
 #include <string_view>
 
+// A browser page owns the frame schedule, so the web build cannot block in
+// run()'s while loop: the module returns to the page and requestAnimationFrame
+// calls back once per frame. See docs/adr/0071-web-first-2d-shipping-path.md.
+#if defined(FE_PLATFORM_WEB)
+#include <emscripten.h>
+#endif
+
 namespace {
 
 // The authored scene, loaded over the code-built one when present, and the cue.
@@ -260,6 +267,27 @@ struct Options {
     return options;
 }
 
+#if defined(FE_PLATFORM_WEB)
+// The application the browser's frame callback drives, and the callback itself.
+// It is owned by a file-scope pointer, not a local in main(): a frame rate of 0
+// tells Emscripten to return from main() and call back from
+// requestAnimationFrame, so a stack-local application would be destroyed before
+// the first frame ran and the callback would then step freed memory.
+std::unique_ptr<BreakoutApp> web_app;
+
+void web_frame(void* /*arg*/) {
+    // step_frame() returns false once the run is over. Cancel the loop and tear
+    // down there, so shutdown() runs exactly once and no frame follows it.
+    if (web_app == nullptr || !web_app->step_frame()) {
+        emscripten_cancel_main_loop();
+        if (web_app != nullptr) {
+            web_app->shutdown();
+            web_app.reset();
+        }
+    }
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -275,9 +303,28 @@ int main(int argc, char** argv) {
         config.window.vsync = false;
     }
 
+#if defined(FE_PLATFORM_WEB)
+    // Drive the loop from the page instead of blocking in run(): the engine's
+    // initialize/step_frame/shutdown primitives exist for a host that owns the
+    // frame schedule (see Application.h), and a browser is such a host.
+    web_app = std::make_unique<BreakoutApp>(config, options.headless, options.scene_to_save);
+    if (options.headless) {
+        web_app->set_headless(options.headless_frames);
+    }
+    if (fe::Error error = web_app->initialize(); error) {
+        FE_LOG_CRITICAL("breakout: %s", error.message().c_str());
+        web_app.reset();
+        return 1;
+    }
+    // Frame rate 0 means "as fast as the browser schedules", which is
+    // requestAnimationFrame's own cadence; the callback above cancels the loop.
+    emscripten_set_main_loop_arg(web_frame, nullptr, 0, 0);
+    return 0;
+#else
     BreakoutApp app(config, options.headless, options.scene_to_save);
     if (options.headless) {
         app.set_headless(options.headless_frames);
     }
     return app.run();
+#endif
 }
