@@ -183,12 +183,28 @@ jobs:
       - name: Check for a regression
         run: python3 benchmarks/check_regression.py --baseline benchmarks/baseline.json --current benchmark.json
 
+      # The 3D scene is measured and reported but not gated, and deliberately so.
+      # The gate compares against a baseline recorded on this runner, and the 3D
+      # frame is dominated by the shadow pass under Mesa's software rasteriser,
+      # which is far noisier run to run than the 2D path. Recording a baseline
+      # from one run and gating against it would fail on runner variance rather
+      # than on a regression. Running it anyway is the point: the number lands in
+      # the artifact, so a change that makes the 3D path several times slower is
+      # visible in the job rather than invisible until a player reports it.
+      - name: Run the 3D benchmark (reported, not gated)
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            ./build/bin/fork_bench --scene mesh_heavy --frames 120 --warmup 30 \
+              --json --out benchmark-3d.json
+
       - name: Upload the benchmark result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-result
-          path: benchmark.json
+          path: |
+            benchmark.json
+            benchmark-3d.json
 
   format-check:
     name: clang-format

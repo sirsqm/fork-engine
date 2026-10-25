@@ -5,21 +5,30 @@ Design and trade-offs: [ADR-0033](../docs/adr/0033-performance-regression-gate.m
 
 ## What it measures
 
-`fork_bench` builds a synthetic 2D scene and runs a fixed number of frames
-through the engine's real `Application` frame loop — the actual `renderer2d` and
-`physics2d` systems, not a stand-in. It reads the frame timings the `Profiler`
-already records and reports percentiles:
+`fork_bench` builds a synthetic scene and runs a fixed number of frames through
+the engine's real `Application` frame loop — the actual `renderer2d`/`renderer3d`
+and `physics2d`/`physics3d` systems, not a stand-in. It reads the frame timings
+the `Profiler` already records and reports percentiles:
 
 - **p50** — a typical frame. This is the value the CI gate compares.
 - **p95 / p99** — the worst frames. Reported for a human, not gated.
 
-Three named scenes:
+Four named scenes, three 2D and one 3D:
 
-| scene           | sprites | static colliders | dynamic bodies |
-| --------------- | ------: | ---------------: | -------------: |
-| `sprite_heavy`  |    2000 |              500 |            200 |
-| `physics_heavy` |     200 |             1000 |           1500 |
-| `mixed`         |    1000 |              750 |            750 |
+| scene           | kind | `--sprites` | `--bricks` | `--bodies` |
+| --------------- | ---- | ----------: | ---------: | ---------: |
+| `sprite_heavy`  | 2D   |        2000 |        500 |        200 |
+| `physics_heavy` | 2D   |         200 |       1000 |       1500 |
+| `mixed`         | 2D   |        1000 |        750 |        750 |
+| `mesh_heavy`    | 3D   |         800 |        100 |        100 |
+
+For the 2D scenes `--sprites` are sprites and the renderer is `renderer2d`; for
+`mesh_heavy` they are meshes drawn by `renderer3d` (extraction, frustum cull,
+shadow pass and draw) and the bodies run the 3D solver. `mesh_heavy` is the 3D
+path's counterpart to `sprite_heavy`: it is what gives the 3D renderer the
+measured coverage the 2D path has had since ADR-0033. Its counts are lower
+because each mesh is a box rather than a quad and the shadow pass draws every
+caster twice, so a comparable node count is a much heavier frame.
 
 ## Running it
 
@@ -41,7 +50,7 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./build/bin/fork_bench --scene sprite_hea
 Options:
 
 ```
---scene NAME     sprite_heavy (default), physics_heavy, mixed
+--scene NAME     sprite_heavy (default), physics_heavy, mixed, mesh_heavy
 --sprites N      sprite count (overrides the scene preset)
 --bricks N       static collider count
 --bodies N       dynamic body count
@@ -72,6 +81,22 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
 
 Neither flag changes the gate's default run, so the recorded baseline and the CI
 check are unaffected.
+
+### Measuring the 3D path
+
+The 3D scene is measured the same way, and reported but not gated:
+
+```sh
+xvfb-run -a -s "-screen 0 1280x720x24" \
+  ./build/bin/fork_bench --scene mesh_heavy --frames 120 --warmup 30
+```
+
+It is not gated because under Mesa's software rasteriser the 3D frame is
+dominated by the shadow pass, which is far noisier run to run than the 2D path;
+a baseline recorded from one run would fail the gate on runner variance rather
+than on a regression. The CI job still runs it and uploads `benchmark-3d.json`,
+so a change that makes the 3D path several times slower is visible in the
+artifact instead of invisible until a player reports it.
 
 Output (CSV):
 

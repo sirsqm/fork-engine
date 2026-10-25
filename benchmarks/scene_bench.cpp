@@ -41,16 +41,24 @@
 
 #include "fe/core/Log.h"
 #include "fe/core/Profiler.h"
+#include "fe/mesh/Mesh.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/RigidBody2D.h"
+#include "fe/physics3d/Collider3D.h"
+#include "fe/physics3d/Physics3DSystem.h"
+#include "fe/physics3d/RigidBody3D.h"
 #include "fe/platform/Window.h"
+#include "fe/renderer3d/Renderer3D.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/rhi/Types.h"
 #include "fe/runtime/Application.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene3d/Camera3D.h"
+#include "fe/scene3d/DirectionalLight3D.h"
+#include "fe/scene3d/MeshRenderer3D.h"
 
 #include <algorithm>
 #include <array>
@@ -103,9 +111,27 @@ void apply_preset(Options& options) {
         options.sprites = 1000;
         options.bricks = 750;
         options.bodies = 750;
+    } else if (options.scene == "mesh_heavy") {
+        // The 3D path's counterpart to sprite_heavy: the workload is meshes to
+        // extract, cull, shadow and draw, plus 3D bodies for the 3D solver. The
+        // counts are lower than the 2D scenes on purpose -- each mesh is a box of
+        // 24 vertices rather than a quad, and the shadow pass draws every caster
+        // a second time, so a comparable node count is a much heavier frame.
+        options.sprites = 800;
+        options.bricks = 100;
+        options.bodies = 100;
     }
     // An unknown name is treated as a label with the current counts, which is
     // useful for ad-hoc runs; it is not an error.
+}
+
+// Whether a scene name builds the 3D workload. The benchmark has two scene
+// builders (2D sprites/physics and 3D meshes/physics) because the two renderers
+// share the frame loop but nothing else; a scene is one or the other, and the
+// name decides which. This is what gives the 3D path the same measured,
+// regression-gated coverage the 2D path has had since ADR-0033.
+[[nodiscard]] bool is_3d_scene(const std::string& scene) {
+    return scene == "mesh_heavy";
 }
 
 // --- Statistics ------------------------------------------------------------
@@ -167,6 +193,94 @@ public:
 protected:
     fe::Error on_start() override {
         scene().set_name("Benchmark/" + options_.scene);
+        return is_3d_scene(options_.scene) ? build_3d_scene() : build_2d_scene();
+    }
+
+    // The 3D workload: a camera and a directional light, `sprites` boxes to draw
+    // (the 3D renderer's extraction, culling, shadow pass and draw), `bricks`
+    // static boxes as the 3D broad phase's obstacles, and `bodies` dynamic boxes
+    // for the 3D solver. It mirrors the 2D builder so the two are read side by
+    // side.
+    fe::Error build_3d_scene() {
+        fe::Node* camera_node = scene().create_node("Camera");
+        camera_node->transform().position = fe::Vec3{0.0f, 6.0f, 18.0f};
+        auto* camera = camera_node->add_component<fe::Camera3D>();
+        camera->background_enabled = true;
+
+        fe::Node* light_node = scene().create_node("Sun");
+        auto* light = light_node->add_component<fe::DirectionalLight3D>();
+        light->direction = fe::Vec3{-0.4f, -1.0f, -0.3f};
+        light->intensity = 1.0f;
+        light->ambient = 0.15f;
+
+        // One shared mesh for every box, so the renderer's buffer cache holds a
+        // single upload and the measurement is the per-instance path rather than
+        // a per-mesh one. A real scene would reuse meshes the same way.
+        const std::shared_ptr<fe::Mesh> box = fe::Mesh::make_cube();
+        const std::shared_ptr<fe::Mesh> floor = fe::Mesh::make_plane(40.0f, 40.0f);
+
+        // Drawable boxes: the renderer's workload. Spread in a grid and lifted
+        // slightly so they sit above the floor and cast a shadow.
+        for (fe::u32 i = 0; i < options_.sprites; ++i) {
+            fe::Node* node = scene().create_node("Box");
+            auto* renderer = node->add_component<fe::MeshRenderer3D>();
+            renderer->mesh = box;
+            const fe::f32 x = static_cast<fe::f32>(i % 32) * 1.6f - 25.0f;
+            const fe::f32 z = static_cast<fe::f32>(i / 32) * 1.6f - 12.0f;
+            node->transform().position = fe::Vec3{x, 1.0f, z};
+            node->transform().scale = fe::Vec3{0.8f, 0.8f, 0.8f};
+        }
+
+        // Static obstacles for the 3D broad phase: no rigid body, so they never
+        // move but the solver still prefilters against them.
+        for (fe::u32 i = 0; i < options_.bricks; ++i) {
+            fe::Node* node = scene().create_node("Brick");
+            auto* collider = node->add_component<fe::physics3d::Collider3D>();
+            collider->shape = fe::physics3d::ShapeType3D::Box;
+            collider->half_extent = fe::Vec3{0.5f, 0.5f, 0.5f};
+            const fe::f32 x = static_cast<fe::f32>(i % 10) * 2.0f - 10.0f;
+            const fe::f32 z = static_cast<fe::f32>(i / 10) * 2.0f - 10.0f;
+            node->transform().position = fe::Vec3{x, 0.5f, z};
+        }
+
+        // Dynamic bodies for the 3D solver: spheres with restitution 1 and no
+        // sleeping, so they keep bouncing and the solver does real work every
+        // frame rather than settling.
+        for (fe::u32 i = 0; i < options_.bodies; ++i) {
+            fe::Node* node = scene().create_node("Body");
+            auto* collider = node->add_component<fe::physics3d::Collider3D>();
+            collider->shape = fe::physics3d::ShapeType3D::Sphere;
+            collider->radius = 0.5f;
+            collider->restitution = 1.0f;
+            collider->friction = 0.0f;
+            auto* body = node->add_component<fe::physics3d::RigidBody3D>();
+            body->mass = 1.0f;
+            const fe::f32 angle = static_cast<fe::f32>(i) * 0.7f;
+            body->velocity = fe::Vec3{std::cos(angle), 1.5f, std::sin(angle)} * 6.0f;
+            const fe::f32 x = static_cast<fe::f32>(i % 20) * 2.0f - 20.0f;
+            const fe::f32 z = static_cast<fe::f32>(i / 20) * 2.0f - 10.0f;
+            node->transform().position = fe::Vec3{x, 4.0f, z};
+        }
+
+        // A floor, so the bodies land on something and the boxes have a surface
+        // to cast a shadow onto.
+        fe::Node* floor_node = scene().create_node("Floor");
+        auto* floor_renderer = floor_node->add_component<fe::MeshRenderer3D>();
+        floor_renderer->mesh = floor;
+        auto* floor_collider = floor_node->add_component<fe::physics3d::Collider3D>();
+        floor_collider->shape = fe::physics3d::ShapeType3D::Box;
+        floor_collider->half_extent = fe::Vec3{40.0f, 0.5f, 40.0f};
+        floor_node->transform().position = fe::Vec3{0.0f, -0.5f, 0.0f};
+
+        auto* physics = schedule().add_system<fe::physics3d::Physics3DSystem>();
+        physics->gravity = fe::Vec3{0.0f, -9.81f, 0.0f};
+
+        FE_LOG_INFO("benchmark scene '%s': %zu nodes (%u meshes, %u static colliders, %u bodies)",
+                    options_.scene.c_str(), scene().node_count(), options_.sprites, options_.bricks, options_.bodies);
+        return fe::Error::none();
+    }
+
+    fe::Error build_2d_scene() {
 
         fe::Node* camera_node = scene().create_node("Camera");
         camera_node->add_component<fe::Camera2D>();
@@ -238,6 +352,25 @@ protected:
         FE_LOG_INFO("benchmark scene '%s': %zu nodes (%u sprites, %u static colliders, %u bodies)",
                     options_.scene.c_str(), scene().node_count(), options_.sprites, options_.bricks, options_.bodies);
         return fe::Error::none();
+    }
+
+    // The 3D pass is the app's own step, exactly as it is in the player: the
+    // Application frame draws 2D, and a 3D scene is rendered here. Running the 3D
+    // scene through the same frame loop as the 2D one is the point -- the
+    // profiler's `frame/render` bracket then covers the 3D renderer's extraction,
+    // culling, shadow pass and draw, so the gate protects it the same way.
+    void on_render(fe::f32) override {
+        if (!is_3d_scene(options_.scene)) {
+            return;
+        }
+        if (!engine().has_graphics() && !engine().headless_render()) {
+            return;
+        }
+        auto drawn = engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
+                                                   engine().window().framebuffer_height());
+        if (!drawn) {
+            FE_LOG_ERROR("benchmark: 3D render failed: %s", drawn.error().message().c_str());
+        }
     }
 
     void on_stop() override { report(); }
@@ -356,7 +489,6 @@ private:
         append_row(out, "frame_render", render);
         return out;
     }
-
     static void append_row(std::string& out, const char* name, const Stats& stats) {
         char row[160];
         std::snprintf(row, sizeof(row), "%s,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%zu\n", name, stats.p50, stats.p95, stats.p99,
@@ -429,7 +561,9 @@ private:
         } else if (arg == "--help" || arg == "-h") {
             std::puts("usage: fork_bench [--scene NAME] [--sprites N] [--bricks N] [--bodies N] "
                       "[--frames N] [--warmup N] [--workers N] [--textured] [--json] [--out PATH] [--verbose]\n"
-                      "scenes: sprite_heavy (default), physics_heavy, mixed\n"
+                      "scenes: sprite_heavy (default), physics_heavy, mixed, mesh_heavy\n"
+                      "        2D scenes: sprite_heavy, physics_heavy, mixed (--sprites are sprites)\n"
+                      "        3D scene:  mesh_heavy (--sprites are meshes drawn by renderer3d)\n"
                       "--workers N  run extraction/culling on N threads (0 = serial, the default)\n"
                       "--textured   give sprites a real texture, so extraction has instances to build");
             std::exit(0);
