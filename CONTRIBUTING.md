@@ -27,10 +27,10 @@ reasoning, and anyone can propose a change.
   is a small, complete game built end to end (roadmap M2.5) — it proves the
   systems work together and exposes the gaps that matter.
 
-Three capabilities shape where the project is going — performance, shipping to
-every platform players use, and collaborative editing — and are planned in
-[`docs/ROADMAP.md`](docs/ROADMAP.md). Work that advances one of them is
-especially welcome; check the roadmap's shipping queue first so we do
+Two capabilities shape where the project is going — performance, and shipping to
+every platform players use — and are planned in
+[`docs/ROADMAP.md`](docs/ROADMAP.md). Work that advances either is especially
+welcome; check [`docs/SHIPPING_QUEUE.md`](docs/SHIPPING_QUEUE.md) first so we do
 not duplicate effort.
 
 ## Getting started

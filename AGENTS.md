@@ -1,13 +1,13 @@
 # AGENTS.md — repository notes for automated contributors
 
 Fork Engine is a modular C++20 2D/3D game engine. Read `docs/ARCHITECTURE.md`
-for the design, `docs/ROADMAP.md` for the three shaping capabilities and the
-shipping queue, and `docs/MILESTONES.md` for the milestone plan, before changing
-anything.
+for the design, `docs/ROADMAP.md` for the pillars and the near-term priorities,
+`docs/SHIPPING_QUEUE.md` for the next concrete step, and `docs/MILESTONES.md`
+for the milestone plan, before changing anything.
 
-## Strategy: the three pillars
+## Strategy: the pillars
 
-Three capabilities shape the design, not just the feature list, and every
+Two capabilities shape the design, not just the feature list, and every
 subsystem should be checked against them:
 
 - **Performance is a product feature** (M9, ADR-0017). Measure before
@@ -18,11 +18,12 @@ subsystem should be checked against them:
   contract with a null backend; assets ship in a pack; targets are new backends,
   added on demand. This is about shipping *games*, not running the editor on
   several OSes.
-- **Editing is collaborative** (M10, ADR-0019). Edits become serializable
-  operations over stably identified objects, replicated through an ordered log
-  with an authoritative server. It lands after the editor is mature; its first
-  steps (component identity, operations, log) are local and headless and also
-  strengthen undo/redo.
+
+The local steps toward collaborative editing — stable component identity, a
+serializable operation model, and an ordered log — are shipped and kept, because
+they make undo/redo robust on their own. Networked collaborative editing is not
+planned: it needs a hosted authoritative service, and the project will not carry
+that running cost.
 
 These are plans, not shipped code. Do not present a planned item as done.
 

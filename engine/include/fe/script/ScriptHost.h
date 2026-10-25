@@ -29,10 +29,10 @@ namespace fe {
 // ADR-0044).
 //
 // Instances are keyed by the node's stable Uuid, not by pointer. That is the
-// same identity the serializer persists and the collaboration work (ADR-0019,
-// M10) is built on, so a script's binding survives a save/load and is
-// addressable across replicas without a parallel id scheme. One script per
-// node: attach_script replaces any script already on that node.
+// same identity the serializer persists and the operation model (ADR-0047) names
+// its objects by, so a script's binding survives a save/load without a parallel
+// id scheme. One script per node: attach_script replaces any script already on
+// that node.
 //
 // The host is deliberately small and headless: no window, no RHI, no editor.
 // A ScriptSystem drives it from the ordinary SceneSchedule, which is what makes

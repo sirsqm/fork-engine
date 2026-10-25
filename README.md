@@ -23,12 +23,10 @@ eventually features:
   supported target *today* is desktop (Linux and Windows); see
   [ADR-0032](docs/adr/0032-near-term-platform-scope.md) for why the wider claim
   is sequenced rather than asserted.
-- **Editing is collaborative.** Several people open the same project, edit it
-  live, see each other's changes and presence, and never run a manual merge.
-
 The plan for all of this — the pillars, the milestone order, and the shipping
 queue the daily automation works through — is in
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+[`docs/ROADMAP.md`](docs/ROADMAP.md) and
+[`docs/SHIPPING_QUEUE.md`](docs/SHIPPING_QUEUE.md).
 
 The project is young and honest about it. The repository currently contains the
 engine core through its first several milestones: a buildable library, working
@@ -62,7 +60,7 @@ tests. Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Scripting (C++ native modules first, language-agnostic seam) | Not started (see roadmap) |
 | Build/export | Not started (see roadmap) |
 | Performance tooling (profiler, benchmark, CI regression gate) | Working (see [ADR-0033](docs/adr/0033-performance-regression-gate.md)) |
-| Extra platforms, collaborative editing | Planned (see roadmap) |
+| Extra platforms | Planned (see roadmap) |
 
 Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
 

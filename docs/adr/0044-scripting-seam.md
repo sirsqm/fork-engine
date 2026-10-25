@@ -64,8 +64,8 @@ The module is `script`, header-only for now
   `enabled` flag. It reads the frame's context (delta time, resources, input)
   the way a `System` does, so it is testable headlessly.
 - **`ScriptHost`** owns the live `Script` instances, keyed by the node's stable
-  `Uuid` — the same identity the serializer persists and the collaboration work
-  ([ADR-0019](0019-collaborative-editing.md), M10) is built on. One script per
+  `Uuid` — the same identity the serializer persists and the operation model
+  ([ADR-0047](0047-local-operation-model.md)) names its objects by. One script per
   node, one node per script. The host is the only thing that calls a script's
   lifecycle and update methods, and it is the boundary where a failing script is
   contained.
@@ -119,9 +119,9 @@ keeps running the others. One bad script is one bad script.
   nothing in `core`, `scene`, `systems`, or the runtime names C++, Lua, or
   anything else. A second language is a second `ScriptRegistry` population and a
   second way to make `Script` instances — not a change to the engine.
-- Scripts key on the stable node `Uuid`, so the identity the serializer and M10
-  already need is the same identity the host uses. There is no parallel id
-  scheme.
+- Scripts key on the stable node `Uuid`, so the identity the serializer and the
+  operation model ([ADR-0047](0047-local-operation-model.md)) already need is the
+  same identity the host uses. There is no parallel id scheme.
 - Because `ScriptSystem` is a plain `System`, scripts run headlessly (the null
   backend, `fork_headless`) and in play-in-editor through the identical path —
   no window, no RHI, no editor dependency.

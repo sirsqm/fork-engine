@@ -1,10 +1,10 @@
 # Fork Engine Milestones
 
 The milestone detail: what each milestone contains and where it stands. The
-front line — the strategy, the near-term priorities, and the ordered shipping
-queue the daily automation works through — is in [ROADMAP.md](ROADMAP.md);
-this file is the reference it points into, so the roadmap stays short enough to
-read in one sitting.
+front line — the pillars, the near-term priorities, and why the work is ordered
+this way — is in [ROADMAP.md](ROADMAP.md), and the next concrete step is in
+[SHIPPING_QUEUE.md](SHIPPING_QUEUE.md); this file is the reference they point
+into, so neither of them has to hold the detail.
 
 This is a plan, not a promise. Milestones may be reordered as the design
 becomes clearer, and changes are recorded in the ADRs.
@@ -398,33 +398,17 @@ prove it and protect it. Plan and trade-offs: the pillars above,
       latest `FrameReport` (totals, per-name scope breakdown, counters,
       truncation) ([ADR-0055](adr/0055-editor-profiler-panel.md))
 
-## M10 — Collaborative editing
+## Not planned
 
-Several people edit one project live, with presence and no manual merge. It
-lands after the editor is mature because it reaches into the editor's core. Plan
-and trade-offs: the pillars above,
-[ADR-0019](adr/0019-collaborative-editing.md).
+**Networked collaborative editing.** Several people editing one project live over
+a shared server was once planned as M10. It is not planned any more: it needs a
+hosted authoritative service, and that running cost is not one the project will
+carry. The local steps that landed on the way — stable component identity
+([ADR-0045](adr/0045-component-identity.md)), the serializable operation model
+([ADR-0047](adr/0047-local-operation-model.md)), and the ordered log
+([ADR-0048](adr/0048-replicated-operation-log.md)) — stay: they are shipped,
+tested, and they make undo/redo more robust on their own. The transport and
+session-server work that only existed to serve the network is likewise not
+pursued further.
 
-- [x] Component identity: stable ids that survive serialization, reimport, and
-      undo — a `Uuid` on every `Component`, assigned at creation and written to
-      the scene document (format version 3); `Scene::find_component` resolves one
-      anywhere in the tree ([ADR-0045](adr/0045-component-identity.md))
-- [x] Operation model (local only): a serializable `Operation` generalising
-      `Command`, naming objects by stable id, with JSON round-trip, `apply`, and
-      a document-derived `inverse`; local edits route through an
-      `OperationCommand` adapter ([ADR-0047](adr/0047-local-operation-model.md))
-- [x] Replicated log (local only): a `Session` holding a document and an ordered
-      log; two in-process replicas converge; undo becomes log-based
-      ([ADR-0048](adr/0048-replicated-operation-log.md))
-- [ ] Transport and server: a `net` module with an in-process loopback transport
-      (tests) and WebSocket (production), plus an authoritative session server
-      (ordered structural operations, last-writer-wins per property)
-      — the loopback transport, the `Transport` seam, the authoritative
-      `SessionServer`, and the `SessionClient` have landed
-      ([ADR-0049](adr/0049-net-transport-and-session-server.md)); the WebSocket
-      backend and optimistic local apply remain
-- [ ] Presence: cursors, selections, and per-user viewport cameras
-- [ ] Conflict policy refinement: node-level locking for structural edits, or
-      property CRDTs, only against a reproduced conflict
-- [ ] Asset sync: a content-addressed store with dedup and delta transfer
-
+**Console targets.** No code lands without SDK access.

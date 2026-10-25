@@ -20,7 +20,7 @@ ship complete 2D and 3D games. That sets the priorities:
   convenience.
 - The editor is a first-class part of the product, not a bolted-on tool.
 
-Three capabilities shape the architecture as much as they shape the roadmap, and
+Two capabilities shape the architecture as much as they shape the roadmap, and
 are planned in [`ROADMAP.md`](ROADMAP.md):
 
 - **Performance is a product feature.** The engine is fast by construction and
@@ -31,9 +31,6 @@ are planned in [`ROADMAP.md`](ROADMAP.md):
 - **Games ship anywhere.** The target is that a game reaches every platform its
   players use, not that the editor runs on several OSes — see
   [ADR-0018](adr/0018-multi-platform-shipping.md) and section 11.
-- **Editing is collaborative.** Several people edit one project live, with
-  presence and no manual merge — see
-  [ADR-0019](adr/0019-collaborative-editing.md) and section 9.
 
 Non-goals for now: matching a specific existing engine feature-for-feature, and
 optimising before there is something worth optimising (which is why performance
@@ -944,12 +941,13 @@ startup scene into one file the runtime mounts. The editor still owns the
 project concept; the pack writer only takes resolved paths. Export templates and
 the `fork export` step remain open.
 
-### Collaborative editing (planned)
+### Stable identity and the local operation model
 
-The goal is that several people edit one project at once, see each other's
-changes and presence live, and never run a manual merge — see
-[ADR-0019](adr/0019-collaborative-editing.md) and
-[`ROADMAP.md`](ROADMAP.md). The editor is already shaped for it:
+Networked collaborative editing — several people editing one project live over a
+shared server — was once planned as a milestone and is no longer: it needs a
+hosted authoritative service, and that running cost is not one the project will
+carry. The local steps taken toward it are shipped and kept, because they stand
+on their own merit:
 
 - Every edit goes through the command stack rather than mutating the scene
   ([ADR-0015](adr/0015-editor-undo-redo.md)), so an edit is already a discrete,
@@ -963,27 +961,14 @@ changes and presence live, and never run a manual merge — see
 - Nodes already carry a stable `Uuid`, and components carry one too
   ([ADR-0045](adr/0045-component-identity.md)).
 
-Collaboration generalises this. The command stack is generalised into a
-serializable `Operation` — a tagged value that round-trips through JSON, applies
-to a `Scene`, and has an inverse derived from the document rather than captured
-in the editor (the local step is done:
-[ADR-0047](adr/0047-local-operation-model.md)). A `Session` then holds the
-document and an ordered, replicated log that every replica applies to converge
-(the local step is done: [ADR-0048](adr/0048-replicated-operation-log.md) — two
-in-process replicas fed the same log converge, and undo is the inverse of a log
-entry). An authoritative session server orders structural operations and
-resolves concurrent property edits last-writer-wins per property; presence
-(cursors, selections, viewport cameras) rides alongside as ephemeral messages.
-The first steps are local and headless — two in-process replicas, no network —
-which also makes undo/redo more robust, so they earn their keep before any
-server exists. The transport and the server have now landed on an in-process
-loopback ([ADR-0049](adr/0049-net-transport-and-session-server.md)): a
-`Transport` seam moves `Message`s, a `SessionServer` gives every accepted edit a
-global sequence number and broadcasts it, and a `SessionClient` applies only the
-server's order, so two clients converge by construction; last-writer-wins falls
-out of that single order. The WebSocket backend and optimistic local apply are
-the next changes behind the same seam. The `net` module is where the transport
-lives; nothing above it knows whether the peer is in-process or remote.
+Together these give the editor durable object identity and a serializable,
+invertible edit — which is what makes undo/redo robust across a save and load,
+independent of any network. A `Session` holding the document and an ordered log
+is present too ([ADR-0048](adr/0048-replicated-operation-log.md)), as is the
+`net` module's transport seam and in-process session server
+([ADR-0049](adr/0049-net-transport-and-session-server.md)); they are exercised by
+their tests and are available to anyone who wants to build a networked editor,
+but the project does not pursue that further.
 
 ## 10. Scripting
 
@@ -1024,8 +1009,8 @@ header-only and depend only on `core`, `scene`, and `systems`; the module loader
   flag. It reads the frame's context the way a system does, so it is testable
   headlessly.
 - **`ScriptHost`** — owns the live instances, keyed by the node's stable `Uuid`
-  — the same identity the serializer persists and the collaboration work
-  ([ADR-0019](adr/0019-collaborative-editing.md), M10) is built on. One script
+  — the same identity the serializer persists and the operation model
+  ([ADR-0047](adr/0047-local-operation-model.md)) names its objects by. One script
   per node; attaching replaces the previous one. The host is the boundary where
   a failing script is contained: an error returned from `update()`, or an
   exception thrown from it, is logged with the node's id and the script's name,
@@ -1239,9 +1224,8 @@ Every milestone must build and pass its tests before the next one begins.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 11). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).
-- Collaborative editing: component identity, the operation model, the
-  replicated log, and the loopback transport with its authoritative session
-  server are in place; the WebSocket backend, optimistic local apply, and
-  presence are planned in M10 (section 9).
+- Stable component identity and the local operation model are in place, which
+  is what makes undo/redo survive a save and load (section 9). Networked
+  collaborative editing is not planned.
 
 These are sequenced in [`docs/MILESTONES.md`](MILESTONES.md).

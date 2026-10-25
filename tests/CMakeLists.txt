@@ -124,7 +124,7 @@ add_test(
 # building: a green desktop build says nothing about whether the wasm job still
 # builds the player or still runs the browser smoke test. Like the platform
 # classifier, it is checked by reading the workflow in CMake's script mode
-# (docs/ROADMAP.md, shipping queue, `web-smoke-test-ci`).
+# (docs/SHIPPING_QUEUE.md, shipping queue, `web-smoke-test-ci`).
 add_test(
   NAME ci_web_job
   COMMAND

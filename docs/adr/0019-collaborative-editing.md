@@ -1,8 +1,19 @@
 # ADR-0019: Collaborative editing — operations, a replicated log, an authority
 
-- **Status** — Proposed
+- **Status** — Deprecated (the networked feature is not planned; see below)
 - **Supersedes** — none
 - **Superseded by** — none
+
+> **Deprecated.** Networked collaborative editing is no longer planned: it needs
+> a hosted authoritative service, and the project will not carry that running
+> cost. The local steps this ADR described — component identity
+> ([ADR-0045](0045-component-identity.md)), the operation model
+> ([ADR-0047](0047-local-operation-model.md)), and the ordered log
+> ([ADR-0048](0048-replicated-operation-log.md)) — were built and are kept,
+> because they make undo/redo robust on their own. The transport and session
+> server ([ADR-0049](0049-net-transport-and-session-server.md)) remain as
+> tested code, but the project does not pursue the feature further. The rest of
+> this record is kept unedited as the historical decision.
 
 ## Context
 
