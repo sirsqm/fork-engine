@@ -118,6 +118,18 @@ add_test(
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_fe_platform.cmake
 )
 
+# The web CI job is another decision the desktop suite cannot observe by
+# building: a green desktop build says nothing about whether the wasm job still
+# builds the player or still runs the browser smoke test. Like the platform
+# classifier, it is checked by reading the workflow in CMake's script mode
+# (docs/SHIPPING_QUEUE.md, `web-smoke-test-ci`).
+add_test(
+  NAME ci_web_job
+  COMMAND
+    ${CMAKE_COMMAND} -DCI_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/ci.yml -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_ci_web_job.cmake
+)
+
 # ---------------------------------------------------------------------------
 # Editor tests.
 #

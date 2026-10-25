@@ -227,6 +227,11 @@ jobs:
   web:
     name: Web / Emscripten / wasm
     runs-on: ubuntu-latest
+    env:
+      # The pinned emsdk version is named once, here. The install step and the
+      # cache key both read it, so bumping it cannot update one and leave the
+      # other behind.
+      EMSDK_VERSION: 6.0.13
     steps:
       - uses: actions/checkout@v4
       # The runner images' Chrome is the dependable way to get a headless
@@ -238,22 +243,40 @@ jobs:
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
+      # The emsdk checkout and its toolchain download are the slowest part of
+      # this job, and they are pinned to one version, so they are cached. The
+      # key carries the version: bumping the pin above misses the cache rather
+      # than silently reusing the old toolchain.
+      - name: Cache emsdk
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: ${{ runner.os }}-emsdk-${{ env.EMSDK_VERSION }}
       - name: Install emsdk
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
           # Pinned to the version the smoke test is verified against. `latest`
           # would let an upstream emsdk release turn this job red with no change
           # on our side, which is exactly the kind of failure the shipping
           # automation must not inherit.
-          "$HOME/emsdk/emsdk" install 6.0.13
-          "$HOME/emsdk/emsdk" activate 6.0.13
-      - name: Build the engine for wasm
+          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
+      - name: Build the engine and the player for wasm
         run: |
           source "$HOME/emsdk/emsdk_env.sh"
+          # Examples on, because fork_player -- the runtime an exported web build
+          # actually runs -- is built with the shipping tools behind that switch.
+          # A configure that left them off would still compile the engine, so the
+          # job would stay green while the player stopped building for wasm; the
+          # artifact checks below are what turn that into a failure.
           cmake -S . -B build-web \
             -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/emscripten.cmake \
-            -DFE_BUILD_EXAMPLES=OFF
+            -DFE_BUILD_EXAMPLES=ON
           cmake --build build-web -j"$(nproc)"
+          test -f build-web/bin/fork_player.js
+          test -f build-web/bin/fork_player.wasm
       - name: Run the web window smoke test in a headless browser
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
