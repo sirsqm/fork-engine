@@ -15,6 +15,7 @@
 #include "fe/platform/InputActions.h"
 #include "fe/platform/InputState.h"
 #include "fe/reflect/ComponentTypes.h"
+#include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/serialization/SceneSerializer.h"
@@ -22,6 +23,7 @@
 #include "fe/systems/SceneSchedule.h"
 
 #include <string>
+#include <utility>
 
 // The breakout vertical slice's tests.
 //
@@ -179,6 +181,47 @@ TEST_CASE("the field builder makes a complete field") {
     auto* paddle = scene.find_node_by_name(breakout::names::kPaddle)->get_component<physics2d::RigidBody2D>();
     REQUIRE(paddle != nullptr);
     CHECK(paddle->kinematic);
+}
+
+TEST_CASE("the whole field is visible at the window sizes the game runs at") {
+    // The paddle sits at y = -380, below the field's own half-height of 480, and
+    // the top wall at y = 495 above it. A camera that showed viewport_size world
+    // units put both outside a window shorter than 960 units, so the paddle was
+    // driven off-screen and the game looked unresponsive. The reference box makes
+    // the camera fit the field instead; this is the regression guard.
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+
+    auto* camera = scene.find_node_by_name("Camera")->get_component<Camera2D>();
+    REQUIRE(camera != nullptr);
+    CHECK(camera->reference_width > 0.0f);
+    CHECK(camera->reference_height > 0.0f);
+
+    // The extreme world points the player must be able to see: the paddle at both
+    // ends of its travel, and the top wall.
+    const f32 paddle_limit =
+        breakout::config::kFieldHalfWidth - breakout::config::kPaddleHalfWidth - breakout::config::kWallThickness;
+    const Vec2 extremes[] = {
+        Vec2{0.0f, breakout::config::kPaddleY},
+        Vec2{paddle_limit, breakout::config::kPaddleY},
+        Vec2{-paddle_limit, breakout::config::kPaddleY},
+        Vec2{0.0f, breakout::config::kFieldHalfHeight + breakout::config::kWallThickness},
+    };
+
+    // Every size the game is actually played at, including the short viewport a
+    // browser canvas produces.
+    const std::pair<u32, u32> viewports[] = {{1280, 720}, {1280, 577}, {960, 540}, {1920, 1080}, {640, 360}};
+    for (const auto& [width, height] : viewports) {
+        const Mat4 view_projection = camera->view_projection(width, height);
+        for (const Vec2& point : extremes) {
+            const Vec3 clip = transform_point(view_projection, Vec3{point.x, point.y, 0.0f});
+            // Inside the clip cube on both axes means the point is on screen.
+            CHECK(clip.x >= -1.0f);
+            CHECK(clip.x <= 1.0f);
+            CHECK(clip.y >= -1.0f);
+            CHECK(clip.y <= 1.0f);
+        }
+    }
 }
 
 TEST_CASE("the game systems are installed in order") {

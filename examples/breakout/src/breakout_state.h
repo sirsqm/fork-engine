@@ -29,6 +29,14 @@ inline constexpr fe::f32 kFieldHalfWidth = 768.0f;
 inline constexpr fe::f32 kFieldHalfHeight = 480.0f;
 inline constexpr fe::f32 kWallThickness = 15.0f;
 
+// The box the camera fits into the viewport: the field plus the walls that
+// outline it. The camera scales this box to fit whatever viewport it is given,
+// so the whole field -- paddle included, which sits below the field's own
+// half-height -- is visible at any window size. Fitting the field alone would
+// clip the paddle off the bottom on a short viewport.
+inline constexpr fe::f32 kViewHalfWidth = kFieldHalfWidth + kWallThickness * 2.0f;
+inline constexpr fe::f32 kViewHalfHeight = kFieldHalfHeight + kWallThickness * 2.0f;
+
 inline constexpr fe::f32 kPaddleHalfWidth = 90.0f;
 inline constexpr fe::f32 kPaddleHalfHeight = 14.0f;
 inline constexpr fe::f32 kPaddleY = -380.0f;

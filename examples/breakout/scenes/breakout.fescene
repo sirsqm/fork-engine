@@ -14,6 +14,8 @@
             1.0
           ],
           "primary": true,
+          "reference_height": 1020.0,
+          "reference_width": 1596.0,
           "type": "Camera2D",
           "zoom": 1.0
         }

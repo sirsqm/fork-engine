@@ -145,3 +145,67 @@ TEST_CASE("zooming in narrows the visible world extent") {
     const Vec3 right_edge = transform_point(view_projection, Vec3{200.0f, 0.0f, 0.0f});
     CHECK(right_edge.x == doctest::Approx(1.0f).epsilon(1e-4));
 }
+
+TEST_CASE("a reference box is fitted into the viewport, so its edges stay visible") {
+    Scene scene;
+    Node* node = scene.create_node("Camera");
+    auto* camera = node->add_component<Camera2D>();
+    camera->reference_width = 1600.0f;
+    camera->reference_height = 1000.0f;
+
+    // A viewport smaller than the reference box on both axes. The box is scaled
+    // down to fit, so its right and top edges land inside the view rather than
+    // outside it.
+    const Mat4 view_projection = camera->view_projection(800, 500);
+    const Vec3 right_edge = transform_point(view_projection, Vec3{800.0f, 0.0f, 0.0f});
+    const Vec3 top_edge = transform_point(view_projection, Vec3{0.0f, 500.0f, 0.0f});
+    CHECK(right_edge.x == doctest::Approx(1.0f).epsilon(1e-4));
+    CHECK(top_edge.y == doctest::Approx(1.0f).epsilon(1e-4));
+}
+
+TEST_CASE("fitting a reference box keeps its aspect, letterboxing the extra viewport") {
+    Scene scene;
+    Node* node = scene.create_node("Camera");
+    auto* camera = node->add_component<Camera2D>();
+    camera->reference_width = 1600.0f;
+    camera->reference_height = 1000.0f;
+
+    // A viewport wider than the box's aspect: the box fits by height, so its top
+    // edge is exactly the top of the view and its right edge falls short of the
+    // right edge. That shortfall is the letterbox, and it proves the fit is
+    // uniform (no stretch) rather than per-axis.
+    const Mat4 view_projection = camera->view_projection(1600, 500);
+    const Vec3 top_edge = transform_point(view_projection, Vec3{0.0f, 500.0f, 0.0f});
+    CHECK(top_edge.y == doctest::Approx(1.0f).epsilon(1e-4));
+
+    const Vec3 right_edge = transform_point(view_projection, Vec3{800.0f, 0.0f, 0.0f});
+    CHECK(right_edge.x < 1.0f);
+    CHECK(right_edge.x == doctest::Approx(0.5f).epsilon(1e-4));
+}
+
+TEST_CASE("zoom multiplies the reference-box fit") {
+    Scene scene;
+    Node* node = scene.create_node("Camera");
+    auto* camera = node->add_component<Camera2D>();
+    camera->reference_width = 800.0f;
+    camera->reference_height = 600.0f;
+    camera->zoom = 2.0f;
+
+    // The box already fills the viewport at zoom 1, so at zoom 2 only half of it
+    // is visible: world x=200 (a quarter of the box width) is the right edge.
+    const Mat4 view_projection = camera->view_projection(800, 600);
+    const Vec3 quarter = transform_point(view_projection, Vec3{200.0f, 0.0f, 0.0f});
+    CHECK(quarter.x == doctest::Approx(1.0f).epsilon(1e-4));
+}
+
+TEST_CASE("a camera with no reference box shows viewport_size world units") {
+    Scene scene;
+    Node* node = scene.create_node("Camera");
+    auto* camera = node->add_component<Camera2D>();
+
+    // The default is unchanged: no fit, so the visible extent is the viewport
+    // size in world units. This is the behaviour the fit must not disturb.
+    const Mat4 view_projection = camera->view_projection(800, 600);
+    const Vec3 right_edge = transform_point(view_projection, Vec3{400.0f, 0.0f, 0.0f});
+    CHECK(right_edge.x == doctest::Approx(1.0f).epsilon(1e-4));
+}

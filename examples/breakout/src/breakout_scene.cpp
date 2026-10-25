@@ -52,6 +52,12 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
     fe::Node* camera_node = scene.create_node("Camera");
     auto* camera = camera_node->add_component<fe::Camera2D>();
     camera->zoom = 1.0f;
+    // Fit the whole field, not just viewport_size world units, so the paddle and
+    // the top wall are on screen in any window. Without this the field is shown
+    // one world unit per pixel and a window shorter than 960 units crops the
+    // paddle off the bottom.
+    camera->reference_width = cfg::kViewHalfWidth * 2.0f;
+    camera->reference_height = cfg::kViewHalfHeight * 2.0f;
     camera->clear_r = 0.06f;
     camera->clear_g = 0.07f;
     camera->clear_b = 0.12f;

@@ -61,6 +61,10 @@ void register_camera2d(Registry& registry) {
 
     desc.properties.push_back(
         with_range(make_scalar<Camera2D, f32>("zoom", &Camera2D::zoom, ValueKind::Float, &defaults), 0.01, 16.0, 0.01));
+    desc.properties.push_back(
+        make_scalar<Camera2D, f32>("reference_width", &Camera2D::reference_width, ValueKind::Float, &defaults));
+    desc.properties.push_back(
+        make_scalar<Camera2D, f32>("reference_height", &Camera2D::reference_height, ValueKind::Float, &defaults));
     desc.properties.push_back(with_color(
         make_float_group("clear_color", "Vec4", {"r", "g", "b", "a"},
                          {float_getter<Camera2D>(&Camera2D::clear_r), float_getter<Camera2D>(&Camera2D::clear_g),
