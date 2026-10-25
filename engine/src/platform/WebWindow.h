@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/platform/CanvasScale.h"
 #include "fe/platform/Window.h"
 
 #include <memory>
@@ -71,6 +72,24 @@ public:
     // have a context, so unlike the null backend the runtime creates a device.
     [[nodiscard]] bool has_context() const noexcept override { return true; }
 
+    // Converts a DOM event coordinate — CSS pixels relative to the canvas, which
+    // is what the browser reports — into drawing-buffer pixels, the space the
+    // viewport and the action layer's touch regions are in. Public because the
+    // event callbacks are free functions; WebWindow itself is internal to the
+    // platform module, so this is not part of any public API.
+    [[nodiscard]] Vec2 buffer_point(f32 css_x, f32 css_y) const noexcept {
+        return viewport_.css_to_buffer_point(css_x, css_y);
+    }
+
+    // Brings the drawing buffer back in line with the canvas's laid-out CSS box
+    // and the display's device pixel ratio, and records the scale DOM event
+    // coordinates must be converted through. The page owns the CSS box (the
+    // export shell makes it fluid), so this runs on every resize and once at
+    // creation, and is a no-op when the box has not changed. Public because the
+    // resize callback is a free function. See
+    // docs/adr/0077-web-canvas-resize-and-dpr.md.
+    void sync_canvas_size();
+
 private:
     WebWindow();
 
@@ -89,6 +108,10 @@ private:
     u32 width_ = 0;
     u32 height_ = 0;
     bool close_requested_ = false;
+
+    // The last canvas-to-buffer mapping applied, and what DOM event coordinates
+    // are converted through. Empty until the first sync_canvas_size().
+    CanvasViewport viewport_{};
 };
 
 } // namespace fe

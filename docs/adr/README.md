@@ -82,6 +82,7 @@ rather than editing it.
 | [0074](0074-web-window-backend.md) | The web window backend (canvas + WebGL2) | Accepted |
 | [0075](0075-gameplay-actions-input-seam.md) | Gameplay actions as the input seam | Accepted |
 | [0076](0076-3d-in-the-browser.md) | 3D in the browser | Accepted |
+| [0077](0077-web-canvas-resize-and-dpr.md) | The web canvas size and the input coordinate space | Accepted |
 
 ## Format
 

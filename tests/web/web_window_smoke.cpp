@@ -170,6 +170,57 @@ int main() {
     EM_ASM({ window.dispatchEvent(new Event('blur')); });
     report.check("losing focus releases every key", !window.input().is_key_down(fe::Key::Space));
 
+    // --- Canvas resize and the input coordinate space -----------------------
+    //
+    // A browser page owns the canvas's CSS box, so the engine must follow it: the
+    // drawing buffer — what the renderer's viewport uses — and the space DOM
+    // event coordinates are converted into both change when the page resizes the
+    // element. The page is resized here and a real `resize` event dispatched,
+    // which is exactly what a phone rotation or a desktop window drag produces.
+    // This is the acceptance test for `web-resize-and-dpr` in a browser.
+    const fe::u32 buffer_before = window.framebuffer_width();
+    EM_ASM({
+        var canvas = document.getElementById('canvas');
+        canvas.style.width = '640px';
+        canvas.style.height = '400px';
+        window.dispatchEvent(new Event('resize'));
+    });
+    report.check("the drawing buffer follows the canvas CSS box after a resize",
+                 window.framebuffer_width() == 640 && window.framebuffer_height() == 400);
+    report.check("the resize changed the drawing buffer", buffer_before != 640);
+
+    // A DOM coordinate must land in the resized buffer, not in the old one. The
+    // pointer listener reports canvas-relative CSS pixels and the backend scales
+    // them into the drawing buffer; on this headless display the ratio is 1, so
+    // the point is the CSS coordinate and the test asserts it is inside the new
+    // 640x400 buffer rather than the stale 320x200 one.
+    window.input().begin_frame();
+    EM_ASM({
+        var canvas = document.getElementById('canvas');
+        canvas.dispatchEvent(new MouseEvent('mousemove', {clientX : 320, clientY : 200, bubbles : true}));
+    });
+    const fe::Vec2 moved = window.input().mouse_position();
+    report.check("a DOM coordinate maps into the resized drawing buffer",
+                 moved.x > 300.0f && moved.x < 340.0f && moved.y > 180.0f && moved.y < 220.0f);
+
+    // The action layer's regions are normalised against the drawing buffer, so a
+    // contact on the right half of the resized canvas must drive an action bound
+    // to the right half. That ties the resize to gameplay, which is the point.
+    window.input().begin_frame();
+    EM_ASM({
+        var canvas = document.getElementById('canvas');
+        var touch = new Touch({identifier : 7, target : canvas, clientX : 480, clientY : 200});
+        canvas.dispatchEvent(new TouchEvent(
+            'touchstart',
+            {touches : [touch], targetTouches : [touch], changedTouches : [touch], bubbles : true, cancelable : true}));
+    });
+    fe::ActionMap resized_actions;
+    const fe::ActionMap::Id right = resized_actions.add("Right");
+    resized_actions.bind_touch_region(right, 0.5f, 0.0f, 1.0f, 1.0f);
+    resized_actions.update(window.input(), fe::Vec2{static_cast<fe::f32>(window.framebuffer_width()),
+                                                    static_cast<fe::f32>(window.framebuffer_height())});
+    report.check("a touch on the resized canvas drives the action for its half", resized_actions.is_down(right));
+
     // The frame-loop calls must be safe on this backend: the loop does not branch
     // on which backend it drives.
     window.input().begin_frame();

@@ -41,11 +41,13 @@ std::string web_index_html(const ExportManifest& manifest) {
     // the module, where it can write a sentence into the status element instead
     // of leaving a blank canvas. The page itself cannot fail.
     //
-    // The canvas is styled to fill the viewport and to keep a 16:9 drawing
-    // buffer, so the shell "sizes the canvas" without a resize handler on the
-    // page: the backend reads the drawing buffer and the viewport follows it
-    // (WebWindow::framebuffer_width). A fixed 1280x720 default matches the
-    // player's desktop default, so a game sees the same logical size either way.
+    // The canvas is styled to fill the viewport and to keep a 16:9 CSS box. The
+    // page owns that box; the backend follows it, keeping the drawing buffer at
+    // the box size in device pixels so a HiDPI display renders sharp rather than
+    // merely large, and converting DOM event coordinates out of CSS pixels
+    // (WebWindow::sync_canvas_size). A page that resizes the canvas therefore
+    // needs no engine-side wiring: the browser's resize event is what tells the
+    // backend to recompute.
     std::string html;
     html += "<!DOCTYPE html>\n";
     html += "<html lang=\"en\">\n";

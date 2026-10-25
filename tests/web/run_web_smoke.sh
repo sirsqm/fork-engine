@@ -52,6 +52,7 @@ SOURCES=(
   "${ROOT_DIR}/engine/src/platform/InputState.cpp"
   "${ROOT_DIR}/engine/src/platform/InputActions.cpp"
   "${ROOT_DIR}/engine/src/platform/KeyCode.cpp"
+  "${ROOT_DIR}/engine/src/platform/CanvasScale.cpp"
   "${ROOT_DIR}/engine/src/platform/WebWindow.cpp"
   "${ROOT_DIR}/engine/src/core/Log.cpp"
   "${ROOT_DIR}/engine/src/core/Assert.cpp"

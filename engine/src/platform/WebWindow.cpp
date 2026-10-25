@@ -30,6 +30,11 @@ const char* on_before_unload(int /*eventType*/, const void* /*reserved*/, void* 
 
 // The event callbacks receive the engine Window through the user-data pointer,
 // exactly as the GLFW backend's do, so event handling stays out of global state.
+// The pointer is always the WebWindow that installed the listener, so the
+// callbacks downcast once here and every later use is typed.
+[[nodiscard]] WebWindow* window_from(void* user_data) noexcept {
+    return static_cast<WebWindow*>(user_data);
+}
 
 // Which element each event binds to is a measured decision, and the two groups
 // differ for two different reasons.
@@ -46,12 +51,8 @@ const char* on_before_unload(int /*eventType*/, const void* /*reserved*/, void* 
 // canvas space, not page space. Binding them to the window would silently offset
 // every position by the canvas's place in the page — wrong the moment the canvas
 // is not at the top-left corner, which the export shell's centred layout is not.
-[[nodiscard]] Window* window_from(void* user_data) noexcept {
-    return static_cast<Window*>(user_data);
-}
-
 bool on_key(int eventType, const EmscriptenKeyboardEvent* event, void* user_data) {
-    Window* window = window_from(user_data);
+    WebWindow* window = window_from(user_data);
     if (window == nullptr) {
         return false;
     }
@@ -69,7 +70,7 @@ bool on_key(int eventType, const EmscriptenKeyboardEvent* event, void* user_data
 }
 
 bool on_mouse_button(int eventType, const EmscriptenMouseEvent* event, void* user_data) {
-    Window* window = window_from(user_data);
+    WebWindow* window = window_from(user_data);
     if (window == nullptr) {
         return false;
     }
@@ -92,18 +93,22 @@ bool on_mouse_button(int eventType, const EmscriptenMouseEvent* event, void* use
 }
 
 bool on_mouse_move(int /*eventType*/, const EmscriptenMouseEvent* event, void* user_data) {
-    Window* window = window_from(user_data);
+    WebWindow* window = window_from(user_data);
     if (window == nullptr) {
         return false;
     }
     // targetX/targetY are the coordinates relative to the element the listener
-    // is on, which is the canvas — the same space InputState's positions are in.
-    window->input().on_mouse_move(static_cast<f32>(event->targetX), static_cast<f32>(event->targetY));
+    // is on, which is the canvas — but in CSS pixels, not the device pixels the
+    // drawing buffer is measured in. The backend converts through the canvas
+    // mapping so a touch or click lands where it looks, whatever the page size
+    // and the display's pixel ratio.
+    const Vec2 point = window->buffer_point(static_cast<f32>(event->targetX), static_cast<f32>(event->targetY));
+    window->input().on_mouse_move(point.x, point.y);
     return false;
 }
 
 bool on_wheel(int /*eventType*/, const EmscriptenWheelEvent* event, void* user_data) {
-    Window* window = window_from(user_data);
+    WebWindow* window = window_from(user_data);
     if (window == nullptr) {
         return false;
     }
@@ -119,7 +124,7 @@ bool on_wheel(int /*eventType*/, const EmscriptenWheelEvent* event, void* user_d
 // are canvas-relative (this listener is on the canvas), so gameplay and an
 // ActionMap region see the same space a mouse would.
 bool on_touch(int eventType, const EmscriptenTouchEvent* event, void* user_data) {
-    Window* window = window_from(user_data);
+    WebWindow* window = window_from(user_data);
     if (window == nullptr) {
         return false;
     }
@@ -150,8 +155,11 @@ bool on_touch(int eventType, const EmscriptenTouchEvent* event, void* user_data)
         if (!point.isChanged) {
             continue;
         }
-        window->input().on_touch(phase, static_cast<u32>(point.identifier), static_cast<f32>(point.targetX),
-                                 static_cast<f32>(point.targetY));
+        // targetX/targetY are canvas-relative CSS pixels; the action layer's
+        // regions are normalised against the drawing buffer, so convert before
+        // handing the contact to InputState.
+        const Vec2 position = window->buffer_point(static_cast<f32>(point.targetX), static_cast<f32>(point.targetY));
+        window->input().on_touch(phase, static_cast<u32>(point.identifier), position.x, position.y);
     }
     // Prevent the browser's default touch behaviour (scrolling, pinch-zoom, the
     // long-press menu) so a touch on the canvas drives the game instead of the
@@ -163,9 +171,22 @@ bool on_touch(int eventType, const EmscriptenTouchEvent* event, void* user_data)
 // A window that loses focus must not leave a key stuck down: the keyup goes to
 // whatever took focus, so the engine would never see it.
 bool on_blur(int /*eventType*/, const EmscriptenFocusEvent* /*event*/, void* user_data) {
-    Window* window = window_from(user_data);
+    WebWindow* window = window_from(user_data);
     if (window != nullptr) {
         window->input().release_all();
+    }
+    return false;
+}
+
+// The page resized the window, so the canvas's CSS box may have changed. The
+// drawing buffer must follow it or the game renders at the old resolution and
+// every touch is offset. This is the one place the browser tells the backend the
+// page changed, so the work is done here rather than guessed at frame time.
+// See docs/adr/0077-web-canvas-resize-and-dpr.md.
+bool on_resize(int /*eventType*/, const EmscriptenUiEvent* /*event*/, void* user_data) {
+    WebWindow* window = window_from(user_data);
+    if (window != nullptr) {
+        window->sync_canvas_size();
     }
     return false;
 }
@@ -200,6 +221,11 @@ void WebWindow::install_input_callbacks() {
     // its keyup goes to whatever took the focus.
     emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, &on_blur);
 
+    // The page owns the canvas's size, so the only way to learn that it changed
+    // is the browser's resize event. Registering here keeps every listener in one
+    // place; the callback recomputes the drawing buffer from the new CSS box.
+    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, &on_resize);
+
     // Pointer, wheel and touch on the canvas, so their coordinates are already in
     // canvas space and need no page-offset correction.
     const char* const canvas = canvas_selector_.c_str();
@@ -221,6 +247,7 @@ void WebWindow::remove_input_callbacks() {
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
     emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
     emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
+    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
 
     const char* const canvas = canvas_selector_.c_str();
     emscripten_set_mousedown_callback(canvas, self, EM_TRUE, nullptr);
@@ -231,6 +258,44 @@ void WebWindow::remove_input_callbacks() {
     emscripten_set_touchmove_callback(canvas, self, EM_TRUE, nullptr);
     emscripten_set_touchend_callback(canvas, self, EM_TRUE, nullptr);
     emscripten_set_touchcancel_callback(canvas, self, EM_TRUE, nullptr);
+}
+
+void WebWindow::sync_canvas_size() {
+    const char* const canvas = canvas_selector_.c_str();
+
+    // The CSS box is the element's laid-out size in CSS pixels, which the page
+    // owns. It is the input to the mapping, not the drawing buffer: on a fluid
+    // shell the two differ, and the buffer must be recomputed from the box.
+    double css_width = 0.0;
+    double css_height = 0.0;
+    if (emscripten_get_element_css_size(canvas, &css_width, &css_height) != EMSCRIPTEN_RESULT_SUCCESS) {
+        return;
+    }
+
+    const CanvasViewport next = CanvasViewport::from_css_size(static_cast<f32>(css_width), static_cast<f32>(css_height),
+                                                              static_cast<f32>(emscripten_get_device_pixel_ratio()));
+    if (!next.valid()) {
+        // The page has not laid the canvas out (a hidden tab, a display:none
+        // element), so it has no size to follow. Keep the last good mapping
+        // rather than collapsing the viewport to zero and blanking the frame.
+        return;
+    }
+    if (next.buffer_width == viewport_.buffer_width && next.buffer_height == viewport_.buffer_height &&
+        next.css_to_buffer_scale == viewport_.css_to_buffer_scale) {
+        return;
+    }
+
+    // Set the drawing buffer to the CSS box in device pixels. Every later read of
+    // framebuffer_width()/height() then reports the new size, so the renderer's
+    // viewport follows without the frame loop knowing a resize happened.
+    emscripten_set_canvas_element_size(canvas, static_cast<int>(next.buffer_width),
+                                       static_cast<int>(next.buffer_height));
+    viewport_ = next;
+    // The logical size is the CSS box; the drawing buffer above is that box in
+    // device pixels. Keeping both honest is what makes a DPR above 1 render
+    // sharper rather than merely larger.
+    width_ = static_cast<u32>(css_width);
+    height_ = static_cast<u32>(css_height);
 }
 
 Result<std::unique_ptr<Window>> WebWindow::create(const WindowDesc& desc) {
@@ -308,6 +373,14 @@ Result<std::unique_ptr<Window>> WebWindow::create(const WindowDesc& desc) {
     // handle is an opaque token to everything outside this file.
     window->set_native_handle(reinterpret_cast<void*>(static_cast<uintptr_t>(context)));
 
+    // Reconcile the drawing buffer with the canvas's real CSS box and the
+    // display's pixel ratio before the first frame. A shell that lays the canvas
+    // out fluidly is already larger or smaller than the requested size by the
+    // time the module runs, and a HiDPI display reports a ratio above 1, so the
+    // size set above is a floor, not the truth. This also records the scale DOM
+    // event coordinates convert through, which the input callbacks need.
+    window->sync_canvas_size();
+
     if (!desc.title.empty()) {
         window->set_title(desc.title);
     }
@@ -317,8 +390,9 @@ Result<std::unique_ptr<Window>> WebWindow::create(const WindowDesc& desc) {
     emscripten_set_beforeunload_callback(nullptr, &on_before_unload);
     window->input().begin_frame();
 
-    FE_LOG_INFO("web window: WebGL2 context %d on %s (%ux%u)", static_cast<int>(context), selector.c_str(), desc.width,
-                desc.height);
+    FE_LOG_INFO("web window: WebGL2 context %d on %s (%ux%u, buffer %ux%u)", static_cast<int>(context),
+                selector.c_str(), window->width_, window->height_, window->framebuffer_width(),
+                window->framebuffer_height());
     return std::unique_ptr<Window>(window.release());
 }
 
