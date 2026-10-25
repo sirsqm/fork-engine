@@ -48,6 +48,14 @@ if [[ -z "${CHROME_BIN}" ]]; then
 fi
 [[ -n "${CHROME_BIN}" ]] || fail "no Chromium/Chrome found; set CHROME_BIN to its path"
 
+# A browser that wedges instead of exiting must not wedge the run. `timeout` is
+# GNU coreutils and is absent on a stock macOS, so fall back to running without
+# it there rather than failing the check on a missing tool.
+CHROME_TIMEOUT="${FE_WEB_CHROME_TIMEOUT:-180}"
+if ! command -v timeout >/dev/null 2>&1; then
+  CHROME_TIMEOUT=""
+fi
+
 [[ -f "${BUILD_DIR}/bin/fork_player.js" ]] ||
   fail "no web player at ${BUILD_DIR}/bin/fork_player.js; build the web target first"
 
@@ -79,7 +87,7 @@ export_project() {
 # asserts the page's own verdict. `?frames=N` bounds the run so the page settles
 # and can be observed; a game otherwise runs until its tab closes.
 run_project() {
-  local project="$1" label="$2"
+  local project="$1" label="$2" base_port="${3:-8733}"
   [[ -d "${project}" ]] || fail "no project at ${project}"
 
   local export_dir
@@ -93,8 +101,6 @@ run_project() {
   # Serve the export over HTTP rather than loading it from file://, because a
   # shipped build is served and the pack is fetched by the engine's HTTP resource
   # source, which needs an origin.
-  local port
-  port="${FE_WEB_GAME_PORT:-8733}"
   local http_pid="" dump="" attempt
   cleanup_http() {
     if [[ -n "${http_pid}" ]] && kill -0 "${http_pid}" 2>/dev/null; then
@@ -109,6 +115,14 @@ run_project() {
   local frames="${FE_WEB_GAME_FRAMES:-2}"
   local attempts="${FE_WEB_GAME_ATTEMPTS:-3}"
   for attempt in $(seq 1 "${attempts}"); do
+    # A distinct port per attempt, so a retry never meets the previous attempt's
+    # listener in TIME_WAIT and serves a stale directory. The retry exists for a
+    # browser that starts too slowly on a loaded runner; a short backoff gives
+    # such a start a chance to recover rather than failing fast three times.
+    local port=$((base_port + attempt - 1))
+    if (( attempt > 1 )); then
+      sleep 2
+    fi
     echo "web game: [${label}] attempt ${attempt}/${attempts}"
     python3 -m http.server "${port}" --bind 127.0.0.1 --directory "${export_dir}" >/dev/null 2>&1 &
     http_pid=$!
@@ -125,7 +139,21 @@ run_project() {
       sleep 0.25
     done
 
-    dump="$("${CHROME_BIN}" \
+    # A private profile per attempt: two Chrome instances sharing the default
+    # profile directory race on its singleton lock and the loser exits at once
+    # without loading the page, which is the fast "reported nothing" failure.
+    # `timeout` bounds a browser that hangs instead of exiting, which would
+    # otherwise wedge CI; the retry then starts a fresh browser and a fresh port.
+    local profile_dir
+    profile_dir="$(mktemp -d)"
+    # `timeout` is omitted when it is not available (stock macOS), so build the
+    # command as an array rather than interpolating an empty duration, which
+    # `timeout` would reject as an invalid interval.
+    local chrome_cmd=("${CHROME_BIN}")
+    if [[ -n "${CHROME_TIMEOUT}" ]]; then
+      chrome_cmd=(timeout "${CHROME_TIMEOUT}" "${CHROME_BIN}")
+    fi
+    dump="$("${chrome_cmd[@]}" \
       --headless=new \
       --no-sandbox \
       --disable-gpu \
@@ -133,8 +161,10 @@ run_project() {
       --use-angle=swiftshader \
       --enable-unsafe-swiftshader \
       --virtual-time-budget=120000 \
+      --user-data-dir="${profile_dir}" \
       --dump-dom \
       "http://127.0.0.1:${port}/index.html?frames=${frames}" 2>/dev/null)" || true
+    rm -rf "${profile_dir}"
 
     cleanup_http
     http_pid=""
@@ -195,9 +225,10 @@ PY
 # exercised, because the 3D path shares the whole shipping path with the 2D one
 # and the point of the check is that a regression in either fails the run.
 if [[ -n "${FE_WEB_GAME_PROJECT:-}" ]]; then
-  run_project "${FE_WEB_GAME_PROJECT}" "$(basename "${FE_WEB_GAME_PROJECT}")"
+  run_project "${FE_WEB_GAME_PROJECT}" "$(basename "${FE_WEB_GAME_PROJECT}")" \
+    "${FE_WEB_GAME_PORT:-8733}"
 else
-  run_project "${ROOT_DIR}/examples/demo_project" "2d"
-  run_project "${ROOT_DIR}/examples/demo3d_project" "3d"
+  run_project "${ROOT_DIR}/examples/demo_project" "2d" "${FE_WEB_GAME_PORT:-8733}"
+  run_project "${ROOT_DIR}/examples/demo3d_project" "3d" "$((${FE_WEB_GAME_PORT:-8733} + 4))"
 fi
 

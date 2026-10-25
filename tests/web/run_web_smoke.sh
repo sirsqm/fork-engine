@@ -42,6 +42,14 @@ if [[ -z "${CHROME_BIN}" ]]; then
 fi
 [[ -n "${CHROME_BIN}" ]] || fail "no Chromium/Chrome found; set CHROME_BIN to its path"
 
+# A browser that wedges instead of exiting must not wedge the run. `timeout` is
+# GNU coreutils and is absent on a stock macOS, so fall back to running without
+# it there rather than failing the check on a missing tool.
+CHROME_TIMEOUT="${FE_WEB_CHROME_TIMEOUT:-180}"
+if ! command -v timeout >/dev/null 2>&1; then
+  CHROME_TIMEOUT=""
+fi
+
 # The engine is compiled from source here rather than through the CMake build so
 # the test exercises the same translation units a shipped web build would
 # (WebWindow.cpp, the GLES3 device, and the platform-free Window.cpp), and can be
@@ -84,7 +92,6 @@ echo "web smoke: running headless in ${CHROME_BIN}"
 # without a non-default flag, and a shipped web build is served over HTTP anyway,
 # so this is the environment the code actually runs in. The server is started and
 # torn down inside the retry loop below.
-PORT="${FE_WEB_SMOKE_PORT:-8731}"
 HTTP_PID=""
 cleanup() {
   if [[ -n "${HTTP_PID}" ]] && kill -0 "${HTTP_PID}" 2>/dev/null; then
@@ -103,7 +110,15 @@ trap cleanup EXIT
 # the shipping automation to trip over.
 ATTEMPTS="${FE_WEB_SMOKE_ATTEMPTS:-3}"
 DUMP=""
+BASE_PORT="${FE_WEB_SMOKE_PORT:-8731}"
 for attempt in $(seq 1 "${ATTEMPTS}"); do
+  # A distinct port per attempt, so a retry never meets the previous attempt's
+  # listener in TIME_WAIT, and a short backoff so a browser that started too
+  # slowly on a loaded runner gets a real second chance instead of failing fast.
+  PORT=$((BASE_PORT + attempt - 1))
+  if (( attempt > 1 )); then
+    sleep 2
+  fi
   echo "web smoke: attempt ${attempt}/${ATTEMPTS}"
   python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${BUILD_DIR}" >/dev/null 2>&1 &
   HTTP_PID=$!
@@ -123,8 +138,18 @@ for attempt in $(seq 1 "${ATTEMPTS}"); do
   # SwiftShader gives a software WebGL2 implementation, so this needs no GPU.
   # --dump-dom prints the DOM after the page has settled; --virtual-time-budget
   # bounds how long the page may take. The test writes its verdict into the
-  # title, so it is read back out of the dump.
-  DUMP="$("${CHROME_BIN}" \
+  # title, so it is read back out of the dump. A private profile per attempt
+  # keeps this Chrome from attaching to another instance that is already running
+  # with different flags, which would make it ignore --dump-dom and exit at once.
+  PROFILE_DIR="$(mktemp -d)"
+  # `timeout` is omitted when it is not available (stock macOS), so build the
+  # command as an array rather than interpolating an empty duration, which
+  # `timeout` would reject as an invalid interval.
+  CHROME_CMD=("${CHROME_BIN}")
+  if [[ -n "${CHROME_TIMEOUT}" ]]; then
+    CHROME_CMD=(timeout "${CHROME_TIMEOUT}" "${CHROME_BIN}")
+  fi
+  DUMP="$("${CHROME_CMD[@]}" \
     --headless=new \
     --no-sandbox \
     --disable-gpu \
@@ -132,8 +157,10 @@ for attempt in $(seq 1 "${ATTEMPTS}"); do
     --use-angle=swiftshader \
     --enable-unsafe-swiftshader \
     --virtual-time-budget=30000 \
+    --user-data-dir="${PROFILE_DIR}" \
     --dump-dom \
     "http://127.0.0.1:${PORT}/web_window_smoke.html" 2>/dev/null)" || true
+  rm -rf "${PROFILE_DIR}"
 
   cleanup
   HTTP_PID=""

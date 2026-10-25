@@ -85,7 +85,11 @@ tests/web/run_web_game.sh       # exports the 2D and 3D demos, runs them in head
   the check observes a game that would otherwise run until its tab closes.
 - Both scripts need `em++` on `PATH` and a Chromium/Chrome binary; they honour
   `CHROME_BIN` and retry a slow browser start, so they are safe to run in CI and
-  in a run.
+  in a run. Each attempt gets its own port and its own `--user-data-dir`, because
+  two headless Chromes that share the default profile race on its singleton lock
+  and the loser exits at once without loading the page — the retry would then
+  fail the same way three times. `timeout` bounds a browser that hangs; where
+  `timeout` is missing (stock macOS) the scripts run without it.
 - `clang-format` must never be allowed to see an `EM_ASM` body containing `===`:
   it parses the body as C++, rewrites `a === b` to `a == = b`, and the result is
   a JavaScript syntax error that breaks the module at run time with no build
