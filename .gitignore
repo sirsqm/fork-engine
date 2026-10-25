@@ -40,9 +40,10 @@ compile_commands.json
 *.pdb
 
 # ...but a Wavefront mesh is a source asset, not a compiler object. Keep the
-# example project's meshes trackable; a game's own meshes live wherever the
+# example projects' meshes trackable; a game's own meshes live wherever the
 # project puts them and are added with `git add -f` if they land elsewhere.
 !examples/demo3d_project/assets/meshes/*.obj
+!examples/game3d_project/assets/meshes/*.obj
 
 # OS cruft
 .DS_Store

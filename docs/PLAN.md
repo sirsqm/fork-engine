@@ -648,6 +648,15 @@ in-process, so every target — including wasm — has gameplay to run.
 actions and moves its node, verified by the browser input probe. See
 [ADR-0078](adr/0078-engine-shipped-gameplay-behaviours.md).
 
+### `playable-3d-web-game`
+
+A 3D test game that is playable in a browser, not merely rendered: a fly camera,
+a movable player, and something to look at, driven by the engine-shipped
+behaviours with a keyboard and a touchscreen.
+
+**Done when** the project exports for the web, runs in headless Chromium, and the
+input probe observes the player node move in response to a synthetic key.
+
 ### `web-resize-and-dpr`
 
 A browser canvas is resized by the page, not by the game, and a phone reports a

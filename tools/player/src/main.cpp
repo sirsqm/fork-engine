@@ -76,6 +76,15 @@ struct Options {
     // needs it because a browser page owns the frame schedule and a check has to
     // bound a run to observe it (a game otherwise runs until the tab closes).
     fe::u32 frames = 0;
+    // Drive the input path end to end inside the browser: press a movement key
+    // with a real synthetic DOM event, then report how far the watched node
+    // moved. This is the acceptance test for "input works in the web build" — a
+    // browser check can dispatch events but cannot press a key, so the player
+    // does it and reports the result into the page. Ignored off the web target.
+    bool probe_input = false;
+    // The node whose movement the input probe measures. A scene names its camera
+    // "Camera" by convention; a game that does not can override it.
+    std::string probe_node = "Camera";
     bool headless = false;
     bool render = false;
     bool verbose = false;
@@ -196,6 +205,19 @@ protected:
         if (options_.frames > 0 && frame_count_ >= options_.frames) {
             request_exit();
         }
+#if defined(FE_PLATFORM_WEB)
+        // The input probe. On the first frame the watched node's start transform
+        // is recorded and a movement key plus a look key are pressed with real
+        // synthetic DOM events, so they travel the whole path a player's
+        // keystroke does: DOM event -> the backend's listener -> InputState ->
+        // ActionMap -> the behaviour's update. On every later frame the key is
+        // still held, so the node keeps moving. Measuring the start here, before
+        // any behaviour has run, is what makes the reported delta the effect of
+        // the input rather than of the scene's authoring.
+        if (options_.probe_input && frame_count_ == 1) {
+            begin_input_probe();
+        }
+#endif
     }
 
     void on_render(fe::f32) override {
@@ -230,6 +252,44 @@ protected:
         FE_LOG_INFO("fork_player: %llu frame(s), %llu script(s)", static_cast<unsigned long long>(frame_count_),
                     static_cast<unsigned long long>(host_.script_count()));
     }
+
+#if defined(FE_PLATFORM_WEB)
+    // Presses the movement keys with real synthetic DOM events and records the
+    // watched node's starting transform, so a later report can measure what the
+    // input did. The events are dispatched at the same target the backend's
+    // listeners are on (the window for keyboard), so this exercises the shipped
+    // path rather than a test-only one.
+    void begin_input_probe() {
+        const fe::Node* watched = scene().find_node_by_name(options_.probe_node);
+        if (watched == nullptr) {
+            FE_LOG_WARN("fork_player: input probe could not find a node named '%s'", options_.probe_node.c_str());
+            return;
+        }
+        probe_start_position_ = watched->transform().position;
+        probe_active_ = true;
+
+        // Held down for the rest of the run, so the behaviour keeps moving the
+        // node every frame and the delta grows past any rounding noise.
+        EM_ASM({
+            window.dispatchEvent(new KeyboardEvent('keydown', {code : 'KeyW', bubbles : true}));
+            window.dispatchEvent(new KeyboardEvent('keydown', {code : 'KeyD', bubbles : true}));
+        });
+        FE_LOG_INFO("fork_player: input probe pressed W and D; watching node '%s'", options_.probe_node.c_str());
+    }
+
+    // How far the watched node moved since the probe began, in world units, and
+    // whether the run proved input reached gameplay at all.
+    [[nodiscard]] fe::f32 probe_moved_distance() const {
+        if (!probe_active_) {
+            return 0.0f;
+        }
+        const fe::Node* watched = scene().find_node_by_name(options_.probe_node);
+        if (watched == nullptr) {
+            return 0.0f;
+        }
+        return (watched->transform().position - probe_start_position_).length();
+    }
+#endif
 
 private:
     // Reads the last frame and reports how varied it is, then hands the verdict
@@ -272,8 +332,12 @@ private:
         // window's live-context flag: a WebGL2 context can only be obtained from
         // a canvas, so a 1 here is the check that the shell provided one.
         EM_ASM(
-            { document.title = 'FE_PLAYER_RESULT canvas=' + $0 + ' frames=' + $1 + ' distinct=' + $2; },
-            engine().window().has_context() ? 1 : 0, static_cast<int>(frame_count_), static_cast<int>(distinct.size()));
+            {
+                document.title = 'FE_PLAYER_RESULT canvas=' + $0 + ' frames=' + $1 + ' distinct=' + $2 + ' moved=' +
+                                 $3.toFixed(3) + ' probe=' + $4;
+            },
+            engine().window().has_context() ? 1 : 0, static_cast<int>(frame_count_), static_cast<int>(distinct.size()),
+            static_cast<double>(probe_moved_distance()), options_.probe_input ? 1 : 0);
 #endif
     }
 
@@ -305,6 +369,10 @@ private:
     fe::ScriptLibrary library_;
     std::unique_ptr<fe::script::ScriptBinding> binding_;
     fe::u64 frame_count_ = 0;
+#if defined(FE_PLATFORM_WEB)
+    fe::Vec3 probe_start_position_{};
+    bool probe_active_ = false;
+#endif
 };
 
 void print_usage() {
@@ -317,6 +385,10 @@ void print_usage() {
               "  --scene KEY     the startup scene's key inside the pack (direct form)\n"
               "  --module PATH   an extra gameplay module to load (repeatable)\n"
               "  --frames N      run N frames and exit (the web build's bounded run)\n"
+              "  --probe-input   (web) press movement keys with synthetic events and\n"
+              "                  report how far --probe-node moved; proves input reaches\n"
+              "                  gameplay in a browser\n"
+              "  --probe-node N  the node the input probe watches (default: Camera)\n"
               "  --headless N    run N frames with no window\n"
               "  --render        run the render path against the null RHI device\n"
               "  --verbose       log at debug level\n"
@@ -340,6 +412,10 @@ void print_usage() {
             out.modules.emplace_back(argv[++i]);
         } else if (arg == "--frames" && has_value) {
             out.frames = static_cast<fe::u32>(std::strtoul(argv[++i], nullptr, 10));
+        } else if (arg == "--probe-input") {
+            out.probe_input = true;
+        } else if (arg == "--probe-node" && has_value) {
+            out.probe_node = argv[++i];
         } else if (arg == "--headless" && has_value) {
             out.headless = true;
             out.headless_frames = static_cast<fe::u32>(std::strtoul(argv[++i], nullptr, 10));

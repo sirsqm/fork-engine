@@ -67,14 +67,17 @@ cmake --build build-web --parallel
 ```sh
 source /tmp/emsdk/emsdk_env.sh
 tests/web/run_web_smoke.sh      # compiles the backend to wasm, runs headless Chromium
-tests/web/run_web_game.sh       # exports the 2D and 3D demos, runs them in headless Chromium
+tests/web/run_web_game.sh       # exports the 2D demo and the playable 3D game, runs them in headless Chromium
 ```
 
 - The smoke script proves the window backend can get a WebGL2 context; the game
   script proves a whole exported game runs on it (export template, pack fetched
   over HTTP, ES shaders, both renderers). Run both when touching the web path.
-  The game script runs `examples/demo_project` and `examples/demo3d_project`;
-  set `FE_WEB_GAME_PROJECT=DIR` for a single focused run.
+  The game script runs `examples/demo_project` and the playable
+  `examples/game3d_project`; set `FE_WEB_GAME_PROJECT=DIR` for a single focused
+  run. The 3D run turns on the player's input probe (`?probe=1&probeNode=Player`)
+  and fails when the watched node does not move, so "a synthetic key reaches
+  gameplay in a browser" is checked, not assumed.
 - The game script exports with the native `fork_export` when one exists and
   otherwise with the wasm one under node, so it works in the web CI job, which
   has no desktop build. The player reports what it drew into the page title

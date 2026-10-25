@@ -87,7 +87,7 @@ export_project() {
 # asserts the page's own verdict. `?frames=N` bounds the run so the page settles
 # and can be observed; a game otherwise runs until its tab closes.
 run_project() {
-  local project="$1" label="$2" base_port="${3:-8733}"
+  local project="$1" label="$2" base_port="${3:-8733}" probe_node="${4:-}"
   [[ -d "${project}" ]] || fail "no project at ${project}"
 
   local export_dir
@@ -114,6 +114,16 @@ run_project() {
   # the software-rendered frames all share it.
   local frames="${FE_WEB_GAME_FRAMES:-2}"
   local attempts="${FE_WEB_GAME_ATTEMPTS:-3}"
+  # A project that names a node for the input probe is run with the probe on. The
+  # probe presses movement keys with real synthetic events and reports how far
+  # that node moved, which is the only way a browser harness can prove input
+  # reaches gameplay: it can dispatch an event, but it cannot press a key. A
+  # project without one is still checked for a live canvas, a live loop and a
+  # non-blank frame.
+  local query="?frames=${frames}"
+  if [[ -n "${probe_node}" ]]; then
+    query="${query}&probe=1&probeNode=${probe_node}"
+  fi
   for attempt in $(seq 1 "${attempts}"); do
     # A distinct port per attempt, so a retry never meets the previous attempt's
     # listener in TIME_WAIT and serves a stale directory. The retry exists for a
@@ -163,7 +173,7 @@ run_project() {
       --virtual-time-budget=120000 \
       --user-data-dir="${profile_dir}" \
       --dump-dom \
-      "http://127.0.0.1:${port}/index.html?frames=${frames}" 2>/dev/null)" || true
+      "http://127.0.0.1:${port}/index.html${query}" 2>/dev/null)" || true
     rm -rf "${profile_dir}"
 
     cleanup_http
@@ -199,10 +209,12 @@ PY
   # shader compile, a dead renderer, a scene that never drew — is one colour, and
   # a rendered scene is several, so this fails when the renderer is deliberately
   # broken without needing a golden image.
-  local canvas_reported frames_reported distinct_reported
+  local canvas_reported frames_reported distinct_reported moved_reported probe_reported
   canvas_reported="$(sed -n 's/.*canvas=\([0-9]*\).*/\1/p' <<<"${report}")"
   frames_reported="$(sed -n 's/.*frames=\([0-9]*\).*/\1/p' <<<"${report}")"
   distinct_reported="$(sed -n 's/.*distinct=\([0-9]*\).*/\1/p' <<<"${report}")"
+  moved_reported="$(sed -n 's/.*moved=\([0-9.]*\).*/\1/p' <<<"${report}")"
+  probe_reported="$(sed -n 's/.*probe=\([0-9]*\).*/\1/p' <<<"${report}")"
 
   [[ -n "${canvas_reported}" ]] || fail "[${label}] the report carried no canvas flag: ${report}"
   [[ -n "${frames_reported}" ]] || fail "[${label}] the report carried no frame count: ${report}"
@@ -218,17 +230,42 @@ PY
     fail "[${label}] the rendered frame has ${distinct_reported} distinct colour(s); it is blank"
   fi
 
-  echo "web game: [${label}] PASS (canvas, ${frames_reported} frames, ${distinct_reported} distinct colours)"
+  # When the project was run with the input probe, the watched node must have
+  # actually moved. A zero delta means the synthetic key never reached the action
+  # layer, or no behaviour consumed it: the game renders but is not playable,
+  # which is exactly the regression a web build with no gameplay logic would
+  # show. `moved` is compared with awk because it is a float.
+  if [[ -n "${probe_node}" ]]; then
+    [[ -n "${moved_reported}" && -n "${probe_reported}" ]] ||
+      fail "[${label}] the report carried no input-probe result: ${report}"
+    if (( probe_reported != 1 )); then
+      fail "[${label}] the input probe did not run (probe=${probe_reported})"
+    fi
+    if ! awk -v moved="${moved_reported}" 'BEGIN { exit !(moved > 0.0) }'; then
+      fail "[${label}] input did not reach gameplay: the node '${probe_node}' moved ${moved_reported} units"
+    fi
+  fi
+
+  echo "web game: [${label}] PASS (canvas, ${frames_reported} frames, ${distinct_reported} distinct colours${probe_node:+, input moved ${moved_reported}})"
 }
 
 # A single project can be named for a focused run; by default both renderers are
 # exercised, because the 3D path shares the whole shipping path with the 2D one
 # and the point of the check is that a regression in either fails the run.
+#
+# The 3D run is the playable game (`game3d_project`), and it is run with the
+# input probe watching its Player node: that is what proves a synthetic key in a
+# browser reaches the action layer and drives a behaviour, so "input works on the
+# web" is checked rather than assumed. The probe pins a fixed simulation step
+# (see the player's --fixed-step), so two frames are enough: the distance it
+# reports is a property of the input and the behaviour, not of how fast the
+# browser happened to run the frames.
 if [[ -n "${FE_WEB_GAME_PROJECT:-}" ]]; then
   run_project "${FE_WEB_GAME_PROJECT}" "$(basename "${FE_WEB_GAME_PROJECT}")" \
-    "${FE_WEB_GAME_PORT:-8733}"
+    "${FE_WEB_GAME_PORT:-8733}" "${FE_WEB_GAME_PROBE_NODE:-}"
 else
   run_project "${ROOT_DIR}/examples/demo_project" "2d" "${FE_WEB_GAME_PORT:-8733}"
-  run_project "${ROOT_DIR}/examples/demo3d_project" "3d" "$((${FE_WEB_GAME_PORT:-8733} + 4))"
+  run_project "${ROOT_DIR}/examples/game3d_project" "3d" \
+    "$((${FE_WEB_GAME_PORT:-8733} + 4))" "Player"
 fi
 
