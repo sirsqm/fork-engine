@@ -427,7 +427,18 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
                 if (tangent_mass > 0.0f) {
                     const f32 tangent_speed = relative.dot(tangent);
                     f32 friction_impulse = -tangent_speed / tangent_mass;
-                    const f32 max_friction = std::max(a.friction, b.friction) * impulse_magnitude;
+                    // Combined friction is the geometric mean, the rule Box2D
+                    // uses and the one that keeps the endpoints meaningful: a
+                    // material with friction 0 stays frictionless against a
+                    // rough surface, and 1 against 1 is 1.
+                    //
+                    // Taking the larger of the two instead (the previous rule)
+                    // makes friction 0 inexpressible -- a ball authored as
+                    // frictionless picks up the wall's 0.5 -- so every glancing
+                    // contact bleeds tangential speed. A ball bounced off a wall
+                    // loses its vertical component a little each hit and ends up
+                    // travelling dead horizontal forever.
+                    const f32 max_friction = std::sqrt(a.friction * b.friction) * impulse_magnitude;
                     friction_impulse = std::clamp(friction_impulse, -max_friction, max_friction);
                     const Vec2 friction = tangent * friction_impulse;
                     a.velocity -= friction * a.inv_mass;

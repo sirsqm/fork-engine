@@ -153,6 +153,18 @@ Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcep
             contact.normal = delta / distance;
             contact.penetration = circle.radius - distance;
         } else {
+            // The circle centre is inside the box: separate along the nearest
+            // face. The normal points from the circle towards the box, matching
+            // the outside case above and the solver's A-to-B convention, so it
+            // points *into* the box along the axis of the nearest face and the
+            // solver pushes the circle along -normal, out through that face.
+            //
+            // Pointing it outward instead -- away from the box centre, at the
+            // nearest face -- reads as "the way out" but is what the solver
+            // assumes is "towards B", so the position correction drives the
+            // circle deeper and the bounce impulse is skipped as separating.
+            // A fast body that lands inside a wall is then swallowed and
+            // ejected out the far side rather than bounced back.
             const f32 to_left = circle.center.x - (box.center.x - box.half_extent.x);
             const f32 to_right = (box.center.x + box.half_extent.x) - circle.center.x;
             const f32 to_bottom = circle.center.y - (box.center.y - box.half_extent.y);
@@ -160,10 +172,10 @@ Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcep
             const f32 min_x = std::min(to_left, to_right);
             const f32 min_y = std::min(to_bottom, to_top);
             if (min_x < min_y) {
-                contact.normal = Vec2{to_right < to_left ? 1.0f : -1.0f, 0.0f};
+                contact.normal = Vec2{to_right < to_left ? -1.0f : 1.0f, 0.0f};
                 contact.penetration = min_x + circle.radius;
             } else {
-                contact.normal = Vec2{0.0f, to_top < to_bottom ? 1.0f : -1.0f};
+                contact.normal = Vec2{0.0f, to_top < to_bottom ? -1.0f : 1.0f};
                 contact.penetration = min_y + circle.radius;
             }
         }
@@ -190,6 +202,9 @@ Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcep
         contact.penetration = circle.radius - distance;
     } else {
         // The circle centre is inside the box. Separate along the nearest face.
+        // As in the axis-aligned branch above, the normal points from the circle
+        // towards the box (here in the local frame), so the solver pushes the
+        // circle back out through the face it is nearest to.
         const f32 to_left = local.x + box.half_extent.x;
         const f32 to_right = box.half_extent.x - local.x;
         const f32 to_bottom = local.y + box.half_extent.y;
@@ -197,10 +212,10 @@ Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcep
         const f32 min_x = std::min(to_left, to_right);
         const f32 min_y = std::min(to_bottom, to_top);
         if (min_x < min_y) {
-            normal_local = Vec2{to_right < to_left ? 1.0f : -1.0f, 0.0f};
+            normal_local = Vec2{to_right < to_left ? -1.0f : 1.0f, 0.0f};
             contact.penetration = min_x + circle.radius;
         } else {
-            normal_local = Vec2{0.0f, to_top < to_bottom ? 1.0f : -1.0f};
+            normal_local = Vec2{0.0f, to_top < to_bottom ? -1.0f : 1.0f};
             contact.penetration = min_y + circle.radius;
         }
     }

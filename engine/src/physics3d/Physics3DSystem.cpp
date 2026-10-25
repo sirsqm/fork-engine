@@ -358,7 +358,12 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
                                          b.inv_inertia * rb_cross_t.length_squared();
                 if (tangent_mass > 0.0f) {
                     f32 friction_impulse = -relative.dot(tangent) / tangent_mass;
-                    const f32 max_friction = std::max(a.friction, b.friction) * impulse_magnitude;
+                    // Geometric mean, matching the 2D solver and Box2D. The
+                    // previous maximum-of-the-two rule made friction 0
+                    // inexpressible, so a frictionless body inherited the other
+                    // surface's friction and bled tangential speed on every
+                    // glancing contact.
+                    const f32 max_friction = std::sqrt(a.friction * b.friction) * impulse_magnitude;
                     friction_impulse = std::clamp(friction_impulse, -max_friction, max_friction);
                     const Vec3 friction = tangent * friction_impulse;
                     a.velocity -= friction * a.inv_mass;

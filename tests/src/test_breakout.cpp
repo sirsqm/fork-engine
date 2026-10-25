@@ -22,8 +22,11 @@
 #include "fe/systems/FrameContext.h"
 #include "fe/systems/SceneSchedule.h"
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
+#include <vector>
 
 // The breakout vertical slice's tests.
 //
@@ -545,4 +548,128 @@ TEST_CASE("the three-argument install still works with no action map") {
         schedule.update(context, scene);
     }
     CHECK(paddle->transform().position.x < start_x);
+}
+
+// ---------------------------------------------------------------------------
+// The ball must stay in the field and keep its bounce, at every frame rate the
+// game can be run at. Both of these regressions shipped: a ball that tunnelled
+// through a wall was gone for good, and a ball that lost its vertical speed to
+// wall friction ended up travelling dead horizontal forever, which looks like
+// the game has hung.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The ball's centre may reach the field's inner face plus its radius; anything
+// past the outer face of the wall is out of the field.
+constexpr f32 kOuterX = breakout::config::kFieldHalfWidth + breakout::config::kWallThickness;
+constexpr f32 kOuterY = breakout::config::kFieldHalfHeight + breakout::config::kWallThickness;
+
+// Launches the ball from the field centre at `angle` with no paddle and no
+// bricks, so the only thing that can affect it is the walls, and returns the
+// furthest the ball reached and how much vertical motion it kept.
+//
+// The bottom of the field is open, so the ball eventually falls out and the
+// game-state system respawns it at rest. The loop re-launches it whenever that
+// happens, which keeps the ball bouncing off the walls for the whole run instead
+// of stopping after the first miss.
+struct WallRun {
+    f32 max_x = 0.0f;
+    f32 max_y = 0.0f;
+    f32 min_vertical_ratio = 1.0f;
+    int wall_hits = 0;
+};
+
+WallRun run_against_walls(f32 angle, f32 delta, int steps) {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state(breakout::config::kBrickCount, 99);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    Node* ball = scene.find_node_by_name(breakout::names::kBall);
+    auto* body = ball->get_component<physics2d::RigidBody2D>();
+
+    // Remove the paddle and every brick: this test is about the walls.
+    if (Node* paddle = scene.find_node_by_name(breakout::names::kPaddle); paddle != nullptr) {
+        if (Node* parent = paddle->parent(); parent != nullptr) {
+            static_cast<void>(parent->remove_child(paddle));
+        }
+    }
+    std::vector<Node*> bricks;
+    scene.for_each_node([&](Node& node) {
+        if (node.name() == breakout::names::kBrick) {
+            bricks.push_back(&node);
+        }
+    });
+    for (Node* brick : bricks) {
+        if (Node* parent = brick->parent(); parent != nullptr) {
+            static_cast<void>(parent->remove_child(brick));
+        }
+    }
+
+    const Vec2 launch{std::sin(angle), std::cos(angle)};
+    ball->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+    body->velocity = launch * breakout::config::kLaunchSpeed;
+    body->wake();
+
+    WallRun run;
+    f32 last_vx = body->velocity.x;
+    for (int i = 0; i < steps; ++i) {
+        schedule.update(step(delta), scene);
+        const Vec3 p = ball->transform().position;
+        const Vec2 v = body->velocity;
+        const f32 speed = v.length();
+
+        // Respawned at rest (the ball fell out): relaunch it so the run keeps
+        // exercising the walls.
+        if (speed < 1.0f) {
+            ball->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+            body->velocity = launch * breakout::config::kLaunchSpeed;
+            body->wake();
+            last_vx = body->velocity.x;
+            continue;
+        }
+
+        run.max_x = std::max(run.max_x, std::abs(p.x));
+        run.max_y = std::max(run.max_y, p.y);
+        if (v.x * last_vx < 0.0f) {
+            ++run.wall_hits;
+            last_vx = v.x;
+        }
+        run.min_vertical_ratio = std::min(run.min_vertical_ratio, std::abs(v.y) / speed);
+    }
+    return run;
+}
+
+} // namespace
+
+TEST_CASE("the ball never leaves the field through a wall at any frame rate") {
+    // A wall is thin (15 units) and the ball moves up to ~12 units a step at
+    // 60 Hz, so a fast ball can be inside a wall on the frame the contact is
+    // detected. The narrow phase must then push it back out the way it came; if
+    // the inside-case normal is inverted it is pushed out the far side instead
+    // and the ball is gone.
+    for (f32 delta : {1.0f / 60.0f, 1.0f / 30.0f}) {
+        for (int d = 0; d < 16; ++d) {
+            const f32 angle = static_cast<f32>(d) * 6.2831853f / 16.0f;
+            const WallRun run = run_against_walls(angle, delta, 1500);
+            CHECK(run.max_x <= kOuterX + 0.5f);
+            CHECK(run.max_y <= kOuterY + 0.5f);
+        }
+    }
+}
+
+TEST_CASE("a ball with a vertical component keeps bouncing rather than going flat") {
+    // The wall material must not steal the ball's tangential (vertical) speed.
+    // With friction combining as a maximum, the ball's authored friction 0 was
+    // overridden by the wall's default and the vertical component decayed to
+    // zero over a handful of hits, leaving the ball running side to side
+    // forever.
+    for (f32 delta : {1.0f / 60.0f, 1.0f / 30.0f}) {
+        // Start well off horizontal so there is vertical motion to lose.
+        const WallRun run = run_against_walls(0.6f, delta, 1500);
+        REQUIRE(run.wall_hits > 4);
+        CHECK(run.min_vertical_ratio > 0.05f);
+    }
 }

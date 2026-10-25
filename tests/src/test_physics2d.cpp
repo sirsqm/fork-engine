@@ -184,11 +184,86 @@ TEST_CASE("a circle near a box corner reports a diagonal normal") {
 }
 
 TEST_CASE("a circle whose centre is inside a box is separated along the nearest face") {
-    // Centre is 0.1 above the box centre, closer to the top face.
+    // Centre is 0.1 above the box centre, closer to the top face. The normal
+    // points from the circle towards the box -- the same A-to-B convention the
+    // outside case uses -- so it points *down*, into the box and back along the
+    // axis the circle entered on. The solver pushes the circle along -normal,
+    // which carries it out through the top face it is nearest to.
     const auto contact = physics2d::intersect(circle(0.0f, 0.1f, 0.5f), box(0.0f, 0.0f, 1.0f, 1.0f));
     REQUIRE(contact.overlapping);
-    CHECK(contact.normal.y == doctest::Approx(1.0f));
-    CHECK(contact.penetration > 0.0f);
+    CHECK(contact.normal.y == doctest::Approx(-1.0f));
+    CHECK(contact.normal.x == doctest::Approx(0.0f));
+    // Nearest face is the top, 0.9 away, plus the radius: the depth needed to
+    // clear the box.
+    CHECK(contact.penetration == doctest::Approx(0.9f + 0.5f));
+}
+
+TEST_CASE("an inside-circle normal points the way the solver must push") {
+    // The regression this guards: a normal pointing *out* through the nearest
+    // face reads as "the way out", but the solver treats the normal as pointing
+    // from A towards B and pushes along -normal, so an outward normal drives the
+    // circle deeper and skips the bounce impulse as separating. A ball that
+    // entered a wall would be swallowed and ejected out the far side.
+    const auto box_shape = box(0.0f, 0.0f, 1.0f, 1.0f);
+    struct Case {
+        f32 x;
+        f32 y;
+        Vec2 expected;
+    };
+    // Just inside each of the four faces: the normal points from the circle
+    // towards the box, so it points back the way the circle came in.
+    const Case cases[] = {
+        {0.9f, 0.0f, Vec2{-1.0f, 0.0f}}, // entered the right face
+        {-0.9f, 0.0f, Vec2{1.0f, 0.0f}}, // entered the left face
+        {0.0f, 0.9f, Vec2{0.0f, -1.0f}}, // entered the top face
+        {0.0f, -0.9f, Vec2{0.0f, 1.0f}}, // entered the bottom face
+    };
+    for (const Case& c : cases) {
+        const auto contact = physics2d::intersect(circle(c.x, c.y, 0.5f), box_shape);
+        REQUIRE(contact.overlapping);
+        CHECK(contact.normal.x == doctest::Approx(c.expected.x));
+        CHECK(contact.normal.y == doctest::Approx(c.expected.y));
+        // The push the solver applies is -normal. On the axis the circle is
+        // nearest a face, that push must carry it clear of the box rather than
+        // deeper in. (The other axis is untouched and stays where it was.)
+        const f32 pushed_x = c.x - contact.normal.x * contact.penetration;
+        const f32 pushed_y = c.y - contact.normal.y * contact.penetration;
+        if (c.expected.x != 0.0f) {
+            CHECK(std::abs(pushed_x) >= 1.0f - 0.001f);
+        } else {
+            CHECK(std::abs(pushed_y) >= 1.0f - 0.001f);
+        }
+    }
+}
+
+TEST_CASE("an inside-circle normal matches the outside normal it replaces") {
+    // Continuity at the boundary: a circle just inside the right face and one
+    // just outside it are the same contact seen from either side, so the normal
+    // must not flip sign as the centre crosses the face. A flip is exactly the
+    // bug above.
+    const auto inside = physics2d::intersect(circle(0.99f, 0.0f, 0.5f), box(0.0f, 0.0f, 1.0f, 1.0f));
+    const auto outside = physics2d::intersect(circle(1.01f, 0.0f, 0.5f), box(0.0f, 0.0f, 1.0f, 1.0f));
+    REQUIRE(inside.overlapping);
+    REQUIRE(outside.overlapping);
+    CHECK(inside.normal.x == doctest::Approx(outside.normal.x));
+    CHECK(inside.normal.y == doctest::Approx(outside.normal.y));
+}
+
+TEST_CASE("a rotated box's inside-circle normal is rotated with the box") {
+    // The same inside case on a box rotated 90 degrees. The local frame is
+    // rotated back, so a circle just inside the box's local +y face must still
+    // produce a normal pointing along the box's local -y. Local +y is world -x
+    // after the rotation, so the normal comes out as world +x -- inward, the
+    // solver's A-to-B direction -- and the push (-normal) carries the circle out
+    // through the world -x face it entered.
+    const physics2d::Obb2D rotated = physics2d::Obb2D{Vec2{0.0f, 0.0f}, Vec2{1.0f, 1.0f}, 1.5707963f};
+    // Local (0, 0.9) rotated by +90 degrees is world (-0.9, 0).
+    const auto contact = physics2d::intersect(circle(-0.9f, 0.0f, 0.5f), rotated);
+    REQUIRE(contact.overlapping);
+    CHECK(contact.normal.x == doctest::Approx(1.0f).epsilon(0.001));
+    CHECK(contact.normal.y == doctest::Approx(0.0f).epsilon(0.001));
+    // Pushing along -normal must carry the circle clear of the box, not deeper.
+    CHECK(-0.9f - contact.normal.x * contact.penetration <= -1.0f + 0.001f);
 }
 
 TEST_CASE("intersect_shapes flips the normal so it always points from the first shape") {
@@ -1539,4 +1614,65 @@ TEST_CASE("a collider offset round-trips through the serializer") {
     REQUIRE(loaded_collider != nullptr);
     CHECK(loaded_collider->offset.x == doctest::Approx(0.25f));
     CHECK(loaded_collider->offset.y == doctest::Approx(-1.5f));
+}
+
+// ---------------------------------------------------------------------------
+// Friction combination.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("friction combines so a frictionless material stays frictionless") {
+    // The regression this guards: the solver used max(a.friction, b.friction) to
+    // combine the pair, which makes friction 0 inexpressible -- a body authored
+    // as frictionless inherits whatever the other surface has. A ball set to
+    // friction 0 hitting a default-friction wall then bled tangential speed on
+    // every bounce until it travelled dead horizontal.
+    //
+    // A frictionless ball sliding along a frictioned floor must keep all of its
+    // horizontal speed: with the combine rule correct, the contact can exert no
+    // tangential impulse at all.
+    Scene scene;
+    Node* floor = add_floor(scene, 10.0f);
+    floor->get_component<physics2d::Collider2D>()->friction = 0.9f;
+
+    Node* ball = add_dynamic_box(scene, Vec2{0.0f, 0.5f}, 0.5f, 1.0f);
+    auto* ball_collider = ball->get_component<physics2d::Collider2D>();
+    ball_collider->friction = 0.0f;
+    auto* body = ball->get_component<physics2d::RigidBody2D>();
+    body->velocity = Vec2{100.0f, 0.0f};
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, -10.0f};
+    for (int i = 0; i < 120; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+    }
+
+    // No tangential impulse may be applied, so the horizontal speed is intact.
+    CHECK(body->velocity.x == doctest::Approx(100.0f).epsilon(0.001));
+}
+
+TEST_CASE("friction combines as a geometric mean, so both surfaces must be rough") {
+    // Two rough surfaces produce friction; one smooth surface removes it. This
+    // pins the combine rule at the midpoint too, so a future change to a
+    // different rule (min, or an average) is caught rather than silently
+    // altering how every contact behaves.
+    Scene scene;
+    Node* floor = add_floor(scene, 10.0f);
+    floor->get_component<physics2d::Collider2D>()->friction = 1.0f;
+
+    Node* slider = add_dynamic_box(scene, Vec2{0.0f, 0.5f}, 0.5f, 1.0f);
+    slider->get_component<physics2d::Collider2D>()->friction = 1.0f;
+    auto* body = slider->get_component<physics2d::RigidBody2D>();
+    body->velocity = Vec2{100.0f, 0.0f};
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, -10.0f};
+    for (int i = 0; i < 120; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+    }
+
+    // Rough on rough: the slider is slowed. (The exact value depends on the
+    // solver's iteration count, so this asserts the direction, not a number.)
+    CHECK(body->velocity.x < 100.0f);
 }
