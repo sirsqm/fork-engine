@@ -1,13 +1,110 @@
-# Fork Engine Milestones
+# Fork Engine Plan
 
-The milestone detail: what each milestone contains and where it stands. The
-front line — the pillars, the near-term priorities, and why the work is ordered
-this way — is in [ROADMAP.md](ROADMAP.md), and the next concrete step is in
-[SHIPPING_QUEUE.md](SHIPPING_QUEUE.md); this file is the reference they point
-into, so neither of them has to hold the detail.
+One file for the whole plan, in the order it is read: the **pillars** (why the
+work is ordered this way), the **near-term priorities**, the **milestones**
+(what each one contains and where it stands), the **shipping queue** (the
+ordered backlog the daily automation works through), and the **ongoing** rules.
 
-This is a plan, not a promise. Milestones may be reordered as the design
-becomes clearer, and changes are recorded in the ADRs.
+These were once separate files — `STRATEGY.md`, `ROADMAP.md`, `MILESTONES.md`
+and `SHIPPING_QUEUE.md` — which restated each other. They are now one, and each
+idea appears once.
+
+The engine is built incrementally. Each milestone is independently testable and
+must build and pass its tests before the next one starts. This document is a
+plan, not a promise; milestones may be reordered as the design becomes clearer,
+and changes are recorded in the ADRs.
+
+The guiding rule: a few genuinely working systems beat a long list of
+half-finished features.
+
+## The three pillars
+
+Three capabilities shape how every subsystem is designed, not just what the
+engine eventually features. They are the *direction*; the milestones below are
+the *sequence*.
+
+1. **Performance is a product feature.** The engine is fast by construction and
+   by measurement. "Feels smooth" is a requirement, not a nice-to-have.
+   - *What it implies:* a frame profiler; a render-extraction step so the
+     authoring model (the scene graph) and the processing model (a flat instance
+     array) meet at one seam; a job system for CPU work, with the GPU submission
+     boundary kept single-threaded; allocator discipline (a per-frame arena);
+     and a benchmark harness in CI that fails on regression.
+   - *Risks:* premature optimization, mitigated by the measure-first rule and by
+     the order of the work (nothing is parallelised or cached before P1 can show
+     it matters); parallelism bugs, mitigated by keeping the device
+     single-threaded, testing parallel paths against serial ones, and running the
+     suite under a thread sanitizer once the job system lands.
+   - *Sequenced as* **M9**; trade-offs in
+     [ADR-0017](adr/0017-performance-strategy.md).
+2. **Games ship anywhere.** A developer can choose a target platform and get a
+   runnable build of their game without hand-editing the engine. This is about
+   shipping *games*, not about the editor running on several OSes.
+   - *What it implies:* a complete platform layer (window, input including touch
+     and gamepad, filesystem, threads, time, dynamic libraries, application
+     lifecycle), with everything OS-specific behind it; asset packaging (a
+     self-describing pack the runtime mounts); export templates (a prebuilt
+     runtime per target plus a build step that turns a project into a runnable
+     game); and renderer backends added as targets demand them.
+   - *Risks:* scope explosion, mitigated by proving portability with the
+     cheapest target (web) before mobile and by only adding a backend when a
+     target needs one; platform-specific bugs hidden in shared code, mitigated by
+     the platform audit, the null backend, and CI across the three desktop
+     platforms.
+   - *Sequenced as* **M8**; trade-offs in
+     [ADR-0018](adr/0018-multi-platform-shipping.md). The near-term target is
+     desktop, and [ADR-0032](adr/0032-near-term-platform-scope.md) records why
+     the wider claim is sequenced rather than asserted.
+3. **Edits are durable and shareable.** An edit is a discrete, serializable
+   operation over a stably identified object, not a direct mutation, so undo,
+   redo, and replay all fall out of the same model. That is what makes a local
+   edit trustworthy; networked collaborative editing would be the same model
+   replicated, and it is not planned (see *Not planned* below).
+   - *What it implies:* stable identity for everything editable; an operation
+     model; and an ordered log every replica applies in the same order. It
+     reuses what exists: the scene is reflection-driven, and the editor already
+     routes every edit through a command stack, so this is that command stack
+     made serializable.
+   - *What landed:* stable component identity
+     ([ADR-0045](adr/0045-component-identity.md)), the operation model
+     ([ADR-0047](adr/0047-local-operation-model.md)), and the ordered log
+     ([ADR-0048](adr/0048-replicated-operation-log.md)). They are shipped and
+     tested, and they make undo/redo more robust on their own.
+   - *Not pursued:* the transport, presence, and authoritative session that only
+     existed to serve the network — a hosted service whose running cost the
+     project will not carry.
+
+The pillars are deliberately ordered by risk. Performance is the lowest-risk and
+improves everything else; shipping is medium; collaborative editing was the
+highest-risk because it reaches into the editor's core, which is why only its
+local, headless first steps were taken and the network was left out.
+
+## Near-term priorities
+
+The order the next work is actually taken in, chosen so that a small number of
+things get *finished* rather than many get started. This is the roadmap's
+front line; the milestones below hold the detail.
+
+1. **A vertical slice** — one small game built end to end in the engine (M2.5).
+   Everything else is secondary to having something real that exercises the whole
+   stack together.
+2. **Honest scope** — the "ship anywhere" claim is scoped to desktop for now, in
+   [ADR-0032](adr/0032-near-term-platform-scope.md), so the README does not
+   promise more than the engine delivers.
+3. **Scripting** — the language-agnostic seam plus C++ native modules as the
+   primary language (M7). This is what turns the engine into something people can
+   make games with.
+4. **Guard the performance claims** — the benchmark as a CI regression gate
+   (M9) and sanitizer builds (ASan/UBSan), while the codebase is still small
+   enough to keep them cheaply green.
+5. **Content pipeline depth** — glTF instead of only OBJ, and skeletal animation
+   (M4, M6), once a game needs real 3D content.
+6. **Editor polish and more platforms** — after the above.
+
+The intent: finish the small things. The engines that last are the ones whose
+authors ruthlessly complete them.
+
+## Milestones
 
 ## M1 — Foundation (done)
 
@@ -409,6 +506,366 @@ carry. The local steps that landed on the way — stable component identity
 ([ADR-0048](adr/0048-replicated-operation-log.md)) — stay: they are shipped,
 tested, and they make undo/redo more robust on their own. The transport and
 session-server work that only existed to serve the network is likewise not
-pursued further.
+pursued further. Console targets are not planned either: no code lands without
+SDK access.
 
-**Console targets.** No code lands without SDK access.
+## The shipping queue
+
+The ordered backlog the daily automation works through, one item per run. This
+section is the single source of truth for *what to do next*: the automation
+takes the first item whose `slug` does not appear in an `fe-task:` commit
+subject and does exactly that. When the queue is empty the automation makes no
+changes and exits.
+
+**Goal of the queue:** a 2D game built in Fork Engine runs in a browser, then on
+phones, then as a downloadable desktop build. Web is first because it is the
+cheapest target to verify (no store review, no device matrix) and it forces the
+sandboxed-filesystem and non-desktop-graphics paths early
+([ADR-0071](adr/0071-web-first-2d-shipping-path.md)).
+
+## How an item is worked
+
+- The commit subject is `fe-task: <slug> - <short summary>`.
+- "Done when" is the acceptance test. Satisfy it literally.
+- Add or update tests. A change with no test is not finished.
+- Build and test clean with `-DFE_WARNINGS_AS_ERRORS=ON` before committing.
+- If an item is too large for one run, land a coherent tested first step and end
+  the commit body with a `Remaining:` line naming what is left.
+- Do not reorder or skip items. Take the first unfinished one.
+- An item is finished when its slug appears in an `fe-task:` subject; that is
+  the queue's state, derived from history, and it is never stored twice.
+
+## Phases at a glance
+
+| Phase | Ship bar |
+| --- | --- |
+| 1 — a 2D game renders in a browser | A game runs in a headless Chromium and is verified to draw |
+| 2 — the same game on a phone | The same game accepts touch and runs on a mobile browser |
+| 3 — a downloadable desktop build | A per-OS artifact a player can download and run |
+| 4 — the game is worth shipping | The slice is a real game, not a demo |
+
+Which items are done is not recorded here: a slug is done when an `fe-task:`
+commit names it, and that is the only place the state lives.
+
+---
+
+## Phase 1 — a 2D game renders in a browser
+
+The bar: `fork_export --target web` produces a directory, and a headless
+browser loads it, runs the frame loop, and draws a non-blank frame.
+
+### `glsl-dialect-seam`
+
+Translate engine shader sources to a GLSL ES dialect behind the RHI, so WebGL2
+can compile them, with desktop translation the identity.
+
+**Done when** a unit test proves desktop passes through byte for byte and the ES
+translation rewrites the version and adds a fragment precision exactly once.
+
+### `shader-dialect-wiring`
+
+Select the dialect where the device is created, not per shader.
+
+**Done when** the graphics tests pass with the desktop dialect and a test proves
+the dialect is applied at creation.
+
+### `emscripten-toolchain`
+
+An Emscripten CMake toolchain file that leaves the desktop build untouched.
+
+**Done when** a documented, reproducible configure command exists and CI can run
+it.
+
+### `web-window-backend`
+
+A canvas-backed window backend with a WebGL2 context and no GLFW.
+
+**Done when** the web target builds and a headless smoke test constructs the
+window.
+
+### `frame-loop-stepping`
+
+Expose `initialize()` / `step_frame()` / `shutdown()` so a browser's
+`requestAnimationFrame` can drive the engine without blocking.
+
+**Done when** a test drives N frames via `step_frame()` and observes the same
+per-frame invariants as `run()`.
+
+### `pack-fetch-source`
+
+A `ResourceSource` that reads the pack over HTTP, because a browser has no
+filesystem.
+
+**Done when** a test serves a pack from an in-process HTTP server and reads an
+asset through the fetch source, matching the disk source's bytes.
+
+### `web-export-template`
+
+`fork_export --target web` writes the wasm runtime, the pack, a manifest, and an
+HTML/JS shell.
+
+**Done when** the export produces that directory and the shell's expected file
+names match what the export writes.
+
+### `web-smoke-test-ci`
+
+A CI job that configures and builds the web target so the web path cannot rot.
+
+**Done when** the job exists, is green on a push, and runs on every change.
+
+### `headless-browser-verification`
+
+Load the exported build in headless Chromium and assert the game renders.
+
+**Done when** the check runs in CI against a real export and fails when the
+renderer is deliberately broken.
+
+### `3d-in-the-browser`
+
+Phase 1's bar is met by the 2D path, but the 3D renderer shares the whole
+shipping path with it and had never been run in a browser. Three desktop-only
+assumptions in it fail on a WebGL2 context, none with a build-time signal: the
+shadow map's depth texture used a format/type pair GLSL ES 3.00 rejects, the
+shadow pass drew into a framebuffer with a colour attachment enabled, and the
+pruning tracer registered only the 2D builtins so a 3D scene traced to zero
+references and shipped an empty pack. Make 3D render in a browser and cover it
+in the web check.
+
+**Done when** an exported 3D project renders a non-blank frame in headless
+Chromium with no GL error, a pruned 3D export carries its mesh and texture, and
+the web game check runs both renderers. See
+[ADR-0076](adr/0076-3d-in-the-browser.md).
+
+### `web-resize-and-dpr`
+
+A browser canvas is resized by the page, not by the game, and a phone reports a
+device pixel ratio above 1. Make the engine follow the canvas size and the DPR.
+
+**Done when** a test changes the canvas size and observes the renderer's
+viewport and the input coordinate space both follow.
+
+### `web-audio-context`
+
+A browser will not start an audio context until a user gesture. Make the web
+audio device resume on the first gesture and stay silent rather than crash
+before one.
+
+**Done when** a headless test proves the device tolerates a context that starts
+suspended and plays after a resume.
+
+### `web-visibility-pause`
+
+A backgrounded tab stops receiving animation frames, so the engine's clock
+jumps on return. Clamp the frame delta when a page becomes visible again.
+
+**Done when** a test feeds a large time step after a visibility change and
+observes the simulation advance by a bounded amount.
+
+### `web-build-in-ci-artifacts`
+
+The web build is compiled in CI but thrown away. Publish the exported game as a
+CI artifact so a run can hand a reviewer a link.
+
+**Done when** the CI job uploads the export directory and the artifact downloads
+and runs.
+
+---
+
+## Phase 2 — the same game on a phone
+
+The bar: the breakout slice accepts touch and runs in a mobile browser, then
+builds for Android.
+
+### `webgl2-mobile-parity`
+
+GLES3 on Android and iOS is close to WebGL2 but not identical. Confirm the ES
+dialect and the RHI work under a GLES3 context and fix any divergence.
+
+**Done when** the ES dialect sources compile under a GLES3 context (a software
+GLES implementation is acceptable) and any divergence found is fixed with a
+test.
+
+### `touch-input-actions`
+
+Express input as abstract actions so touch maps onto the same gameplay code as
+keyboard and mouse. This item carried the web input plumbing it depends on: DOM
+keyboard, pointer and touch events feed `InputState` from the web backend, and
+browser `KeyboardEvent.code` maps onto the engine's `Key` enum so bindings are
+layout-independent. Touch is therefore usable, not merely present.
+
+**Done when** a test drives a touch sequence and observes the same gameplay
+action a keyboard press produces.
+
+### `touch-gesture-regions`
+
+Bind screen regions to actions declaratively, so a game declares "the left third
+steers" once instead of reading raw touch points.
+
+**Done when** a game declares regions and a test proves a touch in each region
+fires the bound action and a touch outside fires none.
+
+### `mobile-viewport-meta`
+
+A mobile browser needs a viewport meta tag and a full-bleed canvas or the game
+renders at desktop scale with scrollbars.
+
+**Done when** the export shell carries the viewport meta and a test asserts the
+canvas fills the window under a simulated phone size.
+
+### `touch-fullscreen-prompt`
+
+Offer a fullscreen request on the first touch, so a phone game is not stuck in a
+browser chrome frame.
+
+**Done when** the shell requests fullscreen from a gesture and degrades silently
+where the browser refuses.
+
+### `mobile-safe-area`
+
+Notches and home indicators cover a full-bleed canvas. Keep interactive regions
+inside the safe area.
+
+**Done when** the shell reads the safe-area insets and a test proves a declared
+region is offset by them.
+
+### `android-window-backend`
+
+Implement the Android window backend: native activity, EGL surface, lifecycle
+(suspend/resume), and touch.
+
+**Done when** the Android target builds and a documented command produces a
+runnable APK.
+
+### `android-export-template`
+
+Extend `fork_export` to produce an Android build.
+
+**Done when** `fork_export --target android` produces a directory that installs
+and launches on a device or emulator.
+
+### `ios-window-backend`
+
+Implement the iOS window backend: a Metal or GLES surface, lifecycle, and touch.
+
+**Done when** the iOS target builds and produces a runnable app bundle. Note:
+this needs a macOS host; record the constraint rather than stubbing it.
+
+### `ios-export-template`
+
+Extend `fork_export` to produce an iOS build.
+
+**Done when** `fork_export --target ios` produces an Xcode project or archive
+that a macOS host can sign and run.
+
+---
+
+## Phase 3 — a downloadable desktop build
+
+The bar: a player downloads one file per OS, runs it, and plays the game.
+
+### `desktop-export-templates`
+
+The export path copies the player built beside it. Shipping needs a *prebuilt*
+runtime per desktop OS so a developer without the engine's toolchain can export.
+
+**Done when** a documented, reproducible release build produces a per-OS runtime
+artifact that `fork_export` accepts via `--player`, and the smoke test runs it.
+
+### `linux-appimage`
+
+Produce a single-file Linux artifact that runs on a clean machine without the
+engine's shared libraries.
+
+**Done when** the AppImage builds reproducibly in CI and launches the game on a
+clean container.
+
+### `windows-zip`
+
+Produce a Windows artifact a player can unzip and run.
+
+**Done when** the zip builds in CI and the game launches from it on a clean
+machine.
+
+### `macos-app-bundle`
+
+Produce a `.app` bundle, then a DMG, with the runtime's dependencies bundled.
+
+**Done when** the DMG builds in CI and the game launches from it on a clean
+machine.
+
+### `desktop-packaging`
+
+Script the packaging for all three desktop targets behind one command.
+
+**Done when** each packaging step is scripted, reproducible in CI, and produces
+an artifact that runs on a clean machine.
+
+### `release-version-stamping`
+
+A downloadable build must say which version it is. Stamp the engine version into
+the exported manifest and show it in the game.
+
+**Done when** the export manifest carries the version from
+`CMakeLists.txt` and a test proves it matches `fe::version::kEngineVersion`.
+
+---
+
+## Phase 4 — the game is worth shipping
+
+The bar: the slice is a game a stranger can play, not a demo.
+
+### `slice-title-and-menus`
+
+A title screen, a pause, and a game-over screen, so the slice has a shape.
+
+**Done when** a test drives the state machine through title → play → game over →
+title.
+
+### `slice-scoring-and-progression`
+
+Score, lives, and levels that get harder, so there is a reason to keep playing.
+
+**Done when** a test proves a level advances on a clear and the difficulty
+increases.
+
+### `slice-persistence`
+
+Save the best score locally, so progress survives a reload.
+
+**Done when** a test writes and reads a score through the storage seam on both
+desktop and web.
+
+### `slice-settings`
+
+Volume and control settings, persisted, with a touch-friendly menu.
+
+**Done when** a test changes a setting, reloads, and observes it retained.
+
+### `scripting-native-modules`
+
+The scripting seam plus C++ native modules as the primary language (M7), so game
+logic can live outside the engine.
+
+**Done when** a game's rules load from a module the engine did not compile in,
+with a test covering load and reload.
+
+---
+
+## Backlog — not yet ordered
+
+- Additional graphics backends (Vulkan, Metal, WebGPU) as targets demand.
+- Skeletal animation/skinning (the one open M6 item), needed for animated 3D.
+- More example games beyond the breakout slice, once the first one ships.
+
+## Ongoing
+
+- Keep the build reproducible and warning-clean.
+- Keep the tests green; every fix gets a test that would have caught it.
+- Run the suite under AddressSanitizer and UndefinedBehaviorSanitizer while the
+  codebase is small enough to keep them cheaply green (`-DFE_ENABLE_ASAN=ON`);
+  a dedicated CI job does this ([ADR-0035](adr/0035-ci-quality-gates.md)).
+- Keep the benchmark a regression gate, not just a dev tool: CI records the
+  numbers and fails on a large regression (see `benchmarks/` and
+  [ADR-0033](adr/0033-performance-regression-gate.md)).
+- Keep the architecture documentation and ADRs current.
+- Review dependency licenses for compatibility with MIT.

@@ -24,15 +24,13 @@ eventually features:
   [ADR-0032](docs/adr/0032-near-term-platform-scope.md) for why the wider claim
   is sequenced rather than asserted.
 The plan for all of this — the pillars, the milestone order, and the shipping
-queue the daily automation works through — is in
-[`docs/ROADMAP.md`](docs/ROADMAP.md) and
-[`docs/SHIPPING_QUEUE.md`](docs/SHIPPING_QUEUE.md).
+queue the daily automation works through — is in [`docs/PLAN.md`](docs/PLAN.md).
 
 The project is young and honest about it. The repository currently contains the
 engine core through its first several milestones: a buildable library, working
 2D and 3D renderers, a scene/resource/serialization/reflection core, 2D and 3D
 physics, audio, an editor foundation, and a runnable example, all covered by
-tests. Everything else is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+tests. Everything else is planned in [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Status
 

@@ -7,7 +7,7 @@
 # regression in either renderer fails the run.
 #
 # This is the acceptance test for `headless-browser-verification`
-# (docs/SHIPPING_QUEUE.md): the web smoke test proves the window backend can
+# (docs/PLAN.md): the web smoke test proves the window backend can
 # obtain a WebGL2 context, and this proves a game built on top of it runs end to
 # end. It covers the whole shipping path in one run — the export template, the
 # pack fetched over HTTP, the player running under Emscripten's browser

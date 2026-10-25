@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// The HTTP fetch resource source (docs/SHIPPING_QUEUE.md, shipping queue, `pack-fetch-source`).
+// The HTTP fetch resource source (docs/PLAN.md, shipping queue, `pack-fetch-source`).
 //
 // A shipped web build has no filesystem, so it fetches its pack over HTTP. This
 // serves a real pack from an in-process HTTP server and reads an asset through

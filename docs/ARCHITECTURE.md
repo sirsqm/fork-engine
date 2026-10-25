@@ -21,7 +21,7 @@ ship complete 2D and 3D games. That sets the priorities:
 - The editor is a first-class part of the product, not a bolted-on tool.
 
 Two capabilities shape the architecture as much as they shape the roadmap, and
-are planned in [`ROADMAP.md`](ROADMAP.md):
+are planned in [`PLAN.md`](PLAN.md):
 
 - **Performance is a product feature.** The engine is fast by construction and
   by measurement, not by a late optimization pass. The authoring model (the
@@ -1093,7 +1093,7 @@ and is not scattered through the engine.
 The goal is not that the editor runs on several operating systems; it is that a
 game built here reaches every platform its players use — see
 [ADR-0018](adr/0018-multi-platform-shipping.md) and
-[`ROADMAP.md`](ROADMAP.md). That raises the bar on the layer:
+[`PLAN.md`](PLAN.md). That raises the bar on the layer:
 
 - **The contract is complete.** Beyond window and input, it covers touch and
   gamepad input, threads, time, dynamic libraries, and application lifecycle
@@ -1228,4 +1228,4 @@ Every milestone must build and pass its tests before the next one begins.
   is what makes undo/redo survive a save and load (section 9). Networked
   collaborative editing is not planned.
 
-These are sequenced in [`docs/MILESTONES.md`](MILESTONES.md).
+These are sequenced in [`PLAN.md`](PLAN.md).

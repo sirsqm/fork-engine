@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// Tests for the canvas-to-drawing-buffer mapping (docs/SHIPPING_QUEUE.md,
+// Tests for the canvas-to-drawing-buffer mapping (docs/PLAN.md,
 // `web-resize-and-dpr`).
 //
 // The mapping is a pure function of a CSS box and a device pixel ratio, so it

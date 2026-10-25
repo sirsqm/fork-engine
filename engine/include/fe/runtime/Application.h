@@ -161,7 +161,7 @@ public:
     // FrameContext::actions. A subclass declares its actions and bindings in
     // on_start() -- `actions().add("MoveLeft")` and the `bind_*` calls -- and its
     // systems then ask about actions rather than raw keys, which is what lets one
-    // system serve a keyboard and a touchscreen (docs/SHIPPING_QUEUE.md,
+    // system serve a keyboard and a touchscreen (docs/PLAN.md,
     // `touch-input-actions`).
     //
     // Actions are evaluated before the systems run and after the backend has

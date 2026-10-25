@@ -33,7 +33,7 @@ things from it:
 3. **A designer, later** wants to set that behaviour up in the editor and tune
    its properties without a rebuild.
 
-[`MILESTONES.md`](../MILESTONES.md) orders the work and names scripting as **M7**,
+[`PLAN.md`](../PLAN.md) orders the work and names scripting as **M7**,
 after the vertical slice (M2.5): "nothing makes the engine usable to anyone but
 its author until scripting exists." It also records the direction already
 chosen, and this ADR is where that direction is decided properly:

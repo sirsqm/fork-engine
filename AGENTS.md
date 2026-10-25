@@ -1,9 +1,8 @@
 # AGENTS.md — repository notes for automated contributors
 
 Fork Engine is a modular C++20 2D/3D game engine. Read `docs/ARCHITECTURE.md`
-for the design, `docs/ROADMAP.md` for the pillars and the near-term priorities,
-`docs/SHIPPING_QUEUE.md` for the next concrete step, and `docs/MILESTONES.md`
-for the milestone plan, before changing anything.
+for the design and `docs/PLAN.md` for the pillars, the milestone order, the
+shipping queue, and the next concrete step, before changing anything.
 
 ## Strategy: the pillars
 
