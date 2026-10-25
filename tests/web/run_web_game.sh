@@ -109,9 +109,13 @@ run_project() {
     fi
   }
 
-  # Two frames is enough to show the loop is live rather than a single draw, and
-  # the budget is generous because the module fetch, the wasm instantiation and
-  # the software-rendered frames all share it.
+  # Two frames is enough to show the loop is live rather than a single draw. It is
+  # deliberately small: the browser is driven with `--virtual-time-budget`, which
+  # dumps the DOM at a fixed point, and a longer run finishes after that point and
+  # is never observed. The frame *time* is not measured here for the same reason
+  # (virtual time does not advance a real clock); the benchmark is where frame
+  # cost is measured and gated. The budget is generous because the module fetch,
+  # the wasm instantiation and the software-rendered frames all share it.
   local frames="${FE_WEB_GAME_FRAMES:-2}"
   local attempts="${FE_WEB_GAME_ATTEMPTS:-3}"
   # A project that names a node for the input probe is run with the probe on. The
@@ -209,12 +213,13 @@ PY
   # shader compile, a dead renderer, a scene that never drew — is one colour, and
   # a rendered scene is several, so this fails when the renderer is deliberately
   # broken without needing a golden image.
-  local canvas_reported frames_reported distinct_reported moved_reported probe_reported
+  local canvas_reported frames_reported distinct_reported moved_reported probe_reported jumped_reported
   canvas_reported="$(sed -n 's/.*canvas=\([0-9]*\).*/\1/p' <<<"${report}")"
   frames_reported="$(sed -n 's/.*frames=\([0-9]*\).*/\1/p' <<<"${report}")"
   distinct_reported="$(sed -n 's/.*distinct=\([0-9]*\).*/\1/p' <<<"${report}")"
   moved_reported="$(sed -n 's/.*moved=\([0-9.]*\).*/\1/p' <<<"${report}")"
   probe_reported="$(sed -n 's/.*probe=\([0-9]*\).*/\1/p' <<<"${report}")"
+  jumped_reported="$(sed -n 's/.*jumped=\([0-9.]*\).*/\1/p' <<<"${report}")"
 
   [[ -n "${canvas_reported}" ]] || fail "[${label}] the report carried no canvas flag: ${report}"
   [[ -n "${frames_reported}" ]] || fail "[${label}] the report carried no frame count: ${report}"
@@ -243,6 +248,17 @@ PY
     fi
     if ! awk -v moved="${moved_reported}" 'BEGIN { exit !(moved > 0.0) }'; then
       fail "[${label}] input did not reach gameplay: the node '${probe_node}' moved ${moved_reported} units"
+    fi
+    # Space is pressed once by the probe, so a 3D character with a jump bound must
+    # leave the ground and the peak height must be non-zero. This is the jump half
+    # of "inputs work": the movement check above would pass on a controller whose
+    # jump never fired. A project whose watched node is not a character (the probe
+    # is generic) can set FE_WEB_GAME_REQUIRE_JUMP=0 to check movement only.
+    if [[ "${FE_WEB_GAME_REQUIRE_JUMP:-1}" == "1" ]]; then
+      [[ -n "${jumped_reported}" ]] || fail "[${label}] the report carried no jump result: ${report}"
+      if ! awk -v jumped="${jumped_reported}" 'BEGIN { exit !(jumped > 0.0) }'; then
+        fail "[${label}] the jump did not reach gameplay: the node '${probe_node}' rose ${jumped_reported} units"
+      fi
     fi
   fi
 

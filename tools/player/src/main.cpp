@@ -33,6 +33,10 @@
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/HttpFetchSource.h"
 #include "fe/pack/PackSource.h"
+#include "fe/physics2d/Collider2D.h"
+#include "fe/physics2d/Physics2DSystem.h"
+#include "fe/physics3d/Collider3D.h"
+#include "fe/physics3d/Physics3DSystem.h"
 #include "fe/player/BuiltinBehaviours.h"
 #include "fe/renderer3d/Renderer3D.h"
 #include "fe/runtime/Application.h"
@@ -193,7 +197,31 @@ protected:
 
         // Drive the scripts from the ordinary schedule, exactly as the editor's
         // play mode and the tests do: no new execution model for a shipped build.
+        //
+        // Order is semantically significant here, not incidental (ADR-0008): a
+        // script runs first and writes the motion it wants (a controller sets its
+        // body's velocity), and the physics step runs after it and integrates
+        // that motion against the world. Reversed, a script would be overwriting
+        // the collision response the step just produced, and a character would
+        // walk through a wall.
         schedule().add_system<fe::ScriptSystem>(host_);
+
+        // Physics runs only for the dimensions the scene actually uses. A 2D game
+        // must not pay for a 3D broad phase (or the reverse), and the player is
+        // generic: it can see the loaded scene before it builds the schedule, so
+        // it asks rather than assuming. This is the same choice on_render() makes
+        // for the 3D renderer, and it is what lets one player run every game.
+        //
+        // Without this the player had *no* physics at all: a scene's colliders and
+        // rigid bodies were inert, so an exported 3D game could draw but nothing
+        // could move or collide. The editor's play mode always had this (it adds
+        // both systems in PlaySession); a shipped build did not.
+        if (scene_has_collider<fe::physics3d::Collider3D>()) {
+            schedule().add_system<fe::physics3d::Physics3DSystem>();
+        }
+        if (scene_has_collider<fe::physics2d::Collider2D>()) {
+            schedule().add_system<fe::physics2d::Physics2DSystem>();
+        }
 
         FE_LOG_INFO("fork_player: scene '%s' has %llu node(s), %llu script(s)", options_.scene.c_str(),
                     static_cast<unsigned long long>(scene().node_count()),
@@ -230,17 +258,27 @@ protected:
         if (!engine().has_graphics() && !engine().headless_render()) {
             return;
         }
-        // Application's frame draws 2D; 3D is the app's own step, and only when
-        // the scene actually has a 3D camera. A 2D game therefore pays nothing for
-        // the 3D renderer being present, and a 3D game gets its pass without the
-        // player having to be told which it is.
-        if (fe::renderer3d::Renderer3D::find_active_camera(scene()) != nullptr) {
-            auto drawn =
-                engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
-                                              engine().window().framebuffer_height());
-            if (!drawn) {
-                FE_LOG_ERROR("fork_player: 3D render failed: %s", drawn.error().message().c_str());
-            }
+#if defined(FE_PLATFORM_WEB)
+        // Sampled after the systems have run (on_render follows the schedule in
+        // Application::step_frame), and every frame rather than only the last: a
+        // jump is an arc, so its peak happens partway through and the final
+        // height would be back on the ground. This is what turns "the character
+        // jumped" into a number.
+        if (options_.probe_input) {
+            sample_probe_height();
+        }
+#endif
+        // Application's frame draws 2D; 3D is the app's own step. render() itself
+        // is the single decision point for whether a 3D pass happens: it looks up
+        // the scene's active camera and returns 0 immediately when there is none,
+        // so a 2D game does no 3D work and a 3D game gets its pass without the
+        // player having to be told which it is. Asking here as well would walk the
+        // scene a second time every frame to answer a question render() answers
+        // again; the two would also be free to disagree. One walk, one answer.
+        auto drawn = engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
+                                                   engine().window().framebuffer_height());
+        if (!drawn) {
+            FE_LOG_ERROR("fork_player: 3D render failed: %s", drawn.error().message().c_str());
         }
         // Read the frame back while it is still the current framebuffer. A web
         // canvas is presented implicitly and, with preserveDrawingBuffer off (the
@@ -275,12 +313,32 @@ protected:
         probe_active_ = true;
 
         // Held down for the rest of the run, so the behaviour keeps moving the
-        // node every frame and the delta grows past any rounding noise.
+        // node every frame and the delta grows past any rounding noise. Space is
+        // pressed once to jump: the controller consumes it as an edge and the
+        // character leaves the ground, so the peak height proves the jump path
+        // (action -> controller -> physics) works, not just the walk path.
         EM_ASM({
             window.dispatchEvent(new KeyboardEvent('keydown', {code : 'KeyW', bubbles : true}));
             window.dispatchEvent(new KeyboardEvent('keydown', {code : 'KeyD', bubbles : true}));
+            window.dispatchEvent(new KeyboardEvent('keydown', {code : 'Space', bubbles : true}));
         });
-        FE_LOG_INFO("fork_player: input probe pressed W and D; watching node '%s'", options_.probe_node.c_str());
+        FE_LOG_INFO("fork_player: input probe pressed W, D and Space; watching node '%s'", options_.probe_node.c_str());
+    }
+
+    // Called each frame while the probe runs, so the report can state how high the
+    // watched node rose above where it started. A walk keeps the height flat; a
+    // jump raises it, so a non-zero peak is proof the jump edge reached the
+    // controller.
+    void sample_probe_height() {
+        if (!probe_active_) {
+            return;
+        }
+        const fe::Node* watched = scene().find_node_by_name(options_.probe_node);
+        if (watched == nullptr) {
+            return;
+        }
+        const fe::f32 rise = watched->transform().position.y - probe_start_position_.y;
+        probe_peak_rise_ = rise > probe_peak_rise_ ? rise : probe_peak_rise_;
     }
 
     // How far the watched node moved since the probe began, in world units, and
@@ -295,6 +353,10 @@ protected:
         }
         return (watched->transform().position - probe_start_position_).length();
     }
+
+    // The highest the watched node rose above its start, in world units. Non-zero
+    // means a jump happened.
+    [[nodiscard]] fe::f32 probe_peak_rise() const { return probe_peak_rise_; }
 #endif
 
 private:
@@ -337,13 +399,21 @@ private:
         // see it, the same way the web smoke test reports. `canvas` is the
         // window's live-context flag: a WebGL2 context can only be obtained from
         // a canvas, so a 1 here is the check that the shell provided one.
+        //
+        // There is deliberately no frame-time field. A headless-browser run is
+        // driven with --virtual-time-budget, which advances a virtual clock, so
+        // any interval measured here is a property of the budget and not of the
+        // engine; reporting it would put a number in the log that reads like a
+        // frame time and is not one. Frame cost is measured and regression-gated
+        // by fork_bench, which runs the real frame loop against a real clock.
         EM_ASM(
             {
                 document.title = 'FE_PLAYER_RESULT canvas=' + $0 + ' frames=' + $1 + ' distinct=' + $2 + ' moved=' +
-                                 $3.toFixed(3) + ' probe=' + $4;
+                                 $3.toFixed(3) + ' probe=' + $4 + ' jumped=' + $5.toFixed(3);
             },
             engine().window().has_context() ? 1 : 0, static_cast<int>(frame_count_), static_cast<int>(distinct.size()),
-            static_cast<double>(probe_moved_distance()), options_.probe_input ? 1 : 0);
+            static_cast<double>(probe_moved_distance()), options_.probe_input ? 1 : 0,
+            static_cast<double>(probe_peak_rise()));
 #endif
     }
 
@@ -370,6 +440,21 @@ private:
         return fe::Error::none();
     }
 
+    // Whether the loaded scene contains a collider of `T`, which is how the
+    // player decides which physics systems the frame needs. Walking the scene once
+    // at startup is free next to a frame, and it keeps the decision in one place
+    // rather than requiring a project to declare its dimension.
+    template <typename T>
+    [[nodiscard]] bool scene_has_collider() const {
+        bool found = false;
+        scene().for_each_node([&](fe::Node& node) {
+            if (!found && node.get_component<T>() != nullptr) {
+                found = true;
+            }
+        });
+        return found;
+    }
+
     Options options_;
     fe::ScriptHost host_;
     fe::ScriptLibrary library_;
@@ -377,6 +462,7 @@ private:
     fe::u64 frame_count_ = 0;
 #if defined(FE_PLATFORM_WEB)
     fe::Vec3 probe_start_position_{};
+    fe::f32 probe_peak_rise_ = 0.0f;
     bool probe_active_ = false;
 #endif
 };
