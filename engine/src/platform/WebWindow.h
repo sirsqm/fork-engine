@@ -109,6 +109,18 @@ private:
     u32 height_ = 0;
     bool close_requested_ = false;
 
+    // The drawing buffer's size in device pixels, recorded by sync_canvas_size().
+    //
+    // Cached rather than queried because framebuffer_width()/height() are called
+    // several times every frame (the action viewport, the renderer's viewport,
+    // the readback) and the only way to ask the browser is an Emscripten call
+    // that crosses into JavaScript and back — `emscripten_webgl_get_drawing_buffer_size`
+    // and `emscripten_get_canvas_element_size` are not free. The buffer changes
+    // only when the page changes the canvas, which is exactly when the resize
+    // callback runs, so the cache cannot go stale behind the engine's back.
+    u32 buffer_width_ = 0;
+    u32 buffer_height_ = 0;
+
     // The last canvas-to-buffer mapping applied, and what DOM event coordinates
     // are converted through. Empty until the first sync_canvas_size().
     CanvasViewport viewport_{};

@@ -291,6 +291,10 @@ void WebWindow::sync_canvas_size() {
     emscripten_set_canvas_element_size(canvas, static_cast<int>(next.buffer_width),
                                        static_cast<int>(next.buffer_height));
     viewport_ = next;
+    // Record what the buffer now is, so the per-frame accessors below answer from
+    // this cache instead of crossing into JavaScript on every call.
+    buffer_width_ = next.buffer_width;
+    buffer_height_ = next.buffer_height;
     // The logical size is the CSS box; the drawing buffer above is that box in
     // device pixels. Keeping both honest is what makes a DPR above 1 render
     // sharper rather than merely larger.
@@ -424,10 +428,14 @@ u32 WebWindow::height() const noexcept {
 }
 
 u32 WebWindow::framebuffer_width() const noexcept {
-    // The drawing buffer is what the viewport must match: a browser can size it
-    // independently of the CSS box (a HiDPI display, a canvas the page resized).
-    // Ask the context for it, falling back to the canvas element and then to the
-    // logical size if the query fails, so the viewport is never 0.
+    // The cache sync_canvas_size() maintains is what the frame loop reads, so a
+    // steady-state frame does not cross into JavaScript at all. The fallback is
+    // for the window between context creation and the first sync: it asks the
+    // context, then the canvas element, then the logical size, so the viewport is
+    // never 0. It is not on the per-frame path.
+    if (buffer_width_ > 0) {
+        return buffer_width_;
+    }
     int w = 0;
     int h = 0;
     const auto context = static_cast<EMSCRIPTEN_WEBGL_CONTEXT_HANDLE>(reinterpret_cast<uintptr_t>(native_handle()));
@@ -441,6 +449,9 @@ u32 WebWindow::framebuffer_width() const noexcept {
 }
 
 u32 WebWindow::framebuffer_height() const noexcept {
+    if (buffer_height_ > 0) {
+        return buffer_height_;
+    }
     int w = 0;
     int h = 0;
     const auto context = static_cast<EMSCRIPTEN_WEBGL_CONTEXT_HANDLE>(reinterpret_cast<uintptr_t>(native_handle()));

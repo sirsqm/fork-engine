@@ -678,6 +678,17 @@ frame time is not dominated by allocator noise.
 **Done when** a steady-state frame reuses capacity rather than allocating and the
 mesh-buffer sweep visits each cached mesh once.
 
+### `web-window-buffer-size-cache`
+
+Every `framebuffer_width()`/`framebuffer_height()` call crossed into JavaScript —
+`emscripten_webgl_get_drawing_buffer_size` and `emscripten_get_canvas_element_size`
+are not free — and the frame loop asks for the size several times a frame. The
+buffer only changes when the page resizes the canvas, which is exactly when the
+resize callback already runs, so cache it there.
+
+**Done when** a steady-state frame reads the drawing-buffer size from the cache
+rather than querying the browser, and the resize path keeps the cache honest.
+
 ### `web-resize-and-dpr`
 
 A browser canvas is resized by the page, not by the game, and a phone reports a
