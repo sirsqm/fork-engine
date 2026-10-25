@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/serialization/SceneReferences.h"
 
+#include "fe/core/FileSystem.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Property.h"
 #include "fe/reflect/Registry.h"
@@ -12,6 +13,7 @@
 
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace fe::serialization::scene {
@@ -69,8 +71,8 @@ void collect_property_reference(const reflect::Property& property, const json& c
 }
 
 // A behaviour's property kinds are known only once its module is loaded, which a
-// packer does not do, so every string a script's "properties" object carries is
-// a candidate. The caller resolves them against its database and keeps the ones
+// packer does not do, so every string a script's "properties" object carries is a
+// candidate. The caller resolves them against its database and keeps the ones
 // that name a real asset, so a false candidate costs nothing and a real
 // reference is never missed.
 void collect_script_strings(const json& value, std::vector<std::string>& out) {
@@ -94,7 +96,7 @@ void collect_script_strings(const json& value, std::vector<std::string>& out) {
     }
 }
 
-void collect_node_references(const json& node_json, std::vector<std::string>& out) {
+void collect_node_references(const json& node_json, SceneReferences& out) {
     if (node_json.contains(kComponentsKey) && node_json.at(kComponentsKey).is_array()) {
         for (const json& component_json : node_json.at(kComponentsKey)) {
             if (!component_json.is_object()) {
@@ -111,7 +113,7 @@ void collect_node_references(const json& node_json, std::vector<std::string>& ou
                 continue;
             }
             for (const reflect::Property& property : type->properties) {
-                collect_property_reference(property, component_json, out);
+                collect_property_reference(property, component_json, out.required);
             }
         }
     }
@@ -119,7 +121,7 @@ void collect_node_references(const json& node_json, std::vector<std::string>& ou
     if (node_json.contains(kScriptsKey) && node_json.at(kScriptsKey).is_array()) {
         for (const json& script_json : node_json.at(kScriptsKey)) {
             if (script_json.is_object() && script_json.contains(kPropertiesKey)) {
-                collect_script_strings(script_json.at(kPropertiesKey), out);
+                collect_script_strings(script_json.at(kPropertiesKey), out.candidates);
             }
         }
     }
@@ -133,7 +135,7 @@ void collect_node_references(const json& node_json, std::vector<std::string>& ou
 
 } // namespace
 
-Result<std::vector<std::string>> collect_resource_references(std::string_view scene_json) {
+Result<SceneReferences> collect_resource_references(std::string_view scene_json) {
     // The builtin 2D types are the floor, exactly as they are for the reader, so
     // a plain scene is traced with no setup. A caller that uses a 3D or audio
     // component must register that module's types first; `runtime::
@@ -151,7 +153,7 @@ Result<std::vector<std::string>> collect_resource_references(std::string_view sc
         return Error("scene references: the document is not an object");
     }
 
-    std::vector<std::string> references;
+    SceneReferences references;
     if (document.contains("roots") && document.at("roots").is_array()) {
         for (const json& root_json : document.at("roots")) {
             collect_node_references(root_json, references);
@@ -179,6 +181,40 @@ std::string reference_to_asset_path(std::string_view reference, const AssetDatab
         path = path.substr(colon + 1);
     }
     return std::string(path);
+}
+
+Result<std::vector<std::string>> resolve_scene_asset_paths(const SceneReferences& references,
+                                                           std::string_view pack_root, const AssetDatabase& assets) {
+    std::vector<std::string> paths;
+    std::unordered_set<std::string> seen;
+    const auto keep = [&](const std::string& path) {
+        if (seen.insert(path).second) {
+            paths.push_back(path);
+        }
+    };
+    // A reference resolves if the database has indexed it or, failing that, if the
+    // file is simply present under the pack root - an unimported asset is still
+    // packed, by path, under the default scheme, exactly as the unpruned writer
+    // packs it.
+    const auto resolves = [&](const std::string& path) {
+        return !path.empty() &&
+               (assets.find_by_path(path) != nullptr || fs::exists(fs::join(std::string(pack_root), path)));
+    };
+
+    for (const std::string& reference : references.required) {
+        const std::string path = reference_to_asset_path(reference, assets);
+        if (!resolves(path)) {
+            return Error("scene reference '" + reference + "' is not an asset under '" + std::string(pack_root) + "'");
+        }
+        keep(path);
+    }
+    for (const std::string& reference : references.candidates) {
+        const std::string path = reference_to_asset_path(reference, assets);
+        if (resolves(path)) {
+            keep(path);
+        }
+    }
+    return paths;
 }
 
 } // namespace fe::serialization::scene

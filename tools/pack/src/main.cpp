@@ -130,16 +130,7 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
     if (!references) {
         return references.error();
     }
-
-    std::vector<std::string> paths;
-    for (const std::string& reference : references.value()) {
-        const std::string path = fe::serialization::scene::reference_to_asset_path(reference, assets);
-        if (path.empty() || (assets.find_by_path(path) == nullptr && !fe::fs::exists(fe::fs::join(pack_root, path)))) {
-            return fe::Error("scene reference '" + reference + "' is not an asset under '" + pack_root + "'");
-        }
-        paths.push_back(path);
-    }
-    return paths;
+    return fe::serialization::scene::resolve_scene_asset_paths(references.value(), pack_root, assets);
 }
 
 void print_usage() {

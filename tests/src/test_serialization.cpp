@@ -15,6 +15,7 @@
 #include "fe/serialization/SceneSerializer.h"
 
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -378,8 +379,11 @@ TEST_CASE("the reference collector finds a component's resource reference") {
 
     auto references = serialization::scene::collect_resource_references(document);
     REQUIRE(references);
-    REQUIRE(references.value().size() == 1);
-    CHECK(references.value()[0] == "guid:3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+    // A reflected ResourceRef property is a certainty, so it is a required
+    // reference; it has no candidates.
+    REQUIRE(references.value().required.size() == 1);
+    CHECK(references.value().required[0] == "guid:3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+    CHECK(references.value().candidates.empty());
 }
 
 TEST_CASE("the reference collector descends a node tree and skips empty references") {
@@ -399,8 +403,8 @@ TEST_CASE("the reference collector descends a node tree and skips empty referenc
     auto references = serialization::scene::collect_resource_references(document);
     REQUIRE(references);
     // The unset texture on the child contributes nothing; the parent's does.
-    REQUIRE(references.value().size() == 1);
-    CHECK(references.value()[0] == "tex:assets/bg.png");
+    REQUIRE(references.value().required.size() == 1);
+    CHECK(references.value().required[0] == "tex:assets/bg.png");
 }
 
 TEST_CASE("the reference collector finds a 3D mesh and texture once the 3D types are registered") {
@@ -423,9 +427,9 @@ TEST_CASE("the reference collector finds a 3D mesh and texture once the 3D types
 
     auto references = serialization::scene::collect_resource_references(document);
     REQUIRE(references);
-    REQUIRE(references.value().size() == 2);
-    CHECK(references.value()[0] == "obj:assets/meshes/cube.obj");
-    CHECK(references.value()[1] == "tex:assets/textures/checker.png");
+    REQUIRE(references.value().required.size() == 2);
+    CHECK(references.value().required[0] == "obj:assets/meshes/cube.obj");
+    CHECK(references.value().required[1] == "tex:assets/textures/checker.png");
 }
 
 TEST_CASE("the reference collector reads a script's property strings as candidates") {
@@ -444,11 +448,13 @@ TEST_CASE("the reference collector reads a script's property strings as candidat
     auto references = serialization::scene::collect_resource_references(document);
     REQUIRE(references);
     // A behaviour's property kinds are known only once its module is loaded, so
-    // every script string is a candidate. The caller resolves them, so the plain
-    // "hero" label is harmless and the resource reference is not missed.
-    REQUIRE(references.value().size() == 2);
-    CHECK(references.value()[0] == "hero");
-    CHECK(references.value()[1] == "tex:assets/hero.png");
+    // every script string is a candidate, not a requirement. The caller resolves
+    // them, so the plain "hero" label is harmless and the resource reference is
+    // not missed.
+    CHECK(references.value().required.empty());
+    REQUIRE(references.value().candidates.size() == 2);
+    CHECK(references.value().candidates[0] == "hero");
+    CHECK(references.value().candidates[1] == "tex:assets/hero.png");
 }
 
 TEST_CASE("the reference collector reports malformed JSON instead of throwing") {
@@ -470,4 +476,121 @@ TEST_CASE("a reference maps to an asset path by guid or by scheme") {
     // A guid the database does not know resolves to nothing, so the caller can
     // report it rather than pack a dangling reference.
     CHECK(serialization::scene::reference_to_asset_path("guid:3f2504e0-4f89-41d3-9a0c-0305e82c3301", assets).empty());
+}
+
+TEST_CASE("a script string that is not an asset does not fail the resolve") {
+    // The regression this split fixes. A follow camera records `target = "Player"`
+    // in its script properties; the collector reads it as a candidate string. The
+    // old caller treated every candidate as required, so a scene whose every asset
+    // was present refused to pack because "Player" is not a file. A candidate that
+    // names no asset must simply be dropped.
+    TempDir dir("scriptcandidate");
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+    auto imported = assets.import("player.png", "tex");
+    REQUIRE(imported);
+    const std::string key = to_reference(imported.value().id);
+
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Camera", "type": "Node",
+              "scripts": [
+                  { "behaviour": "FollowCamera3D",
+                    "properties": { "target": "Player", "texture": ")" +
+                                 key + R"(" } }
+              ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    auto paths = serialization::scene::resolve_scene_asset_paths(references.value(), dir.str(), assets);
+    REQUIRE(paths);
+    // The plain label is dropped and the real asset is kept, so the resolve
+    // succeeds rather than erroring on "Player".
+    REQUIRE(paths.value().size() == 1);
+    CHECK(paths.value()[0] == "player.png");
+}
+
+TEST_CASE("a missing required reference is still a hard error") {
+    // The other half of the policy: a component's reflected resource property is a
+    // certainty, so a scene that names an asset it does not carry must fail rather
+    // than ship a build that breaks when it draws.
+    TempDir dir("missingrequired");
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Hero", "type": "Node",
+              "components": [ { "type": "Sprite2D", "texture": "tex:assets/absent.png" } ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    auto paths = serialization::scene::resolve_scene_asset_paths(references.value(), dir.str(), assets);
+    CHECK_FALSE(paths);
+    CHECK(paths.error().message().find("absent.png") != std::string::npos);
+}
+
+TEST_CASE("a resolve keeps a file that is present but unimported") {
+    // An unimported asset (a file with no sidecar) is packed by path, so the
+    // resolve must accept a file that exists under the pack root even when the
+    // database has never indexed it - otherwise a loose asset the scene names
+    // would be dropped.
+    TempDir dir("loosefile");
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+    std::filesystem::create_directories(dir.file("assets/loose"));
+    std::filesystem::path loose = std::filesystem::path(dir.file("assets/loose/mesh.obj"));
+    std::ofstream(loose) << "o Mesh\n";
+
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Cube", "type": "Node",
+              "components": [ { "type": "Sprite2D", "texture": "obj:assets/loose/mesh.obj" } ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    auto paths = serialization::scene::resolve_scene_asset_paths(references.value(), dir.str(), assets);
+    REQUIRE(paths);
+    REQUIRE(paths.value().size() == 1);
+    CHECK(paths.value()[0] == "assets/loose/mesh.obj");
+}
+
+TEST_CASE("a resolve de-duplicates a reference named by many nodes") {
+    TempDir dir("dedupe");
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+    auto imported = assets.import("tile.png", "tex");
+    REQUIRE(imported);
+    const std::string key = to_reference(imported.value().id);
+
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "A", "type": "Node",
+              "components": [ { "type": "Sprite2D", "texture": ")" +
+                                 key + R"(" } ] },
+            { "name": "B", "type": "Node",
+              "components": [ { "type": "Sprite2D", "texture": ")" +
+                                 key + R"(" } ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    auto paths = serialization::scene::resolve_scene_asset_paths(references.value(), dir.str(), assets);
+    REQUIRE(paths);
+    CHECK(paths.value().size() == 1);
 }

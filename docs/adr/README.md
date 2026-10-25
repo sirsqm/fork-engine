@@ -85,6 +85,7 @@ rather than editing it.
 | [0077](0077-web-canvas-resize-and-dpr.md) | The web canvas size and the input coordinate space | Accepted |
 | [0078](0078-engine-shipped-gameplay-behaviours.md) | Engine-shipped gameplay behaviours | Accepted |
 | [0079](0079-fixed-simulation-step.md) | A fixed simulation step | Accepted |
+| [0080](0080-required-and-candidate-references.md) | Required references and candidate references | Accepted |
 
 ## Format
 
