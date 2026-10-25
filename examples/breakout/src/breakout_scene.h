@@ -5,6 +5,7 @@
 #include "breakout_state.h"
 
 #include "fe/core/Types.h"
+#include "fe/platform/InputActions.h"
 #include "fe/resources/Resource.h"
 
 #include <memory>
@@ -40,6 +41,26 @@ struct SceneAssets {
 // the tested path from drifting apart.
 void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets = {});
 
+// The gameplay actions breakout declares, resolved once so the systems and the
+// application agree on the handles. `bind` installs the default device bindings:
+// the arrow keys and A/D for moving, Space and Enter for launching, and — the
+// point of the layer — touch regions so a phone can play the same game.
+//
+// The regions are the two lower thirds of the screen plus a central launch
+// strip, which is what a two-thumbed player expects: hold left or right to
+// steer, tap the middle to serve. They are normalised, so they survive a resize
+// and a change of orientation.
+struct BreakoutActions {
+    fe::ActionMap::Id move_left = fe::ActionMap::kNone;
+    fe::ActionMap::Id move_right = fe::ActionMap::kNone;
+    fe::ActionMap::Id launch = fe::ActionMap::kNone;
+};
+
+// Declares breakout's actions on `actions` and installs their default bindings.
+// Separate from install_breakout_systems() so a caller can add its own bindings
+// (a rebinding screen, a different control scheme) between the two steps.
+[[nodiscard]] BreakoutActions declare_breakout_actions(fe::ActionMap& actions);
+
 // Installs the game's systems on `schedule` in the order the game runs them
 // (ADR-0008): paddle control, ball launch, physics2d, brick breaking, game
 // state. `state` is borrowed and must outlive the schedule.
@@ -50,5 +71,13 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets = {});
 // appends that itself (last, so a cue fired this frame is mixed this frame).
 [[nodiscard]] fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule,
                                                                        BreakoutState& state, bool autoplay);
+
+// As above, but wires the systems to `actions` and `bindings` so input arrives
+// through the action layer. Passing the bindings from declare_breakout_actions()
+// is what makes a touch play the game; the three-argument overload is the
+// no-actions path a headless tool and an existing test use.
+[[nodiscard]] fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule,
+                                                                       BreakoutState& state, bool autoplay,
+                                                                       const BreakoutActions& bindings);
 
 } // namespace breakout

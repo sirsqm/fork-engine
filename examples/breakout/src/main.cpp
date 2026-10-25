@@ -110,9 +110,15 @@ protected:
             return fe::Error("breakout: the scene is missing a 'Ball' or 'Paddle' node");
         }
 
+        // Declare the game's actions before installing the systems, so the
+        // systems get handles to bind to. The application evaluates the map each
+        // frame and hands it to the systems through FrameContext, which is what
+        // lets a touch and a key drive the identical gameplay code.
+        const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions());
+
         // The physics pointer the helper returns is only needed by tests; here
         // the systems already hold it.
-        static_cast<void>(breakout::install_breakout_systems(schedule(), state_, headless_));
+        static_cast<void>(breakout::install_breakout_systems(schedule(), state_, headless_, bindings));
         adopt_audio_system();
         attach_sound();
 

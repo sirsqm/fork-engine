@@ -18,6 +18,8 @@ add_executable(fork_engine_tests
     src/test_math.cpp
     src/test_frustum.cpp
     src/test_input_state.cpp
+    src/test_input_actions.cpp
+    src/test_key_code.cpp
     src/test_platform_null.cpp
     src/test_null_device.cpp
     src/test_shader_dialect.cpp

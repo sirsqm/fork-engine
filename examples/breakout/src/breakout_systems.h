@@ -5,6 +5,7 @@
 #include "breakout_state.h"
 
 #include "fe/core/Math.h"
+#include "fe/platform/InputActions.h"
 #include "fe/systems/System.h"
 
 #include <string_view>
@@ -54,7 +55,14 @@ struct Controls {
     fe::f32 paddle_speed = 780.0f; // world units per second
 };
 
-// Moves the paddle left and right from the keyboard (Left/Right or A/D).
+// Moves the paddle left and right.
+//
+// It reads gameplay actions rather than keys, so the same code serves a keyboard
+// (Left/Right or A/D) and a touchscreen (a finger in the left or right third of
+// the screen). The bindings are declared once by the application; this system
+// only asks whether the player means to move. When no action map is available
+// (a headless tool, an older test) it falls back to the keys, so a schedule
+// built without actions still plays.
 //
 // In autoplay mode (used by a headless run) it instead steers the paddle towards
 // the ball, so a machine with no player still reaches an outcome. The choice is
@@ -71,9 +79,19 @@ public:
     void set_autoplay(bool autoplay) noexcept { autoplay_ = autoplay; }
     [[nodiscard]] bool autoplay() const noexcept { return autoplay_; }
 
+    // The action handles to read. Zero (the default) means the action is unbound
+    // and the keyboard fallback is used instead, so a caller that declares no
+    // actions still gets a playable paddle.
+    void set_move_actions(fe::ActionMap::Id move_left, fe::ActionMap::Id move_right) noexcept {
+        move_left_ = move_left;
+        move_right_ = move_right;
+    }
+
 private:
     Controls controls_;
     bool autoplay_ = false;
+    fe::ActionMap::Id move_left_ = 0;
+    fe::ActionMap::Id move_right_ = 0;
 };
 
 // Launches the ball from its resting position on Space (or automatically in
@@ -98,11 +116,15 @@ public:
     // has ended. Borrowed; the application owns it.
     void set_state(BreakoutState* state) noexcept { state_ = state; }
 
+    // The launch action. Zero means unbound, so the Space/Enter fallback applies.
+    void set_launch_action(fe::ActionMap::Id launch) noexcept { launch_ = launch; }
+
 private:
     bool autoplay_ = false;
     fe::f32 autoplay_delay_ = 0.25f;
     fe::f32 autoplay_elapsed_ = -1.0f;
     BreakoutState* state_ = nullptr;
+    fe::ActionMap::Id launch_ = 0;
 };
 
 // Turns a ball-vs-brick contact into a score change, a broken brick, and a

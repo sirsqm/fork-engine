@@ -19,6 +19,7 @@
 //
 // See docs/adr/0074-web-window-backend.md.
 
+#include "fe/platform/InputActions.h"
 #include "fe/platform/Window.h"
 
 #include <emscripten.h>
@@ -104,6 +105,70 @@ int main() {
     }
     report.check("get_proc_address returns null for an unknown entry point",
                  window.get_proc_address("glDefinitelyNotAFunction") == nullptr);
+
+    // --- Input --------------------------------------------------------------
+    //
+    // The strongest check this test can make: dispatch real DOM events at the
+    // page and observe them arrive in InputState through the backend's
+    // listeners. Everything else here proves the window came up; this proves the
+    // backend is actually wired to the browser's event stream, which is what
+    // `touch-input-actions` added. A synthetic event is a real event as far as
+    // the listener is concerned, so this exercises the same path a keystroke or a
+    // finger does.
+    window.input().begin_frame();
+    EM_ASM({ window.dispatchEvent(new KeyboardEvent('keydown', {code : 'ArrowLeft', bubbles : true})); });
+    report.check("a keydown reaches InputState (Left is down)", window.input().is_key_down(fe::Key::Left));
+    report.check("the keydown produced a press edge", window.input().was_key_pressed(fe::Key::Left));
+
+    window.input().begin_frame();
+    EM_ASM({ window.dispatchEvent(new KeyboardEvent('keyup', {code : 'ArrowLeft', bubbles : true})); });
+    report.check("a keyup releases the key", !window.input().is_key_down(fe::Key::Left));
+    report.check("the keyup produced a release edge", window.input().was_key_released(fe::Key::Left));
+
+    // Touch: a real TouchEvent at the canvas, the way a finger arrives.
+    window.input().begin_frame();
+    EM_ASM({
+        var canvas = document.getElementById('canvas');
+        var touch = new Touch({identifier : 42, target : canvas, clientX : 40, clientY : 100});
+        canvas.dispatchEvent(new TouchEvent(
+            'touchstart',
+            {touches : [touch], targetTouches : [touch], changedTouches : [touch], bubbles : true, cancelable : true}));
+    });
+    report.check("a touchstart reaches InputState", window.input().touch_count() == 1);
+    const fe::u32 touch_id = window.input().touch_id_at(0);
+    report.check("the contact is down",
+                 touch_id != fe::InputState::kInvalidTouchId && window.input().is_touch_down(touch_id));
+    report.check("the touch began this frame", window.input().was_touch_began(touch_id));
+
+    // The action layer on top of that same contact: the acceptance test for the
+    // queue item, in a real browser.
+    fe::ActionMap actions;
+    const fe::ActionMap::Id steer = actions.add("Steer");
+    actions.bind_key(steer, fe::Key::Left);
+    actions.bind_touch_region(steer, 0.0f, 0.0f, 0.5f, 1.0f);
+    actions.update(window.input(), fe::Vec2{static_cast<fe::f32>(window.framebuffer_width()),
+                                            static_cast<fe::f32>(window.framebuffer_height())});
+    report.check("a touch drives a gameplay action in the browser", actions.is_down(steer));
+
+    window.input().begin_frame();
+    EM_ASM({
+        var canvas = document.getElementById('canvas');
+        var touch = new Touch({identifier : 42, target : canvas, clientX : 40, clientY : 100});
+        canvas.dispatchEvent(new TouchEvent(
+            'touchend',
+            {touches : [], targetTouches : [], changedTouches : [touch], bubbles : true, cancelable : true}));
+    });
+    report.check("a touchend releases the contact", !window.input().is_touch_down(touch_id));
+    actions.update(window.input(), fe::Vec2{static_cast<fe::f32>(window.framebuffer_width()),
+                                            static_cast<fe::f32>(window.framebuffer_height())});
+    report.check("the action releases with the contact", !actions.is_down(steer));
+
+    // A key held while the page loses focus must not stick down.
+    window.input().begin_frame();
+    EM_ASM({ window.dispatchEvent(new KeyboardEvent('keydown', {code : 'Space', bubbles : true})); });
+    report.check("a key is down before the blur", window.input().is_key_down(fe::Key::Space));
+    EM_ASM({ window.dispatchEvent(new Event('blur')); });
+    report.check("losing focus releases every key", !window.input().is_key_down(fe::Key::Space));
 
     // The frame-loop calls must be safe on this backend: the loop does not branch
     // on which backend it drives.

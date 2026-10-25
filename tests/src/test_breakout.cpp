@@ -12,6 +12,8 @@
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/PhysicsTypes.h"
 #include "fe/physics2d/RigidBody2D.h"
+#include "fe/platform/InputActions.h"
+#include "fe/platform/InputState.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -365,4 +367,139 @@ TEST_CASE("the built field round-trips through the scene serializer") {
     CHECK(loaded_source->pitch == doctest::Approx(1.5f));
     CHECK(loaded_source->loop == true);
     CHECK(loaded_source->play_on_start == true);
+}
+
+// ---------------------------------------------------------------------------
+// Actions: the same gameplay code, driven by a key and by a touch.
+//
+// This is the end-to-end acceptance test for the `touch-input-actions` queue
+// item. It runs the *shipped* paddle system through a real SceneSchedule and
+// proves that a finger on the left third of the screen moves the paddle the way
+// the Left key does — which is the whole point of the action layer, and the
+// thing a unit test of the ActionMap alone cannot show.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a touch steers the paddle through the shipped system") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+
+    ActionMap actions;
+    const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+    InputState input;
+    const Vec2 viewport{1280.0f, 720.0f};
+    Node* paddle = scene.find_node_by_name(breakout::names::kPaddle);
+    REQUIRE(paddle != nullptr);
+    const f32 start_x = paddle->transform().position.x;
+
+    // A finger in the left third, held across frames, must drive the paddle left
+    // exactly as holding the Left key would.
+    input.on_touch(TouchPhase::Began, 1, 100.0f, 400.0f);
+    for (int i = 0; i < 10; ++i) {
+        input.begin_frame();
+        actions.update(input, viewport);
+        FrameContext context = step(1.0f / 60.0f);
+        context.input = &input;
+        context.actions = &actions;
+        schedule.update(context, scene);
+    }
+    CHECK(paddle->transform().position.x < start_x);
+
+    // Lifting the finger stops the paddle, which is what proves the region is
+    // read every frame rather than latching.
+    const f32 moved_x = paddle->transform().position.x;
+    input.on_touch(TouchPhase::Ended, 1, 100.0f, 400.0f);
+    for (int i = 0; i < 5; ++i) {
+        input.begin_frame();
+        actions.update(input, viewport);
+        FrameContext context = step(1.0f / 60.0f);
+        context.input = &input;
+        context.actions = &actions;
+        schedule.update(context, scene);
+    }
+    CHECK(paddle->transform().position.x == doctest::Approx(moved_x));
+}
+
+TEST_CASE("a touch and a key move the paddle the same way") {
+    // The equivalence the action layer exists to provide: the two devices are
+    // interchangeable, so a phone and a desktop play the same game.
+    const auto run = [](bool use_touch) {
+        Scene scene;
+        breakout::build_breakout_scene(scene);
+        SceneSchedule schedule;
+        breakout::BreakoutState state;
+        ActionMap actions;
+        const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+        static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+        InputState input;
+        if (use_touch) {
+            input.on_touch(TouchPhase::Began, 1, 100.0f, 400.0f);
+        } else {
+            input.on_key(Key::Left, true);
+        }
+        for (int i = 0; i < 10; ++i) {
+            input.begin_frame();
+            actions.update(input, Vec2{1280.0f, 720.0f});
+            FrameContext context = step(1.0f / 60.0f);
+            context.input = &input;
+            context.actions = &actions;
+            schedule.update(context, scene);
+        }
+        return scene.find_node_by_name(breakout::names::kPaddle)->transform().position.x;
+    };
+
+    CHECK(run(true) == doctest::Approx(run(false)));
+}
+
+TEST_CASE("a tap in the middle launches the ball through the shipped system") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+
+    ActionMap actions;
+    const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+    auto* ball = scene.find_node_by_name(breakout::names::kBall)->get_component<physics2d::RigidBody2D>();
+    REQUIRE(ball != nullptr);
+    REQUIRE(ball->velocity.length_squared() == doctest::Approx(0.0f));
+
+    InputState input;
+    input.on_touch(TouchPhase::Began, 1, 640.0f, 400.0f); // the middle third
+    input.begin_frame();
+    actions.update(input, Vec2{1280.0f, 720.0f});
+    FrameContext context = step(1.0f / 60.0f);
+    context.input = &input;
+    context.actions = &actions;
+    schedule.update(context, scene);
+
+    CHECK(ball->velocity.length_squared() > 0.0f);
+}
+
+TEST_CASE("the three-argument install still works with no action map") {
+    // The no-actions path a headless tool and an older caller use must keep
+    // playing: with no action map, the systems fall back to the keys.
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    InputState input;
+    input.on_key(Key::Left, true);
+    Node* paddle = scene.find_node_by_name(breakout::names::kPaddle);
+    const f32 start_x = paddle->transform().position.x;
+    for (int i = 0; i < 10; ++i) {
+        input.begin_frame();
+        FrameContext context = step(1.0f / 60.0f);
+        context.input = &input;
+        // Deliberately no context.actions: the fallback must carry it.
+        schedule.update(context, scene);
+    }
+    CHECK(paddle->transform().position.x < start_x);
 }

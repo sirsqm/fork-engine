@@ -136,6 +136,30 @@ Vec2 InputState::touch_position(u32 id) const noexcept {
     return slot != kMaxTouchPoints ? touches_[slot].position : Vec2{};
 }
 
+usize InputState::touch_count() const noexcept {
+    usize count = 0;
+    for (const TouchPoint& touch : touches_) {
+        if (touch.active) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 InputState::touch_id_at(usize index) const noexcept {
+    usize seen = 0;
+    for (const TouchPoint& touch : touches_) {
+        if (!touch.active) {
+            continue;
+        }
+        if (seen == index) {
+            return touch.id;
+        }
+        ++seen;
+    }
+    return kInvalidTouchId;
+}
+
 Vec2 InputState::touch_delta(u32 id) const noexcept {
     const usize slot = find_touch(id);
     return slot != kMaxTouchPoints ? touches_[slot].delta : Vec2{};

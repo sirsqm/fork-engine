@@ -6,6 +6,7 @@
 
 namespace fe {
 
+class ActionMap;
 class InputState;
 class ResourceManager;
 class FrameArena;
@@ -35,6 +36,14 @@ struct FrameContext {
     // check it (or disable itself) rather than assume a keyboard exists. The
     // edge state has already been advanced for the frame when a system sees it.
     InputState* input = nullptr;
+
+    // This frame's gameplay actions, already evaluated from `input`. Nullable for
+    // the same reasons as `input`: a tool or a test that runs a schedule with no
+    // window has no actions, and a system must null-check it. This is the seam
+    // that lets one piece of gameplay code serve a keyboard and a touchscreen:
+    // the system asks whether "MoveLeft" is held and never learns which device
+    // produced it (docs/ROADMAP.md, `touch-input-actions`).
+    ActionMap* actions = nullptr;
 
     // The frame's transient arena. Nullable: a tool or a test that builds no
     // per-frame scratch runs the schedule with no arena, and a system must

@@ -44,11 +44,23 @@ void PaddleControlSystem::update(const fe::FrameContext& context, fe::Scene& sce
         }
     } else if (const fe::InputState* input = context.input; input != nullptr) {
         fe::f32 direction = 0.0f;
-        if (input->is_key_down(fe::Key::Left) || input->is_key_down(fe::Key::A)) {
-            direction -= 1.0f;
-        }
-        if (input->is_key_down(fe::Key::Right) || input->is_key_down(fe::Key::D)) {
-            direction += 1.0f;
+        // Actions first: they are the device-independent path, so a touch region
+        // moves the paddle exactly as a key does. The key reads remain as the
+        // fallback for a schedule built with no action map.
+        if (context.actions != nullptr && move_left_ != fe::ActionMap::kNone) {
+            if (context.actions->is_down(move_left_)) {
+                direction -= 1.0f;
+            }
+            if (context.actions->is_down(move_right_)) {
+                direction += 1.0f;
+            }
+        } else {
+            if (input->is_key_down(fe::Key::Left) || input->is_key_down(fe::Key::A)) {
+                direction -= 1.0f;
+            }
+            if (input->is_key_down(fe::Key::Right) || input->is_key_down(fe::Key::D)) {
+                direction += 1.0f;
+            }
         }
         x += direction * controls_.paddle_speed * context.delta_time;
     }
@@ -85,7 +97,14 @@ void BallLaunchSystem::update(const fe::FrameContext& context, fe::Scene& scene)
         }
         launch = autoplay_elapsed_ >= autoplay_delay_;
     } else if (const fe::InputState* input = context.input; input != nullptr) {
-        launch = input->was_key_pressed(fe::Key::Space) || input->was_key_pressed(fe::Key::Enter);
+        // Actions first, for the same reason the paddle reads them: a tap is how
+        // a phone launches the ball, and the key reads are the no-action-map
+        // fallback.
+        if (context.actions != nullptr && launch_ != fe::ActionMap::kNone) {
+            launch = context.actions->was_pressed(launch_);
+        } else {
+            launch = input->was_key_pressed(fe::Key::Space) || input->was_key_pressed(fe::Key::Enter);
+        }
     }
 
     if (!launch) {

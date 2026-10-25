@@ -134,12 +134,47 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
 
 fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule, BreakoutState& state,
                                                          bool autoplay) {
+    return install_breakout_systems(schedule, state, autoplay, BreakoutActions{});
+}
+
+BreakoutActions declare_breakout_actions(fe::ActionMap& actions) {
+    BreakoutActions bindings;
+    bindings.move_left = actions.add("MoveLeft");
+    bindings.move_right = actions.add("MoveRight");
+    bindings.launch = actions.add("Launch");
+
+    // Keyboard: the arrows and WASD for steering, Space and Enter to serve. Both
+    // spellings are bound so a player who reaches for either is not surprised.
+    actions.bind_key(bindings.move_left, fe::Key::Left);
+    actions.bind_key(bindings.move_left, fe::Key::A);
+    actions.bind_key(bindings.move_right, fe::Key::Right);
+    actions.bind_key(bindings.move_right, fe::Key::D);
+    actions.bind_key(bindings.launch, fe::Key::Space);
+    actions.bind_key(bindings.launch, fe::Key::Enter);
+
+    // Touch: the outer thirds steer and the middle third serves, so a phone can
+    // play the same game with two thumbs. These are the bindings that make the
+    // keyboard-only game of yesterday playable on a touchscreen; the regions are
+    // normalised, so they hold in portrait and landscape alike.
+    actions.bind_touch_region(bindings.move_left, 0.0f, 0.0f, 0.34f, 1.0f);
+    actions.bind_touch_region(bindings.move_right, 0.66f, 0.0f, 1.0f, 1.0f);
+    // The launch strip is the middle third, the whole height: a tap anywhere in
+    // the middle serves, which is the most forgiving target for a thumb.
+    actions.bind_touch_region(bindings.launch, 0.34f, 0.0f, 0.66f, 1.0f);
+
+    return bindings;
+}
+
+fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule, BreakoutState& state,
+                                                         bool autoplay, const BreakoutActions& bindings) {
     auto* paddle_system = schedule.add_system<PaddleControlSystem>();
     paddle_system->set_autoplay(autoplay);
+    paddle_system->set_move_actions(bindings.move_left, bindings.move_right);
 
     auto* launch_system = schedule.add_system<BallLaunchSystem>();
     launch_system->set_autoplay(autoplay);
     launch_system->set_state(&state);
+    launch_system->set_launch_action(bindings.launch);
 
     auto* physics = schedule.add_system<fe::physics2d::Physics2DSystem>();
     physics->gravity = fe::Vec2{0.0f, 0.0f}; // breakout is gravity-free

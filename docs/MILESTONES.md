@@ -285,10 +285,12 @@ pillars above, [ADR-0018](adr/0018-multi-platform-shipping.md).
       and draw submission run with no context, selected by an explicit
       `Engine::Config::headless_render` opt-in ([ADR-0042](adr/0042-null-rhi-device.md)).
 - [ ] The gamepad and suspend/resume rows of the platform contract, each
-      implemented behind the existing seam. Touch has landed on the existing
-      `InputState` seam (`on_touch` plus id-keyed begin/update/end queries, with
-      no backend feeding it yet), the dynamic-library row landed with
-      `platform::DynamicLibrary`, [ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)
+      implemented behind the existing seam. Touch is done end to end: the web
+      backend feeds `InputState` from DOM touch events, and gameplay reaches it
+      through the action layer, so a phone plays the same code a keyboard does
+      ([ADR-0075](adr/0075-gameplay-actions-input-seam.md)). The dynamic-library
+      row landed with `platform::DynamicLibrary`,
+      [ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)
 - [x] Asset packaging: a versioned pack format (`PackFile`), a writer that turns
       a project's asset tree and startup scene into one file, and a `PackSource`
       the runtime mounts so the loaders and the scene reader read from a pack as

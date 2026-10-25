@@ -177,6 +177,19 @@ public:
     [[nodiscard]] Vec2 touch_position(u32 id) const noexcept;
     [[nodiscard]] Vec2 touch_delta(u32 id) const noexcept;
 
+    // Enumeration, for a caller that does not know the backend's ids and has to
+    // find the contacts itself. An action map is exactly that caller: it maps a
+    // contact's position to an action without caring which finger it is.
+    // `touch_count()` counts tracked contacts (including one that ended this
+    // frame, whose end edge is still observable); `touch_id_at()` returns the
+    // id at an index below that count, or `kInvalidTouchId` when out of range.
+    [[nodiscard]] usize touch_count() const noexcept;
+    [[nodiscard]] u32 touch_id_at(usize index) const noexcept;
+
+    // Returned by touch_id_at() for an index with no contact behind it. Never a
+    // real id: a backend's first contact is 0, and ids only grow from there.
+    static constexpr u32 kInvalidTouchId = 0xFFFFFFFFu;
+
     // Releases every key/button/touch without clearing edge history. Used when
     // the window loses focus so that a held key does not stick down.
     void release_all() noexcept;

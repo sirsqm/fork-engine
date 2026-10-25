@@ -3,6 +3,7 @@
 #include "fe/runtime/Application.h"
 
 #include "fe/core/Log.h"
+#include "fe/platform/InputActions.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
 
@@ -107,6 +108,20 @@ bool Application::step_frame() {
     engine_.window().input().begin_frame();
     engine_.window().poll_events();
 
+    // Evaluate the gameplay actions from that snapshot, before any hook or system
+    // reads them, so both the subclass's on_update() and its systems see the same
+    // one-frame edges InputState just produced. The viewport a touch is
+    // normalised against is the framebuffer size, which is the space the
+    // backend's touch positions are in.
+    {
+        Vec2 viewport = action_viewport_;
+        if (viewport.x <= 0.0f || viewport.y <= 0.0f) {
+            viewport = Vec2{static_cast<f32>(engine_.window().framebuffer_width()),
+                            static_cast<f32>(engine_.window().framebuffer_height())};
+        }
+        actions_.update(engine_.window().input(), viewport);
+    }
+
     {
         const ProfileScope update_scope("frame/update");
         on_update(engine_.delta_time());
@@ -129,6 +144,7 @@ bool Application::step_frame() {
         frame.elapsed_time = engine_.elapsed_time();
         frame.resources = &engine_.resources();
         frame.input = &engine_.input();
+        frame.actions = &actions_;
         frame.arena = frame_arena_.get();
         frame.jobs = jobs_.get();
         schedule_.update(frame, scene_);

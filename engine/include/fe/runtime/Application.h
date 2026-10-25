@@ -5,6 +5,7 @@
 #include "fe/core/FrameArena.h"
 #include "fe/core/Profiler.h"
 #include "fe/jobs/JobSystem.h"
+#include "fe/platform/InputActions.h"
 #include "fe/runtime/Engine.h"
 #include "fe/scene/Scene.h"
 #include "fe/systems/SceneSchedule.h"
@@ -154,6 +155,27 @@ public:
     [[nodiscard]] JobSystem* jobs() noexcept { return jobs_.get(); }
     [[nodiscard]] const JobSystem* jobs() const noexcept { return jobs_.get(); }
 
+    // --- Gameplay actions --------------------------------------------------
+    // The application owns one ActionMap and re-evaluates it once per frame from
+    // the input snapshot, then hands it to every system through
+    // FrameContext::actions. A subclass declares its actions and bindings in
+    // on_start() -- `actions().add("MoveLeft")` and the `bind_*` calls -- and its
+    // systems then ask about actions rather than raw keys, which is what lets one
+    // system serve a keyboard and a touchscreen (docs/ROADMAP.md,
+    // `touch-input-actions`).
+    //
+    // Actions are evaluated before the systems run and after the backend has
+    // delivered this frame's events, so a system sees the same one-frame edges
+    // InputState provides.
+    [[nodiscard]] ActionMap& actions() noexcept { return actions_; }
+    [[nodiscard]] const ActionMap& actions() const noexcept { return actions_; }
+
+    // The size a touch position is normalised against when the action map is
+    // evaluated. Defaults to the window's framebuffer size, which is what a
+    // touch position is in; override it only for a host that renders to a
+    // surface of its own (the editor's viewport, for instance).
+    void set_action_viewport(Vec2 viewport) noexcept { action_viewport_ = viewport; }
+
 protected:
     // --- Hooks -------------------------------------------------------------
     // Called once, after the engine is up and before the first frame. Return an
@@ -207,6 +229,12 @@ private:
     u32 frames_stepped_ = 0;
     u32 headless_frames_ = 0;
     usize last_sprite_count_ = 0;
+    // The gameplay action map, re-evaluated each frame from the input snapshot.
+    // Owned here rather than by the window so a host that drives frames itself
+    // (a browser page, a test) gets the same action state the desktop loop does.
+    ActionMap actions_;
+    // Zero means "use the window's framebuffer size"; see set_action_viewport().
+    Vec2 action_viewport_{};
 };
 
 } // namespace fe

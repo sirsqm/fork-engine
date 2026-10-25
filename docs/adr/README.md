@@ -80,6 +80,7 @@ rather than editing it.
 | [0072](0072-glsl-dialect-seam.md) | A GLSL dialect translation seam in the RHI | Accepted |
 | [0073](0073-emscripten-toolchain.md) | The Emscripten toolchain and the web platform macro | Accepted |
 | [0074](0074-web-window-backend.md) | The web window backend (canvas + WebGL2) | Accepted |
+| [0075](0075-gameplay-actions-input-seam.md) | Gameplay actions as the input seam | Accepted |
 
 ## Format
 

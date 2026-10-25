@@ -149,3 +149,40 @@ TEST_CASE("an unknown touch id reports nothing") {
     CHECK_FALSE(input.was_touch_ended(9));
     CHECK(input.touch_position(9) == Vec2{0.0f, 0.0f});
 }
+
+TEST_CASE("touches can be enumerated without knowing their ids") {
+    InputState input;
+    input.on_touch(TouchPhase::Began, 7, 10.0f, 20.0f);
+    input.on_touch(TouchPhase::Began, 3, 30.0f, 40.0f);
+
+    REQUIRE(input.touch_count() == 2);
+    // The ids are the backend's, in slot order, so a caller finds contacts by
+    // walking the count rather than guessing an id.
+    const u32 first = input.touch_id_at(0);
+    const u32 second = input.touch_id_at(1);
+    CHECK(first != InputState::kInvalidTouchId);
+    CHECK(second != InputState::kInvalidTouchId);
+    CHECK(first != second);
+    CHECK(input.is_touch_down(first));
+    CHECK(input.is_touch_down(second));
+    CHECK(input.touch_id_at(2) == InputState::kInvalidTouchId);
+}
+
+TEST_CASE("touch enumeration counts a contact until its end edge is consumed") {
+    InputState input;
+    input.on_touch(TouchPhase::Began, 1, 5.0f, 5.0f);
+    input.on_touch(TouchPhase::Ended, 1, 5.0f, 5.0f);
+
+    // The contact is still tracked this frame so its end edge is observable.
+    CHECK(input.touch_count() == 1);
+    CHECK_FALSE(input.is_touch_down(input.touch_id_at(0)));
+
+    input.begin_frame();
+    CHECK(input.touch_count() == 0);
+}
+
+TEST_CASE("touch enumeration is empty with no contacts") {
+    InputState input;
+    CHECK(input.touch_count() == 0);
+    CHECK(input.touch_id_at(0) == InputState::kInvalidTouchId);
+}

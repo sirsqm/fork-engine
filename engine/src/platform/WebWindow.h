@@ -39,8 +39,10 @@ public:
     WebWindow(const WebWindow&) = delete;
     WebWindow& operator=(const WebWindow&) = delete;
 
-    // The browser drives the frame loop, so there are no pending OS events to
-    // pump here; input arrives through the DOM (a later queue item).
+    // A browser delivers input through DOM events rather than a poll, so the
+    // event callbacks installed at creation are what fill InputState and there
+    // are no pending OS events to pump here. The call stays part of the
+    // interface so the frame loop does not branch on the backend.
     void poll_events() override;
 
     // WebGL2 presents implicitly at the end of a frame, so there is no buffer to
@@ -71,6 +73,14 @@ public:
 
 private:
     WebWindow();
+
+    // Registers (or removes) the DOM event listeners that feed InputState. A
+    // browser delivers input as events rather than as a poll, so these callbacks
+    // are what `poll_events()` would otherwise do. Kept together so the target
+    // each event is bound to is visible in one place: the two choices are
+    // deliberate and were measured, not guessed (see the .cpp).
+    void install_input_callbacks();
+    void remove_input_callbacks();
 
     // The CSS selector of the canvas this window renders into. Kept so a
     // resize or a title change can find the same element the context was made

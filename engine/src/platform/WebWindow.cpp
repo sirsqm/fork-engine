@@ -3,6 +3,7 @@
 #include "WebWindow.h"
 
 #include "fe/core/Log.h"
+#include "fe/platform/KeyCode.h"
 
 #include <emscripten/html5.h>
 #include <emscripten/html5_webgl.h>
@@ -27,11 +28,154 @@ const char* on_before_unload(int /*eventType*/, const void* /*reserved*/, void* 
     return nullptr;
 }
 
+// The event callbacks receive the engine Window through the user-data pointer,
+// exactly as the GLFW backend's do, so event handling stays out of global state.
+
+// Which element each event binds to is a measured decision, and the two groups
+// differ for two different reasons.
+//
+// Keyboard binds to the *window*, because this emsdk build resolves a target
+// through `document.querySelector()` and a canvas only receives key events while
+// it holds focus. A probe of this toolchain showed a canvas listener seeing zero
+// keystrokes on an unfocused page while a window listener saw them all, including
+// the ones that bubble up from the canvas. A game that ignored input until the
+// player clicked the canvas first would be a bug, so keyboard listens on window.
+//
+// Pointer, wheel and touch bind to the *canvas*, because their coordinates are
+// reported relative to whichever element the listener is on and gameplay wants
+// canvas space, not page space. Binding them to the window would silently offset
+// every position by the canvas's place in the page — wrong the moment the canvas
+// is not at the top-left corner, which the export shell's centred layout is not.
+[[nodiscard]] Window* window_from(void* user_data) noexcept {
+    return static_cast<Window*>(user_data);
+}
+
+bool on_key(int eventType, const EmscriptenKeyboardEvent* event, void* user_data) {
+    Window* window = window_from(user_data);
+    if (window == nullptr) {
+        return false;
+    }
+    // Translate the physical `code`, not the layout-dependent `key`: WASD must
+    // stay where it is on an AZERTY keyboard, which is also what the desktop
+    // backend does by mapping GLFW's physical key codes.
+    const Key key = key_from_code(event->code);
+    if (key == Key::Unknown) {
+        return false;
+    }
+    window->input().on_key(key, eventType == EMSCRIPTEN_EVENT_KEYDOWN);
+    // Swallow the keystroke so the page does not also scroll on an arrow key or
+    // type into a focused element.
+    return true;
+}
+
+bool on_mouse_button(int eventType, const EmscriptenMouseEvent* event, void* user_data) {
+    Window* window = window_from(user_data);
+    if (window == nullptr) {
+        return false;
+    }
+    MouseButton button = MouseButton::Count;
+    switch (event->button) {
+    case 0:
+        button = MouseButton::Left;
+        break;
+    case 1:
+        button = MouseButton::Middle;
+        break;
+    case 2:
+        button = MouseButton::Right;
+        break;
+    default:
+        return false;
+    }
+    window->input().on_mouse_button(button, eventType == EMSCRIPTEN_EVENT_MOUSEDOWN);
+    return false;
+}
+
+bool on_mouse_move(int /*eventType*/, const EmscriptenMouseEvent* event, void* user_data) {
+    Window* window = window_from(user_data);
+    if (window == nullptr) {
+        return false;
+    }
+    // targetX/targetY are the coordinates relative to the element the listener
+    // is on, which is the canvas — the same space InputState's positions are in.
+    window->input().on_mouse_move(static_cast<f32>(event->targetX), static_cast<f32>(event->targetY));
+    return false;
+}
+
+bool on_wheel(int /*eventType*/, const EmscriptenWheelEvent* event, void* user_data) {
+    Window* window = window_from(user_data);
+    if (window == nullptr) {
+        return false;
+    }
+    // DOM wheel deltas are positive downward; the engine's convention is
+    // positive up, so y is negated to match the desktop backend.
+    window->input().on_scroll(static_cast<f32>(event->deltaX), static_cast<f32>(-event->deltaY));
+    return true;
+}
+
+// A touch becomes a pointer-like contact in InputState. `identifier` is the
+// browser's contact id, which is stable across a contact's lifetime and is
+// exactly the id InputState's per-contact queries are keyed by. The coordinates
+// are canvas-relative (this listener is on the canvas), so gameplay and an
+// ActionMap region see the same space a mouse would.
+bool on_touch(int eventType, const EmscriptenTouchEvent* event, void* user_data) {
+    Window* window = window_from(user_data);
+    if (window == nullptr) {
+        return false;
+    }
+    TouchPhase phase = TouchPhase::Began;
+    switch (eventType) {
+    case EMSCRIPTEN_EVENT_TOUCHSTART:
+        phase = TouchPhase::Began;
+        break;
+    case EMSCRIPTEN_EVENT_TOUCHMOVE:
+        phase = TouchPhase::Moved;
+        break;
+    case EMSCRIPTEN_EVENT_TOUCHEND:
+        phase = TouchPhase::Ended;
+        break;
+    case EMSCRIPTEN_EVENT_TOUCHCANCEL:
+        // A cancelled contact (the OS took over, the page scrolled) is over as
+        // far as gameplay is concerned, so it ends rather than sticking down.
+        phase = TouchPhase::Ended;
+        break;
+    default:
+        return false;
+    }
+    for (int i = 0; i < event->numTouches; ++i) {
+        const EmscriptenTouchPoint& point = event->touches[i];
+        // On a move/end only the contacts that actually changed are new
+        // information; re-reporting every contact would inflate the per-frame
+        // delta for the ones that did not move.
+        if (!point.isChanged) {
+            continue;
+        }
+        window->input().on_touch(phase, static_cast<u32>(point.identifier), static_cast<f32>(point.targetX),
+                                 static_cast<f32>(point.targetY));
+    }
+    // Prevent the browser's default touch behaviour (scrolling, pinch-zoom, the
+    // long-press menu) so a touch on the canvas drives the game instead of the
+    // page. This is what makes a phone playable rather than merely receiving
+    // events.
+    return true;
+}
+
+// A window that loses focus must not leave a key stuck down: the keyup goes to
+// whatever took focus, so the engine would never see it.
+bool on_blur(int /*eventType*/, const EmscriptenFocusEvent* /*event*/, void* user_data) {
+    Window* window = window_from(user_data);
+    if (window != nullptr) {
+        window->input().release_all();
+    }
+    return false;
+}
+
 } // namespace
 
 WebWindow::WebWindow() : Window("web") {}
 
 WebWindow::~WebWindow() {
+    remove_input_callbacks();
     // Detach the context from this canvas. The browser reclaims the GPU
     // resources; Emscripten's handle is process-global, so it is released here
     // rather than left for a later window to inherit.
@@ -40,6 +184,53 @@ WebWindow::~WebWindow() {
             static_cast<EMSCRIPTEN_WEBGL_CONTEXT_HANDLE>(reinterpret_cast<uintptr_t>(native_handle())));
         set_native_handle(nullptr);
     }
+}
+
+void WebWindow::install_input_callbacks() {
+    // The window itself is the user-data pointer, so a callback reaches the
+    // InputState it must fill without a global. `this` is stable: the window
+    // outlives its listeners, which are removed in the destructor.
+    void* const self = this;
+
+    // Keyboard on the window; see the note above the callbacks for why.
+    emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, &on_key);
+    emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, &on_key);
+
+    // A key held while the page loses focus would otherwise stick down, because
+    // its keyup goes to whatever took the focus.
+    emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, &on_blur);
+
+    // Pointer, wheel and touch on the canvas, so their coordinates are already in
+    // canvas space and need no page-offset correction.
+    const char* const canvas = canvas_selector_.c_str();
+    emscripten_set_mousedown_callback(canvas, self, EM_TRUE, &on_mouse_button);
+    emscripten_set_mouseup_callback(canvas, self, EM_TRUE, &on_mouse_button);
+    emscripten_set_mousemove_callback(canvas, self, EM_TRUE, &on_mouse_move);
+    emscripten_set_wheel_callback(canvas, self, EM_TRUE, &on_wheel);
+    emscripten_set_touchstart_callback(canvas, self, EM_TRUE, &on_touch);
+    emscripten_set_touchmove_callback(canvas, self, EM_TRUE, &on_touch);
+    emscripten_set_touchend_callback(canvas, self, EM_TRUE, &on_touch);
+    emscripten_set_touchcancel_callback(canvas, self, EM_TRUE, &on_touch);
+}
+
+void WebWindow::remove_input_callbacks() {
+    void* const self = this;
+    // A null callback removes the listener registered with the same target and
+    // event type. Removing on destruction matters because a later window would
+    // otherwise be fed events aimed at this one's freed InputState.
+    emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
+    emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
+    emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
+
+    const char* const canvas = canvas_selector_.c_str();
+    emscripten_set_mousedown_callback(canvas, self, EM_TRUE, nullptr);
+    emscripten_set_mouseup_callback(canvas, self, EM_TRUE, nullptr);
+    emscripten_set_mousemove_callback(canvas, self, EM_TRUE, nullptr);
+    emscripten_set_wheel_callback(canvas, self, EM_TRUE, nullptr);
+    emscripten_set_touchstart_callback(canvas, self, EM_TRUE, nullptr);
+    emscripten_set_touchmove_callback(canvas, self, EM_TRUE, nullptr);
+    emscripten_set_touchend_callback(canvas, self, EM_TRUE, nullptr);
+    emscripten_set_touchcancel_callback(canvas, self, EM_TRUE, nullptr);
 }
 
 Result<std::unique_ptr<Window>> WebWindow::create(const WindowDesc& desc) {
@@ -120,6 +311,9 @@ Result<std::unique_ptr<Window>> WebWindow::create(const WindowDesc& desc) {
     if (!desc.title.empty()) {
         window->set_title(desc.title);
     }
+    // Input listeners are installed only once the canvas exists and its selector
+    // is recorded, because pointer/touch/wheel bind to that element.
+    window->install_input_callbacks();
     emscripten_set_beforeunload_callback(nullptr, &on_before_unload);
     window->input().begin_frame();
 
