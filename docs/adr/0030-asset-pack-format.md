@@ -27,7 +27,7 @@ The pieces the pack has to fit are already in place:
   truth and rebuilds its index by rescanning.
 - A **reference** is either `guid:<uuid>` or `<scheme>:<path>`, and
   `ResourceManager` resolves both to a `Resource` through a loader
-  ([ADR-0004](adr/0004-resource-ownership-weak-cache.md)).
+  ([ADR-0004](0004-resource-ownership-weak-cache.md)).
 - A **scene** is versioned UTF-8 JSON read and written by
   `serialization::scene` ([ADR-0005](0005-reflection-and-serialization.md)).
 - Failures are **values**, never exceptions ([ADR-0003](0003-error-handling.md)).

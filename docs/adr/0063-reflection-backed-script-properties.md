@@ -14,7 +14,7 @@ shared library, load them by name, and reload them without a restart. What a
 script still cannot do is *carry data*.
 
 A `Script` is deliberately not a component: components are engine data
-([ADR-0002](0002-component-storage.md), [ADR-0005](0005-reflection.md)), scripts
+([ADR-0002](0002-hybrid-scene-ecs-architecture.md), [ADR-0005](0005-reflection-and-serialization.md)), scripts
 are game code. That split is right, and it is why scripts were never
 reflection-serialized. But the split left three gaps that all trace to the same
 missing piece:
