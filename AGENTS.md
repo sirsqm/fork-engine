@@ -6,7 +6,7 @@ shipping queue, and the next concrete step, before changing anything.
 
 ## Strategy: the pillars
 
-Two capabilities shape the design, not just the feature list, and every
+Three capabilities shape the design, not just the feature list, and every
 subsystem should be checked against them:
 
 - **Performance is a product feature** (M9, ADR-0017). Measure before
@@ -17,6 +17,10 @@ subsystem should be checked against them:
   contract with a null backend; assets ship in a pack; targets are new backends,
   added on demand. This is about shipping *games*, not running the editor on
   several OSes.
+- **Edits are durable and shareable** (M10). An edit is a serializable operation
+  over a stably identified object, so undo, redo, and replay share one model;
+  component identity is [ADR-0045](docs/adr/0045-component-identity.md), the
+  local operation model [ADR-0047](docs/adr/0047-local-operation-model.md).
 
 The local steps toward collaborative editing — stable component identity, a
 serializable operation model, and an ordered log — are shipped and kept, because
