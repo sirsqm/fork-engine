@@ -194,6 +194,12 @@ public:
     // the window loses focus so that a held key does not stick down.
     void release_all() noexcept;
 
+    // Whether any key, mouse button, or touch contact began this frame. This is
+    // a "user gesture" in the platform sense: the signal a browser requires
+    // before it will let a page make sound (AudioDevice::needs_user_gesture).
+    // Edge-based, so it is true for exactly the frame each input starts in.
+    [[nodiscard]] bool any_pressed() const noexcept;
+
 private:
     [[nodiscard]] static usize index_of(Key key) noexcept {
         const auto value = static_cast<usize>(key);

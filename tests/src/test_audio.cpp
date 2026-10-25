@@ -11,6 +11,7 @@
 #include "fe/audio/AudioTypes.h"
 #include "fe/audio/WavLoader.h"
 #include "fe/core/FileSystem.h"
+#include "fe/platform/InputState.h"
 #include "fe/reflect/Registry.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/scene/Node.h"
@@ -1394,4 +1395,114 @@ TEST_CASE("a streaming source whose file is missing falls back to its loaded cli
     system.update(step(0.001f), scene);
     CHECK(system.last_peak() == doctest::Approx(0.25f));
     CHECK(system.playing_voice_count() == 1);
+}
+
+// ---------------------------------------------------------------------------
+// The browser autoplay policy: a suspended audio context, resumed by a gesture.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a suspended device is started but silent, and a gesture resumes it") {
+    // Models the web contract: the context opens suspended, so start() succeeds
+    // and the device reports playing, yet nothing is accepted until a gesture.
+    audio::NullAudioDevice device;
+    device.set_starts_suspended(true);
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    CHECK(device.is_playing());
+    CHECK(device.needs_user_gesture());
+    CHECK(device.is_suspended());
+
+    const f32 block[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+    CHECK(device.submit(block, 4) == 0);
+    CHECK(device.frames_submitted() == 0);
+
+    CHECK(device.resume_from_gesture());
+    CHECK_FALSE(device.is_suspended());
+    CHECK_FALSE(device.needs_user_gesture());
+    CHECK(device.submit(block, 4) == 4);
+    CHECK(device.frames_submitted() == 4);
+}
+
+TEST_CASE("a device that needs no gesture plays as soon as it starts") {
+    // The desktop path, pinned: no suspension, so start() is immediately
+    // audible and resume_from_gesture() is a harmless no-op.
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    CHECK_FALSE(device.needs_user_gesture());
+    CHECK_FALSE(device.is_suspended());
+
+    const f32 block[2] = {0.25f, 0.25f};
+    CHECK(device.submit(block, 2) == 2);
+    CHECK(device.resume_from_gesture());
+    CHECK(device.submit(block, 2) == 2);
+    CHECK(device.frames_submitted() == 4);
+}
+
+TEST_CASE("AudioSystem resumes a suspended device on the first user gesture") {
+    // The end-to-end contract of `web-audio-context`: a started device stays
+    // silent while the context is suspended, and the first input gesture resumes
+    // it so the same frame's mix is audible.
+    audio::NullAudioDevice device;
+    device.set_starts_suspended(true);
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    Scene scene;
+    Node* node = scene.create_node("Tone");
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(800, 1.0f));
+    source->loop = true;
+    source->play_on_start = true;
+
+    InputState input;
+
+    // No gesture yet: the system mixes, but the suspended device accepts
+    // nothing, so the page is silent.
+    FrameContext quiet = step(0.001f);
+    quiet.input = &input;
+    system.update(quiet, scene);
+    CHECK(system.mixed_frames() == 8);
+    CHECK(device.frames_submitted() == 0);
+    CHECK(device.is_suspended());
+
+    // A key press is a gesture. The same frame's output reaches the device.
+    input.on_key(Key::Space, true);
+    FrameContext gesture = step(0.001f);
+    gesture.input = &input;
+    system.update(gesture, scene);
+    CHECK_FALSE(device.is_suspended());
+    CHECK(device.frames_submitted() == 8);
+
+    // Later frames need no further gesture: the device stays resumed.
+    input.begin_frame();
+    FrameContext later = step(0.001f);
+    later.input = &input;
+    system.update(later, scene);
+    CHECK(device.frames_submitted() == 16);
+}
+
+TEST_CASE("a headless frame with no input does not crash a suspended device") {
+    // A tool or test may run the schedule with no input at all. The resume check
+    // must tolerate a null input rather than dereference it.
+    audio::NullAudioDevice device;
+    device.set_starts_suspended(true);
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    Scene scene;
+    Node* node = scene.create_node("Tone");
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(800, 1.0f));
+    source->loop = true;
+    source->play_on_start = true;
+
+    FrameContext context = step(0.001f); // input left null
+    system.update(context, scene);
+    CHECK(system.mixed_frames() == 8);
+    CHECK(device.frames_submitted() == 0);
 }

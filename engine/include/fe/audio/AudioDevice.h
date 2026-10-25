@@ -53,6 +53,28 @@ public:
     [[nodiscard]] virtual Error start() = 0;
     virtual void stop() noexcept = 0;
 
+    // Whether the platform needs a user gesture before it will actually produce
+    // sound. A browser creates its audio context suspended -- autoplay policy --
+    // and only a real gesture (a click or a key press) may resume it, so on the
+    // web a started device is silent until the user interacts.
+    //
+    // False everywhere else: a desktop device plays as soon as it is started.
+    [[nodiscard]] virtual bool needs_user_gesture() const noexcept { return false; }
+
+    // Whether the device is silent purely because the platform is still waiting
+    // for that gesture, as opposed to being stopped or having no output. Only
+    // meaningful while is_playing() is true; a caller uses it to tell "the user
+    // has not clicked yet" apart from "audio is broken", and to know when to ask
+    // for the gesture.
+    [[nodiscard]] virtual bool is_suspended() const noexcept { return false; }
+
+    // Tells the device the user has interacted, so it may resume a suspended
+    // platform context. Idempotent, and a no-op on a device that does not need a
+    // gesture. The caller invokes this on the first gesture of any kind; the
+    // device decides what that means for its platform. Returns true when the
+    // device was (or became) able to play.
+    [[nodiscard]] virtual bool resume_from_gesture() { return true; }
+
     // Queues `frame_count` interleaved frames for playback. `frames` holds
     // `frame_count * format().channels` samples. Returns how many frames were
     // accepted; a backend under back-pressure may accept fewer than requested,
@@ -95,6 +117,22 @@ public:
     [[nodiscard]] bool is_open() const noexcept override { return open_; }
     [[nodiscard]] bool is_playing() const noexcept override { return playing_; }
 
+    // A test double for the browser's autoplay policy. With `suspended` set, the
+    // device models a web audio context that starts suspended: start() succeeds,
+    // is_playing() is true, but nothing plays until resume_from_gesture() is
+    // called. This is what lets a headless test drive the gesture path with no
+    // browser. Default false, so every existing test sees a device that plays on
+    // start, exactly as before.
+    void set_starts_suspended(bool suspended) noexcept { suspended_ = suspended; }
+
+    [[nodiscard]] bool needs_user_gesture() const noexcept override { return suspended_; }
+    [[nodiscard]] bool is_suspended() const noexcept override { return suspended_ && playing_; }
+    [[nodiscard]] bool resume_from_gesture() override {
+        const bool was_suspended = suspended_;
+        suspended_ = false;
+        return was_suspended || playing_;
+    }
+
     // Total frames accepted since open(). A test's machine-checkable proof that
     // the mixer produced output.
     [[nodiscard]] u64 frames_submitted() const noexcept { return frames_submitted_; }
@@ -113,6 +151,8 @@ private:
     AudioFormat format_{};
     bool open_ = false;
     bool playing_ = false;
+    // Models the browser autoplay policy; see set_starts_suspended().
+    bool suspended_ = false;
     u64 frames_submitted_ = 0;
     f32 peak_sample_ = 0.0f;
     std::vector<f32> last_block_;

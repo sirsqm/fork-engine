@@ -3,6 +3,7 @@
 #include "fe/audio/AudioSystem.h"
 
 #include "fe/audio/AudioClip.h"
+#include "fe/platform/InputState.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 
@@ -116,6 +117,17 @@ void AudioSystem::reset_statistics() noexcept {
 }
 
 void AudioSystem::update(const FrameContext& context, Scene& scene) {
+    // A browser creates its audio context suspended and only a user gesture may
+    // resume it, so a started device is silent until then. Resume on the first
+    // gesture of the frame, which is the earliest the platform permits. The call
+    // is idempotent and a no-op on a device that never needed a gesture, so this
+    // costs nothing on desktop.
+    if (device_ != nullptr && device_->is_suspended() && context.input != nullptr && context.input->any_pressed()) {
+        // The result says whether the device became able to play; nothing here
+        // needs it, and the next frame's submit() shows the effect anyway.
+        static_cast<void>(device_->resume_from_gesture());
+    }
+
     // Reconcile: keep an entry for each source still in the scene, adopting the
     // voice it had last frame; add an entry for a source seen for the first
     // time; drop an entry whose node left the scene. This is the same

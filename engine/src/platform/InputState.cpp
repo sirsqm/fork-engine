@@ -197,4 +197,27 @@ void InputState::release_all() noexcept {
     }
 }
 
+bool InputState::any_pressed() const noexcept {
+    // A key or button edge, or a contact that began this frame. Only the edge
+    // flags are consulted, so holding a key does not keep reporting a gesture:
+    // the browser only honours the first real interaction anyway, and a caller
+    // that acts on this every frame would otherwise do the work repeatedly.
+    for (bool pressed : keys_pressed_) {
+        if (pressed) {
+            return true;
+        }
+    }
+    for (bool pressed : buttons_pressed_) {
+        if (pressed) {
+            return true;
+        }
+    }
+    for (const TouchPoint& touch : touches_) {
+        if (touch.began) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace fe

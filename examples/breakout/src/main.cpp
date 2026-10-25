@@ -140,6 +140,15 @@ protected:
             request_exit();
         }
 
+        // A browser keeps the audio context suspended until a gesture, so the
+        // first frames are silent. Report the transition once in each direction,
+        // so a web run's log tells "waiting for the user" apart from "audible".
+        if (audio_device_ != nullptr && audio_device_->needs_user_gesture() != audio_gesture_reported_) {
+            audio_gesture_reported_ = audio_device_->needs_user_gesture();
+            FE_LOG_INFO(audio_gesture_reported_ ? "breakout: audio suspended until the first user gesture"
+                                                : "breakout: audio resumed by a user gesture");
+        }
+
         // Restart: whoever owns the scene rebuilds it. The systems look their
         // nodes up by name each frame, so only the state and the scene change.
         if (state_.consume_restart()) {
@@ -233,6 +242,10 @@ private:
     // it. Neither is touched after the loop ends, so the device being destroyed
     // first is safe. audio_system_ is a borrowed pointer used from on_stop().
     std::unique_ptr<fe::audio::AudioDevice> audio_device_;
+    // Whether the last reported gesture state was "waiting for the user". Starts
+    // false so a device that never needs a gesture logs nothing, and the first
+    // suspended frame logs once.
+    bool audio_gesture_reported_ = false;
     fe::audio::AudioSystem* audio_system_ = nullptr;
 };
 

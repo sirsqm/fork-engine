@@ -13,6 +13,11 @@
 // also linking the library.
 #include <miniaudio.h>
 
+#if defined(FE_PLATFORM_WEB)
+// EM_ASM, used below to resume the browser's audio context from the page.
+#include <emscripten.h>
+#endif
+
 namespace fe::audio {
 namespace {
 
@@ -36,6 +41,42 @@ void audio_callback(ma_device* device, void* output, const void* input, ma_uint3
     }
     self->on_audio(static_cast<f32*>(output), frame_count);
 }
+
+// miniaudio's device-notification entry point. Only `unlocked` matters here: the
+// web backend raises it once the browser has actually resumed the audio context,
+// which is the authoritative end of the suspended period. The notification
+// carries the device, so the engine object comes from its user-data pointer, the
+// same way the audio callback finds it.
+void audio_notification(const ma_device_notification* notification) {
+    if (notification == nullptr || notification->pDevice == nullptr) {
+        return;
+    }
+    auto* self = static_cast<MiniAudioDevice*>(notification->pDevice->pUserData);
+    if (self == nullptr) {
+        return;
+    }
+    if (notification->type == ma_device_notification_type_unlocked) {
+        self->on_platform_unlocked();
+    }
+}
+
+// Resumes the browser's audio context from the page. The context is created
+// suspended (autoplay policy) and only a gesture may resume it; miniaudio keeps
+// its WebAudio objects in a JS-side table keyed by the device index. The body
+// avoids `===` on purpose: clang-format parses an EM_ASM body as C++ and would
+// rewrite it into a syntax error (see AGENTS.md).
+#if defined(FE_PLATFORM_WEB)
+void resume_web_audio_context(int device_index) {
+    EM_ASM(
+        {
+            var device = window.miniaudio.get_device_by_index($0);
+            if (device != null && device.webaudio != null) {
+                device.webaudio.resume();
+            }
+        },
+        device_index);
+}
+#endif
 
 } // namespace
 
@@ -122,6 +163,10 @@ Result<AudioFormat> MiniAudioDevice::open(u32 sample_rate, u32 channels) {
     config.periodSizeInFrames = kPeriodFrames;
     config.dataCallback = audio_callback;
     config.pUserData = this;
+    // The web backend creates its audio context suspended and reports the
+    // resume through this callback; on desktop it never fires and the handler is
+    // never reached.
+    config.notificationCallback = audio_notification;
     // Silence the output before the first submit rather than playing whatever
     // the buffer happened to contain.
     config.noPreSilencedOutputBuffer = MA_FALSE;
@@ -137,6 +182,14 @@ Result<AudioFormat> MiniAudioDevice::open(u32 sample_rate, u32 channels) {
     format_ = AudioFormat{device_->sampleRate, device_->playback.channels};
     ring_ = std::make_unique<FrameRingBuffer>(kRingCapacityFrames, format_.channels);
     open_ = true;
+
+    // On the web the context is created suspended, so a started device is silent
+    // until a gesture. Detecting it here -- rather than assuming it from the
+    // platform -- means a page that has already been interacted with starts
+    // audible, and the flag is cleared by the resume notification.
+#if defined(FE_PLATFORM_WEB)
+    awaiting_gesture_.store(true, std::memory_order_release);
+#endif
     return format_;
 }
 
@@ -147,6 +200,10 @@ Error MiniAudioDevice::start() {
     if (ma_device_start(device_.get()) != MA_SUCCESS) {
         return Error("miniaudio: failed to start playback");
     }
+    // `playing_` means "the engine has started the stream", not "sound is
+    // audible". On the web the context may still be suspended; is_suspended()
+    // reports that, and the two together are what a caller needs to tell a
+    // gesture-blocked page from a broken device.
     playing_.store(true, std::memory_order_release);
     return Error::none();
 }
@@ -154,8 +211,42 @@ Error MiniAudioDevice::start() {
 void MiniAudioDevice::stop() noexcept {
     if (device_ != nullptr && open_) {
         playing_.store(false, std::memory_order_release);
+        awaiting_gesture_.store(false, std::memory_order_release);
         ma_device_stop(device_.get());
     }
+}
+
+bool MiniAudioDevice::needs_user_gesture() const noexcept {
+    return awaiting_gesture_.load(std::memory_order_acquire);
+}
+
+bool MiniAudioDevice::is_suspended() const noexcept {
+    return awaiting_gesture_.load(std::memory_order_acquire) && playing_.load(std::memory_order_acquire);
+}
+
+bool MiniAudioDevice::resume_from_gesture() {
+    if (!awaiting_gesture_.load(std::memory_order_acquire)) {
+        return true; // already audible, or nothing to resume
+    }
+    if (!open_ || device_ == nullptr) {
+        return false;
+    }
+#if defined(FE_PLATFORM_WEB)
+    resume_web_audio_context(device_->webaudio.deviceIndex);
+#endif
+    // The context's resume() is asynchronous, so clear the flag now for the
+    // caller's benefit and let the unlocked notification confirm it. Clearing it
+    // here is what makes a second gesture a no-op rather than a second resume.
+    awaiting_gesture_.store(false, std::memory_order_release);
+    return true;
+}
+
+void MiniAudioDevice::on_platform_unlocked() noexcept {
+    // The browser has resumed the context: sound is now audible. This is the
+    // authoritative signal, so it clears the flag even if resume_from_gesture()
+    // was never called (the page may have been interacted with before the device
+    // was opened).
+    awaiting_gesture_.store(false, std::memory_order_release);
 }
 
 u32 MiniAudioDevice::submit(const f32* frames, u32 frame_count) {

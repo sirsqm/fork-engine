@@ -86,6 +86,7 @@ rather than editing it.
 | [0078](0078-engine-shipped-gameplay-behaviours.md) | Engine-shipped gameplay behaviours | Accepted |
 | [0079](0079-fixed-simulation-step.md) | A fixed simulation step | Accepted |
 | [0080](0080-required-and-candidate-references.md) | Required references and candidate references | Accepted |
+| [0081](0081-web-audio-autoplay-gesture.md) | The browser autoplay policy and the user gesture | Accepted |
 
 ## Format
 

@@ -38,7 +38,10 @@ void NullAudioDevice::stop() noexcept {
 }
 
 u32 NullAudioDevice::submit(const f32* frames, u32 frame_count) {
-    if (!open_ || !playing_ || frames == nullptr || frame_count == 0) {
+    // A suspended context accepts nothing: the browser's audio thread is not
+    // pulling, so the frames would be lost. Dropping them here is what makes a
+    // test observe the same silence a real page produces before the gesture.
+    if (!open_ || !playing_ || suspended_ || frames == nullptr || frame_count == 0) {
         return 0;
     }
 

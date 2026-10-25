@@ -64,6 +64,13 @@ public:
     [[nodiscard]] Error start() override;
     void stop() noexcept override;
 
+    // The browser will not let a page make sound until the user interacts. On
+    // the web this device reports that state so the caller can prompt for the
+    // gesture; on desktop the flag is never set and all three are inert.
+    [[nodiscard]] bool needs_user_gesture() const noexcept override;
+    [[nodiscard]] bool is_suspended() const noexcept override;
+    [[nodiscard]] bool resume_from_gesture() override;
+
     [[nodiscard]] u32 submit(const f32* frames, u32 frame_count) override;
 
     [[nodiscard]] AudioFormat format() const noexcept override { return format_; }
@@ -73,12 +80,21 @@ public:
     // The audio-thread entry point. public so the free callback can reach it.
     void on_audio(f32* output, u32 frame_count) noexcept;
 
+    // Called from miniaudio's notification callback once the platform has
+    // actually resumed the audio context. public for the same reason as
+    // on_audio(): the free callback is not a member.
+    void on_platform_unlocked() noexcept;
+
 private:
     std::unique_ptr<ma_device> device_;
     std::unique_ptr<FrameRingBuffer> ring_;
     AudioFormat format_{};
     bool open_ = false;
     std::atomic<bool> playing_{false};
+    // True while the platform is waiting for a gesture before it will play. Set
+    // when the web context opens suspended, cleared by the resume path or by the
+    // unlocked notification. Never set on desktop.
+    std::atomic<bool> awaiting_gesture_{false};
 };
 
 } // namespace fe::audio

@@ -186,3 +186,29 @@ TEST_CASE("touch enumeration is empty with no contacts") {
     CHECK(input.touch_count() == 0);
     CHECK(input.touch_id_at(0) == InputState::kInvalidTouchId);
 }
+
+TEST_CASE("any_pressed reports a gesture for exactly one frame") {
+    // The platform gesture signal: a browser only lets a page make sound after
+    // one, and a caller acts on it once. Edge-based, so holding the key does not
+    // keep reporting a gesture.
+    InputState input;
+    CHECK_FALSE(input.any_pressed());
+
+    input.on_key(Key::Space, true);
+    CHECK(input.any_pressed());
+
+    // Next frame: the key is still down but the press edge is gone.
+    input.begin_frame();
+    CHECK_FALSE(input.any_pressed());
+    CHECK(input.is_key_down(Key::Space));
+
+    // A mouse button is a gesture too.
+    input.on_mouse_button(MouseButton::Left, true);
+    CHECK(input.any_pressed());
+
+    // So is a new touch contact.
+    input.begin_frame();
+    CHECK_FALSE(input.any_pressed());
+    input.on_touch(TouchPhase::Began, 0, 10.0f, 10.0f);
+    CHECK(input.any_pressed());
+}
