@@ -26,6 +26,16 @@ namespace fe::pack {
 // build. It is not a general HTTP client, and it does not follow redirects or
 // decode chunked transfer encoding - a static file server answers with
 // Content-Length and closes, which is the case a shipped build meets.
+//
+// On the web there is no socket to open: a browser page may only fetch through
+// the page's own origin policy, and raw sockets do not exist in the sandbox. The
+// web build therefore takes a second implementation of the same contract, built
+// on a synchronous XMLHttpRequest, which is the one browser mechanism that keeps
+// the call synchronous - the `ResourceSource` interface has no async form, and
+// preloading the pack at mount time (which `HttpFetchSource` does) is what makes
+// a synchronous fetch acceptable. The body is transferred as raw bytes, so a
+// binary pack survives the trip unchanged. The signature is identical on both
+// platforms, so nothing above this function branches.
 [[nodiscard]] Result<std::string> http_get(std::string_view url);
 
 // A ResourceSource that reads its pack over HTTP: the browser-shaped runtime

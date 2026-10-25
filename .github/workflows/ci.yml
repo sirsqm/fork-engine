@@ -283,6 +283,19 @@ jobs:
         run: |
           source "$HOME/emsdk/emsdk_env.sh"
           tests/web/run_web_smoke.sh
+      # The smoke test proves the window backend, not the game. This exports a
+      # real 2D project to a web build and runs it in a headless browser, so a
+      # regression anywhere on the shipping path -- the export template, the pack
+      # fetch, the ES shader dialect, the renderer -- fails the job rather than
+      # being noticed several queue items later.
+      - name: Run an exported 2D game in a headless browser
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh"
+          # No desktop build exists in this job, so the script exports with the
+          # wasm fork_export under node. That is the fallback it is written for.
+          tests/web/run_web_game.sh
 
   # ---------------------------------------------------------------------------
   # Sanitizers.

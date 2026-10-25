@@ -126,8 +126,34 @@ TEST_CASE("an ES source with no version directive still gets one") {
     CHECK(count_occurrences(out, "precision highp float;") == 1);
 }
 
+TEST_CASE("a leading blank line does not push the version directive off line one") {
+    // The engine's own shaders are raw string literals that begin with a newline,
+    // and GLSL ES rejects a version directive that is not on the first line. This
+    // is the shape that reaches the WebGL2 compiler in a shipped web build, so it
+    // is checked directly rather than only through the compiler.
+    constexpr std::string_view source = "\n\n#version 330 core\n\nvoid main() {}\n";
+
+    const std::string vertex = translate_shader_source(ShaderDialect::Es, ShaderStage::Vertex, source);
+    CHECK(vertex.starts_with("#version 300 es\n"));
+    CHECK(count_occurrences(vertex, "#version") == 1);
+
+    const std::string fragment = translate_shader_source(ShaderDialect::Es, ShaderStage::Fragment, source);
+    CHECK(fragment.starts_with("#version 300 es\n"));
+    CHECK(fragment.find("precision highp float;") == std::string("#version 300 es\n").size());
+    CHECK(count_occurrences(fragment, "#version") == 1);
+    CHECK(count_occurrences(fragment, "precision highp float;") == 1);
+}
+
+TEST_CASE("a source with no version directive and leading whitespace still starts with one") {
+    constexpr std::string_view source = "\n   \nvoid main() {}\n";
+    const std::string out = translate_shader_source(ShaderDialect::Es, ShaderStage::Fragment, source);
+    CHECK(out.starts_with("#version 300 es\n"));
+    CHECK(count_occurrences(out, "#version") == 1);
+    CHECK(count_occurrences(out, "precision highp float;") == 1);
+}
+
 // ---------------------------------------------------------------------------
-// Wiring the seam into the device (docs/SHIPPING_QUEUE.md,
+// Wiring the seam into the device (docs/ROADMAP.md,
 // `shader-dialect-wiring`).
 //
 // The dialect is a property of the device, chosen once where the device is

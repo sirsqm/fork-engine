@@ -38,6 +38,11 @@ enum class ShaderStage : u8 {
 // `#version 300 es` and, for fragment shaders that do not already declare a
 // precision, injects `precision highp float;` and `precision highp int;`.
 //
+// GLSL ES requires the version directive on the first line, and rejects leading
+// whitespace above it, so the ES translation trims leading whitespace first. The
+// engine's own shaders are raw string literals that begin with a newline, so this
+// is what keeps their version directive on line one rather than two.
+//
 // The translation is idempotent: a source that already carries an ES version
 // directive and a precision declaration is returned unchanged, so translating
 // twice never emits a second version directive or a duplicate precision.

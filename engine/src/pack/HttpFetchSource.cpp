@@ -4,10 +4,18 @@
 
 #include <cstdlib>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
-#if defined(_WIN32)
+// The two implementations of http_get below share nothing but their contract:
+// a desktop build opens a socket, a web build asks the browser. The socket
+// headers are therefore desktop-only, and the web build includes Emscripten's
+// header for the synchronous-XHR macros instead. See the note on http_get in the
+// header for why the web path is synchronous.
+#if defined(FE_PLATFORM_WEB)
+#include <emscripten.h>
+#elif defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
@@ -19,6 +27,7 @@
 namespace fe::pack {
 namespace {
 
+#if !defined(FE_PLATFORM_WEB)
 #if !defined(_WIN32)
 using socket_t = int;
 constexpr socket_t kInvalidSocket = -1;
@@ -109,7 +118,90 @@ struct Url {
     return response;
 }
 
+#else // FE_PLATFORM_WEB
+
+// The browser's side of the same contract. A synchronous XMLHttpRequest is the
+// only way to fetch without giving up the synchronous `ResourceSource` shape, so
+// the pack is fetched once at mount time and every later read is answered from
+// memory (which is what HttpFetchSource does anyway).
+//
+// The body is read through `responseText` with the `x-user-defined` charset,
+// which maps every byte to the code point of the same value; the response is
+// then copied into a Uint8Array by masking to 8 bits. Reading `responseText`
+// with the default charset would run the bytes through UTF-8 decoding and
+// corrupt a binary pack, and `responseType = 'arraybuffer'` is not available on
+// a synchronous request in every browser, so this is the portable byte-exact
+// path.
+//
+// The EM_ASM body deliberately contains no strict-equality operator: Emscripten
+// splices it in verbatim and clang-format parses it as C++, where `a === b`
+// becomes `a == = b` and breaks the module at run time with no build error.
+[[nodiscard]] Result<std::string> web_http_get(std::string_view url) {
+    const std::string target(url);
+    const int length = MAIN_THREAD_EM_ASM_INT(
+        {
+            var url = UTF8ToString($0);
+            var xhr = new XMLHttpRequest();
+            try {
+                xhr.open('GET', url, false);
+                xhr.overrideMimeType('text/plain; charset=x-user-defined');
+                xhr.send(null);
+            } catch (error) {
+                Module.__feHttpStatus = 0;
+                return -1;
+            }
+            Module.__feHttpStatus = xhr.status;
+            if (xhr.status < 200 || xhr.status >= 300) {
+                return -2;
+            }
+            var text = xhr.responseText;
+            var bytes = new Uint8Array(text.length);
+            for (var i = 0; i < text.length; i++) {
+                bytes[i] = text.charCodeAt(i) & 0xff;
+            }
+            Module.__feHttpBytes = bytes;
+            return bytes.length;
+        },
+        target.c_str());
+
+    const int status = MAIN_THREAD_EM_ASM_INT({ return Module.__feHttpStatus | 0; });
+    if (length == -1) {
+        // The request never completed: a blocked origin, a bad URL, or a network
+        // error. The browser's own message is not carried across (it would need a
+        // heap allocation whose ownership the caller cannot free through this
+        // API), so the URL is named and the page's console has the rest.
+        return Error("http: cannot fetch '" + target + "' (request failed or was blocked)");
+    }
+    if (length < 0) {
+        return Error("http: '" + target + "' returned status " + std::to_string(status));
+    }
+
+    std::string body(static_cast<std::size_t>(length), '\0');
+    if (length > 0) {
+        MAIN_THREAD_EM_ASM(
+            {
+                var bytes = Module.__feHttpBytes;
+                var pointer = $0;
+                HEAPU8.set(bytes, pointer);
+            },
+            body.data());
+    }
+    return body;
+}
+
+#endif // FE_PLATFORM_WEB
+
 } // namespace
+
+#if defined(FE_PLATFORM_WEB)
+
+Result<std::string> http_get(std::string_view url) {
+    // A browser resolves a relative URL against the page, so the export's
+    // manifest-relative pack path works without the shell computing an origin.
+    return web_http_get(url);
+}
+
+#else
 
 Result<std::string> http_get(std::string_view url) {
     auto parsed = parse_url(url);
@@ -191,6 +283,8 @@ Result<std::string> http_get(std::string_view url) {
     }
     return response.substr(header_end + 4);
 }
+
+#endif // FE_PLATFORM_WEB
 
 Result<std::shared_ptr<HttpFetchSource>> HttpFetchSource::open(std::string base_url, std::string_view pack_path) {
     if (!base_url.empty() && base_url.back() != '/') {

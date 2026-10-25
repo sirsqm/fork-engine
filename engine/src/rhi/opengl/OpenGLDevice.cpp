@@ -381,11 +381,20 @@ public:
                std::string(renderer != nullptr ? renderer : "unknown");
     }
 
-    // This backend creates a desktop OpenGL 3.3 core context (see
-    // create_opengl_device), so it compiles the desktop dialect. The choice is
-    // made here, once per device, and the translation is the identity, so the
-    // bytes reaching the driver are the ones the shader was written with.
-    [[nodiscard]] ShaderDialect shader_dialect() const noexcept override { return ShaderDialect::DesktopCore; }
+    // Which GLSL flavour this device's context accepts. The device sits behind
+    // two different contexts depending on the platform, and they do not speak the
+    // same shading language: desktop is an OpenGL 3.3 core context (GLSL 330),
+    // and the web is a WebGL2 context (GLSL ES 3.00). The renderers author one
+    // desktop source either way and the seam translates it, so this is the single
+    // place the choice is made. Getting it wrong is not subtle: the desktop
+    // directive is a hard compile error under WebGL2.
+    [[nodiscard]] ShaderDialect shader_dialect() const noexcept override {
+#if defined(FE_PLATFORM_WEB)
+        return ShaderDialect::Es;
+#else
+        return ShaderDialect::DesktopCore;
+#endif
+    }
 
     Result<ShaderRef> create_shader(const ShaderDesc& desc) override {
         // Translate at the seam: the caller supplied desktop sources and never

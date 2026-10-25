@@ -107,7 +107,11 @@ for attempt in $(seq 1 "${ATTEMPTS}"); do
   # Wait for the port to accept a connection before pointing the browser at it.
   for _ in $(seq 1 40); do
     if (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; then
-      exec 3>&- 2>/dev/null || true
+      # Close the probe descriptor in a subshell so the redirection cannot leak
+      # into this shell: `exec 3>&- 2>/dev/null` run directly would redirect this
+      # script's own stderr to /dev/null for the rest of the run, silently
+      # swallowing every later error message.
+      (exec 3>&-) 2>/dev/null || true
       break
     fi
     sleep 0.25

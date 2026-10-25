@@ -60,17 +60,28 @@ cmake --build build-web --parallel
   `EMSDK` is unset and the configure fails.
 - The web build defaults the editor, unit tests and benchmarks off; they are
   desktop-only. Do not try to build the test suite for wasm.
-- The engine library building for wasm is not proof a browser will run it. The
-  web window smoke test is the acceptance check and needs a headless browser:
+- The engine library building for wasm is not proof a browser will run it. Two
+  browser checks are the acceptance tests and each needs a headless browser:
 
 ```sh
 source /tmp/emsdk/emsdk_env.sh
 tests/web/run_web_smoke.sh      # compiles the backend to wasm, runs headless Chromium
+tests/web/run_web_game.sh       # exports a 2D project, runs it in headless Chromium
 ```
 
-- The smoke script needs `em++` on `PATH` and a Chromium/Chrome binary; it
-  honours `CHROME_BIN` and retries a slow browser start, so it is safe to run in
-  CI and in a run.
+- The smoke script proves the window backend can get a WebGL2 context; the game
+  script proves a whole exported game runs on it (export template, pack fetched
+  over HTTP, ES shaders, the 2D renderer). Run both when touching the web path.
+- The game script exports with the native `fork_export` when one exists and
+  otherwise with the wasm one under node, so it works in the web CI job, which
+  has no desktop build. The player reports what it drew into the page title
+  (`FE_PLAYER_RESULT canvas=… frames=… distinct=…`); `distinct` is a blankness
+  check — one colour means nothing rendered — so a broken renderer fails the
+  check with no golden image. `?frames=N` on the page bounds a run, which is how
+  the check observes a game that would otherwise run until its tab closes.
+- Both scripts need `em++` on `PATH` and a Chromium/Chrome binary; they honour
+  `CHROME_BIN` and retry a slow browser start, so they are safe to run in CI and
+  in a run.
 - `clang-format` must never be allowed to see an `EM_ASM` body containing `===`:
   it parses the body as C++, rewrites `a === b` to `a == = b`, and the result is
   a JavaScript syntax error that breaks the module at run time with no build

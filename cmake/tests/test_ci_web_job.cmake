@@ -2,7 +2,7 @@
 # mode.
 #
 # The web job is the only thing that stops the wasm build from rotting between
-# runs (docs/SHIPPING_QUEUE.md, `web-smoke-test-ci`), and nothing in the desktop
+# runs (docs/ROADMAP.md, shipping queue, `web-smoke-test-ci`), and nothing in the desktop
 # suite can observe it: a green desktop build says nothing about whether the job
 # still configures the web target, still builds the player, or still runs the
 # browser smoke test. A workflow is YAML, not code, so it is checked here the
@@ -68,6 +68,7 @@ set(_checks
     "asserts the player js exists|test -f build-web/bin/fork_player.js"
     "asserts the player wasm exists|test -f build-web/bin/fork_player.wasm"
     "runs the browser smoke test|tests/web/run_web_smoke.sh"
+    "runs the exported game in a browser|tests/web/run_web_game.sh"
 )
 
 foreach(_check IN LISTS _checks)
@@ -81,11 +82,11 @@ foreach(_check IN LISTS _checks)
   message(STATUS "  ${_label}: ok")
 endforeach()
 
-# The smoke test is the only step that proves the backend runs in a browser
-# rather than merely compiling, so it must not be allowed to disappear behind a
+# The browser checks are the only steps that prove the web path runs rather than
+# merely compiling, so they must not be allowed to disappear behind a
 # `continue-on-error` or an `if: false`.
 if(_web_job MATCHES "continue-on-error")
   message(FATAL_ERROR "web job sets continue-on-error; a web failure must fail the build")
 endif()
 
-message(STATUS "CI web job: builds the player for wasm and runs the smoke test")
+message(STATUS "CI web job: builds the player for wasm and runs the browser checks")

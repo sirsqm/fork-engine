@@ -61,6 +61,19 @@ constexpr std::string_view kEsVersion = "#version 300 es";
 }
 
 [[nodiscard]] std::string translate_to_es(ShaderStage stage, std::string_view source) {
+    // GLSL ES (as ANGLE enforces it for WebGL2) requires the `#version`
+    // directive on the *first* line: unlike desktop GLSL it does not accept a
+    // blank line or leading indentation before it. The engine's own shaders are
+    // raw string literals that begin with a newline, so a source that is left as
+    // written translates to a version directive on line two and fails to compile
+    // with a bare "must occur on the first line". Trim the leading whitespace
+    // here, once, so the rewritten directive lands on line one.
+    std::size_t first = source.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos) {
+        first = source.size();
+    }
+    source = source.substr(first);
+
     std::string out;
     out.reserve(source.size() + 64);
 
