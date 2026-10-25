@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 # --- Fork Engine -------------------------------------------------------------
 # A modular 2D/3D game engine. See docs/ARCHITECTURE.md for the design and
-# docs/ROADMAP.md for the milestone plan.
+# docs/MILESTONES.md for the milestone plan.
 # -----------------------------------------------------------------------------
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

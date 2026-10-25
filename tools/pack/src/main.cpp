@@ -3,7 +3,7 @@
 //
 // fork_pack - assemble a project into a pack.
 //
-// The first shipping step of M8 (docs/ROADMAP.md): a project directory goes in,
+// The first shipping step of M8 (docs/MILESTONES.md): a project directory goes in,
 // one pack file comes out, and the runtime mounts the pack with no knowledge
 // that its assets were ever loose files. See
 // docs/adr/0030-asset-pack-format.md.

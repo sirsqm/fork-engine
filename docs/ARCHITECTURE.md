@@ -1244,4 +1244,4 @@ Every milestone must build and pass its tests before the next one begins.
   server are in place; the WebSocket backend, optimistic local apply, and
   presence are planned in M10 (section 9).
 
-These are sequenced in [`docs/ROADMAP.md`](ROADMAP.md).
+These are sequenced in [`docs/MILESTONES.md`](MILESTONES.md).
