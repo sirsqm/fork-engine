@@ -13,6 +13,11 @@
 #include "fe/platform/InputActions.h"
 #include "fe/platform/InputState.h"
 
+// doctest stringifies a std::string_view through std::ostream, and MSVC's
+// <string_view> does not pull <ostream> in. Without this the CHECK on
+// action_name() below fails to compile on Windows only (the trap in AGENTS.md).
+#include <ostream>
+
 using namespace fe;
 
 namespace {
