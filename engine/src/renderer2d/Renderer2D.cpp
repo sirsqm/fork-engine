@@ -244,6 +244,21 @@ usize Renderer2D::cull(std::vector<render::SpriteInstance>& out, const Frustum* 
                               1.0f);
 }
 
+// The view-projection the UI pass draws with: a fixed pixel-space box with the
+// origin at the *top-left* and +Y down, which is the space UI layout produces
+// (ADR-0084). It deliberately ignores the scene's camera: a HUD pinned to the
+// screen must not move when the camera pans or zoom, and that is the entire point
+// of a separate pass.
+//
+// The `bottom`/`top` arguments are swapped relative to a world camera so that +Y
+// in the instance's position points down the screen. With the box (0, width) x
+// (height, 0), `Mat4::orthographic` maps y = 0 to the top of the clip space and
+// y = height to the bottom, which is exactly the convention `ui::Rect` uses.
+[[nodiscard]] static Mat4 ui_view_projection(u32 viewport_width, u32 viewport_height) {
+    return Mat4::orthographic(0.0f, static_cast<f32>(viewport_width), static_cast<f32>(viewport_height), 0.0f, -1.0f,
+                              1.0f);
+}
+
 Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
                                  JobSystem* jobs) {
     FE_CHECK(shader_ != nullptr);
@@ -306,34 +321,51 @@ Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 vi
     return draw(device, scene, viewport_width, viewport_height, instances.first(used));
 }
 
-Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
-                               std::span<render::SpriteInstance> instances) {
-    FE_CHECK(shader_ != nullptr);
-    FE_CHECK(vertex_buffer_ != nullptr);
-    FE_CHECK(index_buffer_ != nullptr);
-    FE_CHECK(viewport_width > 0 && viewport_height > 0);
-
-    // Sort into batches. The instance array is the sort unit; nothing here
-    // touches the scene.
-    std::sort(instances.begin(), instances.end(), draw_order_less);
+// Builds the instance stream and issues the draws for one pass. Shared by the
+// world pass and the UI pass so their batching, upload, and state setup cannot
+// drift; the only difference between the two is the matrix they draw with and how
+// the instances are ordered.
+//
+// `sort_by_texture` selects the ordering. The world pass sets it: sorting by
+// (layer, texture) groups equal textures into one draw call, and layer is the
+// primary key so an artist's intent always wins over batching. The UI pass clears
+// it: UI instances arrive in draw order from `ui::layout`, and re-sorting them
+// would move a child behind its parent. A stable sort by layer alone keeps the
+// insertion order within a layer, so UI batching is by contiguous texture runs in
+// draw order -- the same batching benefit, without the reordering.
+//
+// A null texture is drawn with the renderer's 1x1 white texture, so an untextured
+// instance (a UI fill, an untextured sprite) is a solid coloured quad rather than
+// a batch that binds no texture. This is what `white_texture_` exists for.
+Result<usize> Renderer2D::submit(rhi::Device& device, std::span<render::SpriteInstance> instances,
+                                 const Mat4& view_projection, bool sort_by_texture) {
+    if (sort_by_texture) {
+        std::sort(instances.begin(), instances.end(), draw_order_less);
+    } else {
+        std::stable_sort(instances.begin(), instances.end(),
+                         [](const render::SpriteInstance& a, const render::SpriteInstance& b) noexcept {
+                             return a.layer < b.layer;
+                         });
+    }
 
     instances_.clear();
     batches_.clear();
 
     rhi::Texture* current_texture = nullptr;
     for (const render::SpriteInstance& instance : instances) {
-        if (batches_.empty() || current_texture != instance.texture) {
-            batches_.push_back(Batch{instance.texture, static_cast<u32>(instances_.size()), 0});
-            current_texture = instance.texture;
+        rhi::Texture* texture = instance.texture != nullptr ? instance.texture : white_texture_.get();
+        if (batches_.empty() || current_texture != texture) {
+            batches_.push_back(Batch{texture, static_cast<u32>(instances_.size()), 0});
+            current_texture = texture;
         }
         append_instance(instance);
         batches_.back().instance_count += 1;
     }
 
     last_draw_calls_ = 0;
-    const usize sprite_count = instances.size();
+    const usize quad_count = instances.size();
     if (instances_.empty()) {
-        return sprite_count;
+        return quad_count;
     }
 
     ensure_capacity(device, static_cast<u32>(instances_.size()));
@@ -345,8 +377,6 @@ Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 view
 
     device.set_blend_mode(rhi::BlendMode::Alpha);
     device.set_depth_test(false);
-
-    const Mat4 view_projection = sprite_view_projection(scene, viewport_width, viewport_height);
 
     device.bind_shader(*shader_);
     shader_->set_mat4("u_view_projection", view_projection);
@@ -367,7 +397,59 @@ Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 view
         ++last_draw_calls_;
     }
 
-    return sprite_count;
+    return quad_count;
+}
+
+Result<usize> Renderer2D::draw(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                               std::span<render::SpriteInstance> instances) {
+    FE_CHECK(shader_ != nullptr);
+    FE_CHECK(vertex_buffer_ != nullptr);
+    FE_CHECK(index_buffer_ != nullptr);
+    FE_CHECK(viewport_width > 0 && viewport_height > 0);
+
+    return submit(device, instances, sprite_view_projection(scene, viewport_width, viewport_height),
+                  /*sort_by_texture=*/true);
+}
+
+Result<usize> Renderer2D::render_ui(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                    JobSystem* jobs) {
+    FE_CHECK(shader_ != nullptr);
+    FE_CHECK(vertex_buffer_ != nullptr);
+    FE_CHECK(index_buffer_ != nullptr);
+    FE_CHECK(viewport_width > 0 && viewport_height > 0);
+
+    std::vector<render::SpriteInstance> instances;
+    render::extract_ui(scene, viewport_width, viewport_height, instances, jobs);
+    // No culling: the projection is the viewport itself, so every UI quad is on
+    // screen by construction. A UI quad outside the viewport is a layout bug, and
+    // dropping it would hide that bug rather than show it.
+    return submit(device, instances, ui_view_projection(viewport_width, viewport_height), /*sort_by_texture=*/false);
+}
+
+Result<usize> Renderer2D::render_ui(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                    FrameArena& arena, JobSystem* jobs) {
+    FE_CHECK(shader_ != nullptr);
+    FE_CHECK(vertex_buffer_ != nullptr);
+    FE_CHECK(index_buffer_ != nullptr);
+    FE_CHECK(viewport_width > 0 && viewport_height > 0);
+
+    const usize bound = render::ui_instance_bound(scene);
+    if (bound == 0) {
+        return submit(device, {}, ui_view_projection(viewport_width, viewport_height), /*sort_by_texture=*/false);
+    }
+
+    auto* storage = static_cast<render::SpriteInstance*>(
+        arena.allocate(sizeof(render::SpriteInstance) * bound, alignof(render::SpriteInstance)));
+    if (storage == nullptr) {
+        // The arena cannot hold this frame's UI extraction. Fall back to the heap
+        // path: identical output, only the allocation differs (ADR-0051/0054).
+        return render_ui(device, scene, viewport_width, viewport_height, jobs);
+    }
+
+    std::span<render::SpriteInstance> instances(storage, bound);
+    const usize used = render::extract_ui_into(arena, scene, viewport_width, viewport_height, instances, 0, jobs);
+    return submit(device, instances.first(used), ui_view_projection(viewport_width, viewport_height),
+                  /*sort_by_texture=*/false);
 }
 
 } // namespace fe::renderer2d

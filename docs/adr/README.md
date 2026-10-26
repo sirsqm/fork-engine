@@ -91,6 +91,7 @@ rather than editing it.
 | [0083](0083-in-engine-text-rendering.md) | In-engine text rendering | Accepted |
 | [0084](0084-install-rules.md) | Install rules and an installed-tree smoke test | Accepted |
 | [0085](0085-editor-file-dialog-and-dirty-tracking.md) | The editor File menu, file dialog, and unsaved-changes tracking | Accepted |
+| [0086](0086-in-game-ui-layout-and-extraction.md) | In-game UI: screen-space layout through the 2D extraction seam | Accepted |
 
 ## Format
 

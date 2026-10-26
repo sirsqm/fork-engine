@@ -10,6 +10,7 @@
 #include "fe/scene/TextLabelTypes.h"
 #include "fe/scene/TilemapTypes.h"
 #include "fe/scene3d/Scene3DTypes.h"
+#include "fe/ui/UiTypesReflect.h"
 
 namespace fe::runtime {
 
@@ -17,6 +18,7 @@ void register_all_component_types() {
     reflect::register_builtin_types();
     reflect::register_tilemap_types();
     reflect::register_text_types();
+    reflect::register_ui_types();
     reflect::register_anim_types();
     reflect::register_physics_types();
     reflect::register_physics3d_types();

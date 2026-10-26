@@ -13,6 +13,8 @@
 #include "fe/scene/TextLabel.h"
 #include "fe/scene/Tilemap.h"
 #include "fe/scene3d/MeshRenderer3D.h"
+#include "fe/ui/UiElement.h"
+#include "fe/ui/UiLayout.h"
 
 #include <algorithm>
 #include <array>
@@ -647,6 +649,193 @@ usize extract_text_into(FrameArena& arena, const Scene& scene, std::span<SpriteI
         }
     });
     return written;
+}
+
+namespace {
+
+// One UI element's resolved quads, appended through `sink`. The sink is a
+// template parameter so the vector and arena destinations share this one
+// implementation: they differ only in where the instance goes, never in what it
+// is, which is what keeps the two walks from drifting.
+//
+// Draw order is fill, then texture, then text: the fill is the background, the
+// texture sits on it, and the glyphs are on top, which is the order an author
+// expects without any explicit layering.
+template <typename Sink>
+void append_ui_element(const ui::UiResolved& resolved, Sink&& sink) noexcept {
+    const ui::UiElement& element = *resolved.element;
+    const ui::UiCanvas& canvas = *resolved.canvas;
+    const ui::Rect& box = resolved.rect;
+
+    // The box's centre and size, in viewport pixels, as the world walks express
+    // them. The UI pass draws with a top-left-origin, +Y-down projection, so a
+    // world matrix here is a plain pixel translation and the instance's `size` is
+    // the box extent -- no rotation or scale, because a UI element is always
+    // axis-aligned.
+    const Vec2 center = box.center();
+
+    if (element.fill.w > 0.0f && !box.empty()) {
+        SpriteInstance instance;
+        instance.texture = nullptr; // Resolved by the renderer to the 1x1 white texture.
+        instance.ui = &element;
+        instance.world = Mat4::translation(Vec3{center.x, center.y, 0.0f});
+        instance.size = box.size;
+        instance.uv = Vec4{0.0f, 0.0f, 1.0f, 1.0f};
+        instance.color = element.fill;
+        instance.layer = resolved.layer;
+        sink(instance);
+    }
+
+    if (element.texture != nullptr && !box.empty()) {
+        const auto* texture = dynamic_cast<const Texture2D*>(element.texture.get());
+        if (texture != nullptr) {
+            SpriteInstance instance;
+            instance.texture = &texture->texture();
+            instance.ui = &element;
+            instance.world = Mat4::translation(Vec3{center.x, center.y, 0.0f});
+            instance.size = box.size;
+            instance.uv = element.texture_uv;
+            instance.color = element.texture_color;
+            instance.layer = resolved.layer;
+            sink(instance);
+        }
+    }
+
+    if (element.text.empty() || box.empty()) {
+        return;
+    }
+
+    const Resource* font_resource = element.font != nullptr ? element.font.get() : canvas.font.get();
+    const auto* font = dynamic_cast<const Font*>(font_resource);
+    if (font == nullptr || !font->has_atlas()) {
+        return;
+    }
+    const auto* atlas = dynamic_cast<const Texture2D*>(font->atlas().get());
+    if (atlas == nullptr) {
+        return;
+    }
+
+    const f32 size = element.text_size > 0.0f ? element.text_size : canvas.text_size;
+    const f32 line_width = font->measure(element.text) * size;
+    const f32 line_height = font->line_height() * size;
+
+    // Horizontal placement of the line inside the box. `Stretch` is meaningless
+    // for a line and reads as `Start`, which is what keeps the enum total without
+    // a separate text-alignment enum.
+    f32 pen_x = box.position.x;
+    if (element.text_align == ui::UiAlign::Center) {
+        pen_x = box.position.x + (box.size.x - line_width) * 0.5f;
+    } else if (element.text_align == ui::UiAlign::End) {
+        pen_x = box.position.x + (box.size.x - line_width);
+    }
+
+    // Vertical placement. The pen's Y is the line's top, and a glyph's bearing is
+    // measured up from the baseline, so the baseline sits one line-height below
+    // the top: placing it there puts the line's top at `top` and its baseline at
+    // `top + line_height`. The UI space is +Y down, so the bearing is subtracted
+    // rather than added -- the one place the two spaces differ, and the reason the
+    // UI text path cannot simply reuse the world one.
+    f32 pen_y = box.position.y;
+    if (element.text_vertical == ui::UiAlign::Center) {
+        pen_y = box.position.y + (box.size.y - line_height) * 0.5f;
+    } else if (element.text_vertical == ui::UiAlign::End) {
+        pen_y = box.position.y + (box.size.y - line_height);
+    }
+    const f32 baseline = pen_y + line_height;
+
+    const Vec4 color = element.text_color;
+    const i32 layer = resolved.layer;
+    for (const char raw : element.text) {
+        const u8 code = static_cast<u8>(raw);
+        const Font::Glyph* glyph = font->glyph(code);
+        if (glyph != nullptr && glyph->size.x > 0.0f && glyph->size.y > 0.0f && glyph->uv.z > glyph->uv.x &&
+            glyph->uv.w > glyph->uv.y) {
+            // The glyph quad's centre: the pen, plus the bearing (up is -Y here),
+            // plus half the glyph. Same arithmetic as the world text walk, with the
+            // bearing's Y negated for the flipped axis.
+            const Vec2 half{glyph->size.x * 0.5f * size, glyph->size.y * 0.5f * size};
+            const f32 local_x = pen_x + glyph->bearing.x * size + half.x;
+            const f32 local_y = baseline - glyph->bearing.y * size - half.y;
+
+            SpriteInstance instance;
+            instance.texture = &atlas->texture();
+            instance.ui = &element;
+            instance.world = Mat4::translation(Vec3{local_x, local_y, 0.0f});
+            instance.size = Vec2{glyph->size.x * size, glyph->size.y * size};
+            instance.uv = glyph->uv;
+            instance.color = color;
+            instance.layer = layer;
+            sink(instance);
+        }
+        // The pen advances whether or not the glyph drew, so a missing glyph is a
+        // gap in a line of the right length rather than a shifted one.
+        pen_x += font->advance(code) * size;
+    }
+}
+
+// Lays out the scene's UI for a viewport and appends every element's quads.
+// Shared by the vector and arena walks, which pass a sink that puts the instance
+// in the right place. `ui::layout` is the same call the input system makes, so
+// what draws and what responds cannot diverge.
+template <typename Sink>
+void walk_ui(const Scene& scene, u32 viewport_width, u32 viewport_height, ui::UiLayoutResult& scratch, Sink&& sink) {
+    ui::layout(scene, viewport_width, viewport_height, scratch);
+    for (const ui::UiResolved& resolved : scratch) {
+        if (resolved.element != nullptr && resolved.canvas != nullptr) {
+            append_ui_element(resolved, sink);
+        }
+    }
+}
+
+} // namespace
+
+void extract_ui(const Scene& scene, u32 viewport_width, u32 viewport_height, std::vector<SpriteInstance>& out,
+                JobSystem* jobs) {
+    // Serial for the same reason the text walk is: a UI is a few dozen elements
+    // and the fan-out would cost more than it saves.
+    (void)jobs;
+    ui::UiLayoutResult scratch;
+    walk_ui(scene, viewport_width, viewport_height, scratch,
+            [&out](const SpriteInstance& instance) { out.push_back(instance); });
+}
+
+usize extract_ui_into(FrameArena& arena, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                      std::span<SpriteInstance> out, usize offset, JobSystem* jobs) {
+    // The instances go straight into their final slots in `out`, so this walk
+    // asks the arena for nothing and the destination is the caller's. Layout still
+    // builds its result array, and that array is a heap vector: it is a few dozen
+    // resolved elements once per frame, which is not worth threading an arena
+    // allocator through layout for. The trade is stated rather than hidden -- the
+    // arena saves the per-instance traffic, not the layout scratch.
+    (void)arena;
+    (void)jobs;
+    usize written = offset;
+    auto sink = [&out, &written](const SpriteInstance& instance) {
+        if (written < out.size()) {
+            out[written] = instance;
+            ++written;
+        }
+    };
+
+    ui::UiLayoutResult scratch;
+    walk_ui(scene, viewport_width, viewport_height, scratch, sink);
+    return written;
+}
+
+usize ui_instance_bound(const Scene& scene) {
+    // A fill, a texture, and one glyph per byte of text, per element. Counting
+    // bytes rather than glyphs is what keeps the bound from being short when a
+    // font is missing; a byte with no glyph draws nothing, so over-counting is
+    // safe.
+    usize bound = 0;
+    scene.for_each_node([&](Node& node) {
+        const auto* element = node.get_component<ui::UiElement>();
+        if (element != nullptr) {
+            bound += 2; // The fill and the texture.
+            bound += element->text.size();
+        }
+    });
+    return bound;
 }
 
 usize cull_sprites(std::vector<SpriteInstance>& instances, const Frustum* frustum, JobSystem* jobs) {

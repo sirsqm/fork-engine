@@ -10,8 +10,8 @@
 #include "fe/platform/InputState.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
-#include "fe/scene/TextLabel.h"
 #include "fe/systems/FrameContext.h"
+#include "fe/ui/UiElement.h"
 
 #include <algorithm>
 #include <cmath>
@@ -269,23 +269,24 @@ void HudSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
     }
 
     if (fe::Node* node = scene.find_node_by_name(names::kScoreLabel); node != nullptr) {
-        if (auto* label = node->get_component<fe::TextLabel>(); label != nullptr) {
-            label->text = "SCORE " + std::to_string(state_->score());
+        if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
+            element->text = "SCORE " + std::to_string(state_->score());
         }
     }
 
     if (fe::Node* node = scene.find_node_by_name(names::kLivesLabel); node != nullptr) {
-        if (auto* label = node->get_component<fe::TextLabel>(); label != nullptr) {
+        if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
             // The result replaces the lives once the game ends, so the end state
-            // is legible in the browser without reading the console. It is
-            // centred over the field so it reads as a message, not a counter.
+            // is legible in the browser without reading the console. It is moved
+            // to the middle of the *screen* -- not the field -- so it reads as a
+            // message over the whole window, which is what a UI canvas is for.
             if (state_->is_over()) {
-                label->text = state_->won() ? "YOU WIN" : "GAME OVER";
-                label->align = fe::TextLabel::Align::Center;
-                node->transform().position.x = 0.0f;
-                node->transform().position.y = 0.0f;
+                element->text = state_->won() ? "YOU WIN" : "GAME OVER";
+                element->anchor = fe::ui::UiAnchor::MiddleCenter;
+                element->offset = fe::Vec2{};
+                element->text_align = fe::ui::UiAlign::Center;
             } else {
-                label->text = "LIVES " + std::to_string(state_->lives());
+                element->text = "LIVES " + std::to_string(state_->lives());
             }
         }
     }

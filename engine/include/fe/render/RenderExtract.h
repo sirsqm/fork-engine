@@ -24,6 +24,10 @@ namespace rhi {
 class Texture;
 } // namespace rhi
 
+namespace ui {
+class UiElement;
+} // namespace ui
+
 namespace render {
 
 // The extraction seam (ADR-0017, ADR-0052).
@@ -74,6 +78,11 @@ struct SpriteInstance {
     // tile. At most one of `sprite`, `tilemap`, and `label` is non-null; like
     // `tilemap` it is provenance the draw step does not read.
     const TextLabel* label = nullptr;
+    // The UI element, when this instance is a screen-space UI quad (a fill, a UI
+    // texture, or a UI glyph) rather than world content. Null for world content.
+    // Provenance for tests and debugging, like the fields above; it is also how a
+    // test tells a UI glyph from a world glyph when both are in one array.
+    const ui::UiElement* ui = nullptr;
     // The owning node's world matrix, already composed with the tile's own cell
     // offset for a tilemap instance.
     Mat4 world{};
@@ -234,6 +243,42 @@ usize extract_text_into(FrameArena& arena, const Scene& scene, std::span<SpriteI
 // what keeps the arena from being sized for a short string and then handed a long
 // one.
 [[nodiscard]] usize sprite_instance_bound(const Scene& scene);
+
+// --- UI (ADR-0084) ---------------------------------------------------------
+//
+// UI is screen-space, so it cannot share the world pass's projection: a HUD must
+// not move when the camera pans. It is therefore extracted into the same
+// `SpriteInstance` shape -- a UI fill, a UI texture, and a glyph are all textured
+// quads -- but positioned in *viewport pixels* (origin top-left, +Y down) and
+// drawn by a second pass with a pixel-space projection. Sharing the instance
+// shape is what makes a UI quad cost no new shader, no new pipeline state, and no
+// new batching path; the two passes differ only in the matrix they draw with.
+//
+// These do *not* clear `out` and append, so a caller that wants UI over the world
+// draws the world array first and this second. The instances are written in draw
+// order already (a parent before its children, siblings in tree order), so a
+// caller must not re-sort them across the pass boundary.
+//
+// Layout is delegated to `ui::layout`, the same function the input system calls
+// to hit test. One layout implementation, called from two places, is what
+// guarantees a button draws where it responds.
+//
+// `jobs` is accepted for symmetry with the other walks. Layout is a scene walk
+// and a UI is a few dozen elements, so the fan-out would cost more than it saves;
+// the walk is serial.
+void extract_ui(const Scene& scene, u32 viewport_width, u32 viewport_height, std::vector<SpriteInstance>& out,
+                JobSystem* jobs = nullptr);
+
+// The arena-destination UI walk, appending from `offset` and returning the new
+// end index, for the same reason the other arena walks append.
+usize extract_ui_into(FrameArena& arena, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                      std::span<SpriteInstance> out, usize offset, JobSystem* jobs = nullptr);
+
+// An upper bound on the number of UI instances `scene` can produce for a
+// viewport: a fill, a texture, and one glyph per byte of text, per visible
+// element. Like `sprite_instance_bound` it counts bytes rather than glyphs so the
+// bound can never be short.
+[[nodiscard]] usize ui_instance_bound(const Scene& scene);
 
 // Collects every drawable mesh instance in `scene` into `out` (cleared first).
 // Each referenced mesh is also appended to `meshes_seen` (never cleared here),

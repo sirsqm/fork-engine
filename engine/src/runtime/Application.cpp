@@ -159,6 +159,11 @@ bool Application::step_frame() {
         frame.actions = &actions_;
         frame.arena = frame_arena_.get();
         frame.jobs = jobs_.get();
+        // The render target's size, so a screen-space UI lays out against the same
+        // viewport the renderer draws with (ADR-0084). Zero when the window has no
+        // surface, which a UI system reads as "nothing to lay out".
+        frame.viewport = Vec2{static_cast<f32>(engine_.window().framebuffer_width()),
+                              static_cast<f32>(engine_.window().framebuffer_height())};
         schedule_.update(frame, scene_);
     }
 
@@ -254,6 +259,24 @@ void Application::render_frame() {
         last_sprite_count_ = 0;
     } else {
         last_sprite_count_ = result.value();
+    }
+
+    // The UI pass draws over the world, in screen space and with its own
+    // projection, so a HUD does not move with the camera (ADR-0084). It is a
+    // separate pass rather than part of render() for exactly that reason: the two
+    // use different matrices. A scene with no canvas draws nothing here and pays
+    // only the extraction walk.
+    //
+    // Ordering: the world first, then the UI, then the subclass's on_render()
+    // hook, so a debug overlay the game draws itself lands on top of the UI.
+    Result<usize> ui_result =
+        frame_arena_ != nullptr
+            ? engine_.renderer_2d().render_ui(engine_.device(), scene_, width, height, *frame_arena_, jobs_.get())
+            : engine_.renderer_2d().render_ui(engine_.device(), scene_, width, height, jobs_.get());
+    if (!ui_result) {
+        FE_LOG_ERROR("ui render failed: %s", ui_result.error().message().c_str());
+    } else {
+        last_ui_quad_count_ = ui_result.value();
     }
 
     on_render(engine_.delta_time());

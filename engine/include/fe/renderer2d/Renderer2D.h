@@ -113,8 +113,10 @@ public:
     [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
                                        FrameArena& arena, JobSystem* jobs = nullptr);
 
-    // Number of draw calls issued by the most recent render(). Exposed for the
-    // example's on-screen statistics and for tests that assert batching.
+    // Number of draw calls issued by the most recent pass -- render() or
+    // render_ui(), whichever ran last. Exposed for the example's on-screen
+    // statistics and for tests that assert batching. The UI pass overwrites it, so
+    // a caller that wants both numbers reads this between the two calls.
     [[nodiscard]] u32 last_draw_calls() const noexcept { return last_draw_calls_; }
 
     // The number of sprites dropped by frustum culling in the most recent
@@ -146,6 +148,28 @@ public:
     // `std::vector` (which converts implicitly) or a slice of the frame arena.
     [[nodiscard]] Result<usize> draw(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
                                      std::span<render::SpriteInstance> instances);
+
+    // --- UI pass (ADR-0084) ------------------------------------------------
+    // Draws the scene's screen-space UI over whatever the world pass already drew,
+    // with a pixel-space projection of its own. This is the second of the two
+    // passes the 2D renderer runs, and it is a separate call rather than part of
+    // render() because the two use different matrices: a HUD must not move when the
+    // camera pans, so it cannot share the world pass's view-projection.
+    //
+    // The caller must have called render() first in the same frame: this draws on
+    // top of the current frame's contents and does not clear. It extracts through
+    // `render::extract_ui`, which lays the UI out with `ui::layout` -- the same
+    // call the input system makes -- so the pixels and the hit test cannot diverge.
+    //
+    // Returns the number of quads drawn (fills, UI textures, and glyphs). Zero is
+    // valid: a scene with no canvas draws nothing and costs nothing.
+    [[nodiscard]] Result<usize> render_ui(rhi::Device& device, const Scene& scene, u32 viewport_width,
+                                          u32 viewport_height, JobSystem* jobs = nullptr);
+
+    // The arena-backed UI pass, identical output to the overload above with the
+    // extraction destination sized from the frame arena.
+    [[nodiscard]] Result<usize> render_ui(rhi::Device& device, const Scene& scene, u32 viewport_width,
+                                          u32 viewport_height, FrameArena& arena, JobSystem* jobs = nullptr);
 
     [[nodiscard]] u32 vertex_capacity() const noexcept { return vertex_capacity_; }
     [[nodiscard]] u32 index_capacity() const noexcept { return index_capacity_; }
@@ -179,6 +203,13 @@ private:
 
     void ensure_capacity(rhi::Device& device, u32 instance_count);
     void append_instance(const render::SpriteInstance& instance);
+
+    // Builds the instance stream from `instances`, uploads it, and issues one
+    // indexed draw per texture batch with `view_projection`. Shared by the world
+    // pass and the UI pass, which differ only in the matrix and the ordering
+    // (`sort_by_texture`). Sets `last_draw_calls_`.
+    [[nodiscard]] Result<usize> submit(rhi::Device& device, std::span<render::SpriteInstance> instances,
+                                       const Mat4& view_projection, bool sort_by_texture);
 
     rhi::ShaderRef shader_;
     // The shared quad: four vertices and six indices, built once in initialize()

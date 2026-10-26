@@ -90,6 +90,9 @@ set(FE_ENGINE_SOURCES
     src/scene/TextLabelTypes.cpp
     src/scene/Tilemap.cpp
     src/scene/TilemapTypes.cpp
+    src/ui/UiLayout.cpp
+    src/ui/UiInputSystem.cpp
+    src/ui/UiTypesReflect.cpp
     src/reflect/Property.cpp
     src/reflect/Registry.cpp
     src/reflect/ComponentTypes.cpp

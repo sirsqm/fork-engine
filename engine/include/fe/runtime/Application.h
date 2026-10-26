@@ -195,6 +195,11 @@ protected:
     // Number of sprites drawn in the most recent frame, for statistics.
     [[nodiscard]] usize last_sprite_count() const noexcept { return last_sprite_count_; }
 
+    // Number of UI quads (fills, UI textures, and glyphs) drawn in the most recent
+    // frame. Zero when the scene has no UI canvas, which is the common case for a
+    // game that draws its HUD with world-space labels.
+    [[nodiscard]] usize last_ui_quad_count() const noexcept { return last_ui_quad_count_; }
+
 private:
     void render_frame();
 
@@ -229,6 +234,7 @@ private:
     u32 frames_stepped_ = 0;
     u32 headless_frames_ = 0;
     usize last_sprite_count_ = 0;
+    usize last_ui_quad_count_ = 0;
     // The gameplay action map, re-evaluated each frame from the input snapshot.
     // Owned here rather than by the window so a host that drives frames itself
     // (a browser page, a test) gets the same action state the desktop loop does.

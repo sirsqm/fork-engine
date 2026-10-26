@@ -18,10 +18,10 @@
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
-#include "fe/scene/TextLabel.h"
 #include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/FrameContext.h"
 #include "fe/systems/SceneSchedule.h"
+#include "fe/ui/UiElement.h"
 
 #include <algorithm>
 #include <cmath>
@@ -236,14 +236,18 @@ TEST_CASE("the game systems are installed in order") {
 
     auto* physics = breakout::install_breakout_systems(schedule, state, /*autoplay=*/false);
     CHECK(physics != nullptr);
-    REQUIRE(schedule.system_count() == 6);
-    CHECK(std::string(schedule.system_at(0)->name()) == "PaddleControlSystem");
-    CHECK(std::string(schedule.system_at(1)->name()) == "BallLaunchSystem");
-    CHECK(std::string(schedule.system_at(2)->name()) == "Physics2DSystem");
-    CHECK(std::string(schedule.system_at(3)->name()) == "BallContactSystem");
-    CHECK(std::string(schedule.system_at(4)->name()) == "GameStateSystem");
+    REQUIRE(schedule.system_count() == 7);
+    // The UI input system runs first: it writes each element's interaction state
+    // from this frame's pointer before any gameplay system reads it, so a menu
+    // system added later sees the same frame's clicks.
+    CHECK(std::string(schedule.system_at(0)->name()) == "ui/input");
+    CHECK(std::string(schedule.system_at(1)->name()) == "PaddleControlSystem");
+    CHECK(std::string(schedule.system_at(2)->name()) == "BallLaunchSystem");
+    CHECK(std::string(schedule.system_at(3)->name()) == "Physics2DSystem");
+    CHECK(std::string(schedule.system_at(4)->name()) == "BallContactSystem");
+    CHECK(std::string(schedule.system_at(5)->name()) == "GameStateSystem");
     // The HUD runs last so it reads the state every system above it produced.
-    CHECK(std::string(schedule.system_at(5)->name()) == "HudSystem");
+    CHECK(std::string(schedule.system_at(6)->name()) == "HudSystem");
 }
 
 TEST_CASE("the field is gravity-free") {
@@ -292,7 +296,7 @@ TEST_CASE("autoplay launches the ball and it breaks bricks") {
 // The HUD: the score and lives the player reads on screen.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("the HUD writes the score and lives into the scene's text labels") {
+TEST_CASE("the HUD writes the score and lives into the scene's UI elements") {
     Scene scene;
     breakout::build_breakout_scene(scene);
     SceneSchedule schedule;
@@ -303,30 +307,39 @@ TEST_CASE("the HUD writes the score and lives into the scene's text labels") {
     Node* lives_node = scene.find_node_by_name(breakout::names::kLivesLabel);
     REQUIRE(score_node != nullptr);
     REQUIRE(lives_node != nullptr);
-    auto* score_label = score_node->get_component<TextLabel>();
-    auto* lives_label = lives_node->get_component<TextLabel>();
-    REQUIRE(score_label != nullptr);
-    REQUIRE(lives_label != nullptr);
+    auto* score_element = score_node->get_component<ui::UiElement>();
+    auto* lives_element = lives_node->get_component<ui::UiElement>();
+    REQUIRE(score_element != nullptr);
+    REQUIRE(lives_element != nullptr);
 
     // Authored empty: the game's state is what makes the text readable.
-    CHECK(score_label->text.empty());
-    CHECK(lives_label->text.empty());
+    CHECK(score_element->text.empty());
+    CHECK(lives_element->text.empty());
 
     schedule.update(step(1.0f / 60.0f), scene);
-    CHECK(score_label->text == "SCORE 0");
-    CHECK(lives_label->text == "LIVES 3");
+    CHECK(score_element->text == "SCORE 0");
+    CHECK(lives_element->text == "LIVES 3");
 
-    // Break a brick and miss a ball through the rules, then step: the labels
+    // Break a brick and miss a ball through the rules, then step: the elements
     // must follow the state, not a private copy of it.
     state.brick_hit();
     state.ball_missed();
     schedule.update(step(1.0f / 60.0f), scene);
-    CHECK(score_label->text == "SCORE 10");
-    CHECK(lives_label->text == "LIVES 2");
+    CHECK(score_element->text == "SCORE 10");
+    CHECK(lives_element->text == "LIVES 2");
 
-    // The HUD sits above the field's sprites so it is never drawn over.
-    CHECK(score_label->layer > 0);
-    CHECK(lives_label->layer > 0);
+    // The HUD is a screen-space canvas above the field's sprites, so it is never
+    // drawn over.
+    Node* canvas_node = scene.find_node_by_name(breakout::names::kHudCanvas);
+    REQUIRE(canvas_node != nullptr);
+    auto* canvas = canvas_node->get_component<ui::UiCanvas>();
+    REQUIRE(canvas != nullptr);
+    CHECK(canvas->layer > 0);
+
+    // The score is pinned to one corner and the lives to the other, which is the
+    // whole reason for anchoring: the two counters stay apart at any window size.
+    CHECK(score_element->anchor == ui::UiAnchor::TopLeft);
+    CHECK(lives_element->anchor == ui::UiAnchor::TopRight);
 }
 
 TEST_CASE("the HUD replaces the lives with the result once the game ends") {
@@ -338,21 +351,21 @@ TEST_CASE("the HUD replaces the lives with the result once the game ends") {
 
     Node* lives_node = scene.find_node_by_name(breakout::names::kLivesLabel);
     REQUIRE(lives_node != nullptr);
-    auto* lives_label = lives_node->get_component<TextLabel>();
-    REQUIRE(lives_label != nullptr);
+    auto* lives_element = lives_node->get_component<ui::UiElement>();
+    REQUIRE(lives_element != nullptr);
 
     // Lose every life. The end-of-game message replaces the counter and is
-    // centred over the field so it reads as a message rather than a readout.
+    // centred on the *screen* -- not the field -- so it reads as a message over
+    // the whole window, which is what a UI canvas is for.
     for (int i = 0; i < breakout::config::kStartingLives; ++i) {
         state.ball_missed();
     }
     REQUIRE(state.is_over());
     schedule.update(step(1.0f / 60.0f), scene);
 
-    CHECK(lives_label->text == "GAME OVER");
-    CHECK(lives_label->align == TextLabel::Align::Center);
-    CHECK(lives_node->transform().position.x == doctest::Approx(0.0f));
-    CHECK(lives_node->transform().position.y == doctest::Approx(0.0f));
+    CHECK(lives_element->text == "GAME OVER");
+    CHECK(lives_element->anchor == ui::UiAnchor::MiddleCenter);
+    CHECK(lives_element->text_align == ui::UiAlign::Center);
 }
 
 TEST_CASE("a paddle hit off-centre aims the ball away from the paddle's centre") {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/core/Math.h"
 #include "fe/core/Types.h"
 
 namespace fe {
@@ -52,6 +53,18 @@ struct FrameContext {
     // allocates from it is valid for that frame only: a pointer into the arena
     // must not outlive the frame (ADR-0017, ADR-0051, ADR-0053).
     FrameArena* arena = nullptr;
+
+    // The render target's size in pixels, which is the space a pointer position
+    // is in and therefore the space screen-space UI is laid out against
+    // (ADR-0084). The runtime fills it from the window's framebuffer size before
+    // the systems run, so a UI system and the renderer that draws its output agree
+    // on the viewport without either reaching for the window.
+    //
+    // Zero when the frame has no surface -- a headless run, a tool, a test -- so a
+    // UI system must treat a zero extent as "nothing to lay out" rather than
+    // dividing by it. It is a size rather than a pointer because it is a value a
+    // system reads and never owns.
+    Vec2 viewport{};
 
     // The job system a system fans CPU work out to (ADR-0017, ADR-0068).
     // Nullable: a tool or a test that runs a schedule with no pool runs it with

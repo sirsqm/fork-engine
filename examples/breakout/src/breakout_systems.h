@@ -48,6 +48,7 @@ inline constexpr std::string_view kPaddle = "Paddle";
 inline constexpr std::string_view kBall = "Ball";
 inline constexpr std::string_view kBrick = "Brick";
 inline constexpr std::string_view kAudio = "BrickAudio";
+inline constexpr std::string_view kHudCanvas = "HudCanvas";
 inline constexpr std::string_view kScoreLabel = "ScoreLabel";
 inline constexpr std::string_view kLivesLabel = "LivesLabel";
 } // namespace names

@@ -12,8 +12,9 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
-#include "fe/scene/TextLabel.h"
 #include "fe/systems/SceneSchedule.h"
+#include "fe/ui/UiElement.h"
+#include "fe/ui/UiInputSystem.h"
 
 #include <string>
 #include <string_view>
@@ -46,19 +47,27 @@ void add_wall(fe::Scene& scene, const char* name, const fe::Vec3& position, cons
                0);
 }
 
-// A HUD text node. The label is positioned by its node transform, so the same
-// component serves the corner counters and the centred end-of-game message.
-void add_hud_label(fe::Scene& scene, std::string_view name, const fe::Vec3& position, fe::TextLabel::Align align,
-                   const std::shared_ptr<fe::Resource>& font) {
-    fe::Node* node = scene.create_node(std::string(name));
-    node->transform().position = position;
-    auto* label = node->add_component<fe::TextLabel>();
-    label->font = font;
-    label->size = cfg::kHudTextSize;
-    label->align = align;
-    // Above the field's sprites (which sit at layer 0) and below any future
-    // overlay, so the HUD reads over the walls and the ball.
-    label->layer = 10;
+// A HUD text node, laid out by the UI system in screen space (ADR-0084). The
+// node carries a `UiElement` under the canvas rather than a world-space label, so
+// the score stays pinned to the window's corner at any window size and the
+// end-of-game message can be centred on the screen rather than on the field.
+//
+// `anchor` names the canvas corner the element is placed against and `offset`
+// nudges it inward, which is why the score and the lives use opposite-signed x.
+fe::Node* add_hud_label(fe::Node* canvas, std::string_view name, fe::ui::UiAnchor anchor, const fe::Vec2& offset,
+                        fe::ui::UiAlign align) {
+    fe::Node* node = canvas->create_child<fe::Node>(std::string(name));
+    auto* element = node->add_component<fe::ui::UiElement>();
+    element->width = fe::ui::UiSize::content();
+    element->height = fe::ui::UiSize::content();
+    element->anchor = anchor;
+    element->offset = offset;
+    element->text_align = align;
+    // The end-of-game message is centred on the screen, so it uses the middle
+    // anchor and centre alignment; the counters use a corner and the matching
+    // edge alignment. One component serves both, which is the point.
+    element->text_vertical = fe::ui::UiAlign::Center;
+    return node;
 }
 
 } // namespace
@@ -154,14 +163,29 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
     source->loop = false;
     source->play_on_start = false;
 
-    // The HUD: the score pinned to the top-left and the lives to the top-right,
-    // both inside the walls. The text is filled in each frame by HudSystem, so
-    // the field is authored with empty labels and the game's state is what makes
-    // them readable. An empty label draws nothing, which is the right default.
-    add_hud_label(scene, names::kScoreLabel, fe::Vec3{cfg::kHudLeftX, cfg::kHudTopY, 0.0f}, fe::TextLabel::Align::Left,
-                  assets.font);
-    add_hud_label(scene, names::kLivesLabel, fe::Vec3{cfg::kHudRightX, cfg::kHudTopY, 0.0f},
-                  fe::TextLabel::Align::Right, assets.font);
+    // The HUD: a screen-space UI canvas (ADR-0084) whose score is pinned to the
+    // top-left and lives to the top-right. Unlike the world-space labels this
+    // replaces, the corners are the *window's* corners, so the counters stay put
+    // in a browser window of any shape. The text is filled in each frame by
+    // HudSystem, so the canvas is authored with empty elements and the game's
+    // state is what makes them readable. An empty element draws nothing.
+    fe::Node* hud = scene.create_node(std::string(names::kHudCanvas));
+    auto* canvas = hud->add_component<fe::ui::UiCanvas>();
+    // The design resolution the HUD is authored against. The camera fits the same
+    // box, so the counters line up with the field's corners at the reference size
+    // and stay inside the walls as the window grows.
+    canvas->design_width = cfg::kViewHalfWidth * 2.0f;
+    canvas->design_height = cfg::kViewHalfHeight * 2.0f;
+    canvas->font = assets.font;
+    canvas->text_size = cfg::kHudTextSize;
+    // Above the field's sprites (which sit at layer 0) and below any future
+    // overlay, so the HUD reads over the walls and the ball.
+    canvas->layer = 10;
+
+    add_hud_label(hud, names::kScoreLabel, fe::ui::UiAnchor::TopLeft, fe::Vec2{cfg::kHudMargin, cfg::kHudMargin},
+                  fe::ui::UiAlign::Start);
+    add_hud_label(hud, names::kLivesLabel, fe::ui::UiAnchor::TopRight, fe::Vec2{-cfg::kHudMargin, cfg::kHudMargin},
+                  fe::ui::UiAlign::End);
 }
 
 fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule, BreakoutState& state,
@@ -199,6 +223,13 @@ BreakoutActions declare_breakout_actions(fe::ActionMap& actions) {
 
 fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule, BreakoutState& state,
                                                          bool autoplay, const BreakoutActions& bindings) {
+    // The UI input system runs first, so the interaction state a menu reads this
+    // frame is already written before any gameplay system looks at it. The HUD
+    // itself is not interactive yet, but registering the system is what makes a
+    // pause menu or a title screen a matter of reading `UiInteraction::clicked`
+    // rather than new plumbing.
+    static_cast<void>(schedule.add_system<fe::ui::UiInputSystem>());
+
     auto* paddle_system = schedule.add_system<PaddleControlSystem>();
     paddle_system->set_autoplay(autoplay);
     paddle_system->set_move_actions(bindings.move_left, bindings.move_right);

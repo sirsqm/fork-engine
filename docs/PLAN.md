@@ -895,6 +895,22 @@ existing 2D extraction seam, and a generated bitmap-font atlas behind it
 per glyph with the expected advance, and the breakout slice draws its score and
 lives on screen in a headless browser run.
 
+### `in-game-ui`
+
+Text alone cannot make a menu. A `TextLabel` is a world-space object: its
+glyphs are placed by the node transform and drawn through the world camera, so
+a HUD built from labels drifts out of its corner when the window's aspect ratio
+changes, and nothing can be pointed at, so no button and no menu is possible.
+Add screen-space UI as scene components — a `UiCanvas` and a `UiElement` — laid
+out by one pure solver that drawing and hit testing both consume, drawn as quads
+through the existing 2D seam, and driven by one input system
+([ADR-0086](adr/0086-in-game-ui-layout-and-extraction.md)).
+
+**Done when** a test asserts that the rectangle the renderer draws a button in
+equals the rectangle the input system hit tests, and the breakout HUD is a
+screen-space canvas whose score and lives stay in the window's corners at any
+aspect ratio.
+
 ### `slice-title-and-menus`
 
 A title screen, a pause, and a game-over screen, so the slice has a shape.
