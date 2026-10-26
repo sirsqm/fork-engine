@@ -725,10 +725,11 @@ std::vector<std::string> GltfLoader::external_dependencies(std::string_view byte
         json_text.assign(bytes);
     }
 
-    json doc;
-    try {
-        doc = json::parse(json_text);
-    } catch (const json::parse_error&) {
+    // No-exceptions parse: this runs under Emscripten, where exceptions are
+    // disabled, and it is asked about every asset under the pack root - most of
+    // which are not JSON at all. A discarded value means "not a glTF".
+    const json doc = json::parse(json_text, nullptr, /*allow_exceptions=*/false);
+    if (doc.is_discarded()) {
         return {};
     }
 
