@@ -445,3 +445,48 @@ TEST_CASE("the frame primitives are inert outside an initialised run") {
     app.shutdown();
     CHECK(app.stopped);
 }
+
+// The web visibility pause (ADR-0082). A backgrounded tab stops receiving
+// animation frames while the wall clock keeps running, so the frame after the
+// tab returns would otherwise see the whole hidden span as one delta. The host
+// reports the visibilitychange event and the engine rebaselines the clock, so
+// the simulation advances by a bounded amount instead of the hidden time.
+TEST_CASE("a large time step after a visibility change advances the simulation by a bounded amount") {
+    Engine::Config config = null_config();
+    Engine engine;
+
+    // A host-supplied clock stands in for the browser's frame timestamps, so
+    // the test can move time by an exact amount instead of sleeping. It is set
+    // before initialize() so the clock's baseline is the host's, not a real
+    // steady-clock reading.
+    f64 now = 100.0;
+    engine.set_time_source([&now] { return now; });
+
+    REQUIRE(engine.initialize(config).ok());
+
+    // A normal frame measures the frame's own duration.
+    now += 1.0 / 60.0;
+    engine.tick();
+    CHECK(engine.delta_time() == doctest::Approx(1.0f / 60.0f));
+
+    // The page is hidden; no frames arrive while a long span passes.
+    engine.notify_page_visibility(false);
+    now += 30.0;
+
+    // The page returns. The first frame must not charge the 30 hidden seconds
+    // to the simulation: the step is bounded, and elapsed time does not jump by
+    // the hidden span.
+    const f64 elapsed_before = engine.elapsed_time();
+    engine.notify_page_visibility(true);
+    engine.tick();
+    CHECK(engine.delta_time() <= 0.25f);
+    CHECK(engine.elapsed_time() - elapsed_before <= 0.25);
+
+    // The next frame measures normally again: a rebaseline is a one-frame
+    // correction, not a permanent change to the clock.
+    now += 1.0 / 60.0;
+    engine.tick();
+    CHECK(engine.delta_time() == doctest::Approx(1.0f / 60.0f));
+
+    engine.shutdown();
+}

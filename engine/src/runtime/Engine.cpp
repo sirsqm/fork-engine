@@ -37,6 +37,29 @@ Engine::~Engine() {
     shutdown();
 }
 
+void Engine::set_time_source(std::function<f64()> source) {
+    if (source) {
+        time_source_ = std::move(source);
+    } else {
+        time_source_ = nullptr;
+    }
+}
+
+void Engine::notify_page_visibility(bool visible) noexcept {
+    if (visible) {
+        // A hidden span ended. The next tick must not charge the whole span to
+        // one frame: rebaseline the clock so it advances by the frame's own
+        // duration. page_hidden_ guards against a redundant visible report (a
+        // page that was never hidden) needlessly resetting the clock.
+        if (page_hidden_) {
+            rebaseline_clock_ = true;
+        }
+        page_hidden_ = false;
+    } else {
+        page_hidden_ = true;
+    }
+}
+
 std::unique_ptr<audio::AudioSystem> Engine::take_audio_system() noexcept {
     return std::move(audio_system_);
 }
@@ -139,7 +162,7 @@ Error Engine::initialize(const Config& config) {
     resources_->register_loader(std::make_unique<audio::WavLoader>());
     audio_system_ = std::make_unique<audio::AudioSystem>(nullptr);
 
-    last_tick_time_ = now_seconds();
+    last_tick_time_ = time_source_ ? time_source_() : now_seconds();
     initialized_ = true;
     FE_LOG_INFO("engine initialised");
     return Error::none();
@@ -172,9 +195,18 @@ void Engine::shutdown() {
 }
 
 void Engine::tick() {
-    const f64 now = now_seconds();
-    const f64 elapsed = now - last_tick_time_;
+    const f64 now = time_source_ ? time_source_() : now_seconds();
+    f64 elapsed = now - last_tick_time_;
     last_tick_time_ = now;
+
+    // First frame after a backgrounded page became visible again: the span
+    // since the last frame is the hidden time, not gameplay time, so it is
+    // discarded rather than charged to one frame. Rebaselining to zero bounds
+    // the step; every later frame measures normally.
+    if (rebaseline_clock_) {
+        rebaseline_clock_ = false;
+        elapsed = 0.0;
+    }
 
     // A fixed step makes the simulation advance by that much on every frame,
     // whatever the frame actually took. elapsed_time() then measures simulated

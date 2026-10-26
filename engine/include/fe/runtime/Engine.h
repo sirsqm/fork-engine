@@ -10,6 +10,7 @@
 #include "fe/resources/ResourceManager.h"
 #include "fe/rhi/Device.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -160,6 +161,24 @@ public:
     // Advances the clock. Called once per frame by Application.
     void tick();
 
+    // --- Page visibility (web) ---------------------------------------------
+    // A backgrounded browser tab stops delivering animation frames, so the wall
+    // clock keeps running while the simulation does not. The frame that follows
+    // the tab becoming visible again would otherwise see the whole hidden span
+    // as one delta. notify_page_visibility() lets the host report the browser's
+    // visibilitychange event so tick() can rebaseline the clock on the first
+    // frame after the tab returns, bounding the step to a single frame
+    // (ADR-0082).
+    //
+    // A desktop run never calls this, so its clock is unchanged.
+    void notify_page_visibility(bool visible) noexcept;
+
+    // The wall-clock source tick() measures the delta from, in seconds. Defaults
+    // to a steady clock. A host that already knows the frame time -- a browser's
+    // requestAnimationFrame timestamp, a replay, a test -- can supply it here so
+    // the delta comes from the host rather than from a second measurement.
+    void set_time_source(std::function<f64()> source);
+
 private:
     bool initialized_ = false;
     bool has_graphics_ = false;
@@ -175,6 +194,13 @@ private:
     f32 fixed_delta_time_ = 0.0f;
     f64 elapsed_time_ = 0.0;
     f64 last_tick_time_ = 0.0;
+    // The wall-clock source; a steady clock unless a host replaced it.
+    std::function<f64()> time_source_;
+    // True when the host reported the page hidden (a backgrounded tab). The
+    // next visible report rebaselines the clock so the hidden span is not one
+    // huge delta. A desktop run leaves both false and the clock is untouched.
+    bool page_hidden_ = false;
+    bool rebaseline_clock_ = false;
 };
 
 } // namespace fe
