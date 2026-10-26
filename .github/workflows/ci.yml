@@ -309,11 +309,25 @@ jobs:
       - name: Run an exported 2D and 3D game in a headless browser
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          # Publish the export the check just ran instead of throwing it away, so
+          # the next step can upload it as an artifact a reviewer can download and
+          # open (docs/PLAN.md, `web-build-in-ci-artifacts`). One directory per
+          # project, under the runner's temp so it never enters the checkout.
+          FE_WEB_GAME_KEEP_DIR: ${{ runner.temp }}/web-game-export
         run: |
           source "$HOME/emsdk/emsdk_env.sh"
           # No desktop build exists in this job, so the script exports with the
           # wasm fork_export under node. That is the fallback it is written for.
           tests/web/run_web_game.sh
+      # The export the check ran is the shipped artifact -- the same directory a
+      # release serves -- so it is uploaded rather than discarded. A reviewer
+      # downloads it and opens index.html; nothing here is a separate build that
+      # could drift from what the check proved runs.
+      - name: Upload the exported web game
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-game
+          path: ${{ runner.temp }}/web-game-export
 
   # ---------------------------------------------------------------------------
   # Sanitizers.

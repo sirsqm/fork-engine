@@ -69,6 +69,10 @@ set(_checks
     "asserts the player wasm exists|test -f build-web/bin/fork_player.wasm"
     "runs the browser smoke test|tests/web/run_web_smoke.sh"
     "runs the exported game in a browser|tests/web/run_web_game.sh"
+    "publishes the export for the upload|FE_WEB_GAME_KEEP_DIR:"
+    "uploads the exported game|actions/upload-artifact@v4"
+    "names the artifact|name: web-game"
+    "uploads the published export|path: \${{ runner.temp }}/web-game-export"
 )
 
 foreach(_check IN LISTS _checks)

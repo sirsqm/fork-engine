@@ -90,8 +90,20 @@ run_project() {
   local project="$1" label="$2" base_port="${3:-8733}" probe_node="${4:-}"
   [[ -d "${project}" ]] || fail "no project at ${project}"
 
+  # Where the export lands. A normal run exports to a temporary directory and
+  # removes it: the point of the check is the verdict, not the bytes. A run that
+  # sets FE_WEB_GAME_KEEP_DIR is publishing the export -- CI uploads it as an
+  # artifact (docs/PLAN.md, `web-build-in-ci-artifacts`) -- so it exports under
+  # that directory, one subdirectory per project, and leaves it in place for the
+  # upload step that follows.
   local export_dir
-  export_dir="$(mktemp -d)"
+  if [[ -n "${FE_WEB_GAME_KEEP_DIR:-}" ]]; then
+    export_dir="${FE_WEB_GAME_KEEP_DIR}/${label}"
+    rm -rf "${export_dir}"
+    mkdir -p "${export_dir}"
+  else
+    export_dir="$(mktemp -d)"
+  fi
   echo "web game: [${label}] exporting ${project} to ${export_dir}"
   export_project "${project}" "${export_dir}"
 
@@ -189,7 +201,11 @@ run_project() {
     echo "web game: [${label}] the page reported nothing on attempt ${attempt}; retrying"
   done
 
-  rm -rf "${export_dir}"
+  # A published export (FE_WEB_GAME_KEEP_DIR) is left for the upload step; a
+  # temporary one is removed, so a plain run leaves nothing behind.
+  if [[ -z "${FE_WEB_GAME_KEEP_DIR:-}" ]]; then
+    rm -rf "${export_dir}"
+  fi
 
   if ! grep -q "FE_PLAYER_RESULT" <<<"${dump}"; then
     echo "web game: [${label}] the game never reported a result" >&2
