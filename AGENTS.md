@@ -157,6 +157,25 @@ defect, not noise.
 
 ## Portability traps seen before
 
+- Two agents commit to `main` in parallel, so `git fetch` before starting and
+  before pushing. A local `git log` is not the remote: the other agent may have
+  pushed ADRs and code that your tree has never seen. Rebase (`git pull
+  --rebase`) rather than merge, and re-run the build and tests after, because a
+  rebase can change which lines compile.
+- An existing build directory caches `FE_BUILD_EDITOR=OFF`. The sanitizer build
+  in CI configures it `ON`, but a `build-asan/` left over from another
+  configure keeps `OFF`, and then `ctest -R editor_tests` silently runs nothing
+  (0 tests, exit 0). Pass `-DFE_BUILD_EDITOR=ON` explicitly, or delete the
+  build directory, and check `ctest -N` lists the test you meant to run.
+- `ctest` skips tests the build did not configure without failing, so a green
+  `ctest` is only green for the tests that exist. Confirm the test count, not
+  just the exit code.
+- `-Wshadow` is on and warnings are errors, so a local declared in an outer
+  scope is a build break when an inner block declares the same name. Renaming a
+  variable with a blanket `sed` also rewrites identifiers that merely contain
+  the name (`find_active_camera` → `find_active_active_camera`); rename by hand
+  or check the diff for mangled identifiers afterwards.
+
 - A construct that is legal on a desktop GL 3.3 core context can be illegal in
   WebGL2 (GLSL ES 3.00), and the browser reports it only at run time. Two seen so
   far: a depth texture's format/type pair must be legal in ES (`GL_DEPTH_COMPONENT`
