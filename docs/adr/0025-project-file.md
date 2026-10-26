@@ -41,7 +41,8 @@ and applies them through the engine's existing public APIs.**
   "format_version": 1,
   "name": "Demo",
   "asset_root": "assets",
-  "startup_scene": "scenes/main.json"
+  "startup_scene": "scenes/main.json",
+  "bindings": "input/bindings.json"
 }
 ```
 
@@ -53,6 +54,10 @@ and applies them through the engine's existing public APIs.**
   "this project has no asset root", which leaves the browser empty.
 - **`startup_scene`** is the scene the editor opens at launch. Empty means the
   built-in example scene, the pre-project behaviour.
+- **`bindings`** is an optional declarative input-binding document
+  (`fork_input`): the game's own keys, mouse buttons and touch regions, packed
+  and applied by the player in place of the engine's built-in layout. Empty
+  means the built-ins apply. See [ADR-0090](0090-declarative-input-bindings.md).
 
 The set is deliberately small. It is the settings that change behaviour today;
 the schema is versioned and additive, so `renderer`, per-asset import defaults,

@@ -19,6 +19,7 @@ add_executable(fork_engine_tests
     src/test_frustum.cpp
     src/test_input_state.cpp
     src/test_input_actions.cpp
+    src/test_action_bindings.cpp
     src/test_key_code.cpp
     src/test_canvas_scale.cpp
     src/test_platform_null.cpp

@@ -52,6 +52,18 @@ public:
     void bind_mouse_button(Id action, MouseButton button);
     void bind_touch_region(Id action, f32 x0, f32 y0, f32 x1, f32 y1);
 
+    // Removes the bindings of one kind for `action`, leaving the others alone.
+    //
+    // This is what lets a game *replace* a binding the engine declared rather
+    // than only add to it: the built-in behaviours bind a conventional touch
+    // layout (declare_builtin_actions), and a game that wants a different one
+    // clears the region it is redefining before binding its own. Per kind,
+    // because replacing a game's touch layout must not also silently drop its
+    // keyboard bindings.
+    void clear_key_bindings(Id action);
+    void clear_mouse_bindings(Id action);
+    void clear_touch_regions(Id action);
+
     // --- Per-frame evaluation ----------------------------------------------
 
     // Recomputes every action from `input`'s snapshot. `viewport` is the drawing

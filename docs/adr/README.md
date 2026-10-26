@@ -95,6 +95,7 @@ rather than editing it.
 | [0087](0087-collision-filtering-and-triggers.md) | Collision filtering (layers and masks) and trigger colliders | Accepted |
 | [0088](0088-transitive-pack-references.md) | Following an asset's own references when packing | Accepted |
 | [0089](0089-editor-transform-editing.md) | Editing a node's transform in the editor (SetTransform operation, inspector section, viewport drag) | Accepted |
+| [0090](0090-declarative-input-bindings.md) | Declarative input bindings (touch regions and keys as data) | Accepted |
 
 ## Format
 

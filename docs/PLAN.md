@@ -762,10 +762,19 @@ action a keyboard press produces.
 ### `touch-gesture-regions`
 
 Bind screen regions to actions declaratively, so a game declares "the left third
-steers" once instead of reading raw touch points.
+steers" once instead of reading raw touch points. Shipped as
+`fe::player::ActionBindings`: a `fork_input` document lists actions with their
+keys (by UI Events code), mouse buttons, and normalised touch regions, and
+`fork_export` packs it and records its key so the player applies it after the
+built-ins. `"replace": true` lets a game override the engine's default layout
+rather than stack on it ([ADR-0090](adr/0090-declarative-input-bindings.md)).
 
 **Done when** a game declares regions and a test proves a touch in each region
-fires the bound action and a touch outside fires none.
+fires the bound action and a touch outside fires none. Both hold: a unit test
+drives touches in, between, and outside the declared regions, and the web game
+check dispatches a real synthetic touch at a point only the game's own document
+covers, with no keys pressed, so the node moving means the document was packed,
+parsed and applied end to end in a browser.
 
 ### `mobile-viewport-meta`
 

@@ -87,7 +87,7 @@ export_project() {
 # asserts the page's own verdict. `?frames=N` bounds the run so the page settles
 # and can be observed; a game otherwise runs until its tab closes.
 run_project() {
-  local project="$1" label="$2" base_port="${3:-8733}" probe_node="${4:-}"
+  local project="$1" label="$2" base_port="${3:-8733}" probe_node="${4:-}" probe_touch="${5:-0}"
   [[ -d "${project}" ]] || fail "no project at ${project}"
 
   # Where the export lands. A normal run exports to a temporary directory and
@@ -139,6 +139,9 @@ run_project() {
   local query="?frames=${frames}"
   if [[ -n "${probe_node}" ]]; then
     query="${query}&probe=1&probeNode=${probe_node}"
+    if [[ "${probe_touch}" == "1" ]]; then
+      query="${query}&touch=1&touchAt=${FE_WEB_GAME_TOUCH_AT:-0.5,0.75}"
+    fi
   fi
   for attempt in $(seq 1 "${attempts}"); do
     # A distinct port per attempt, so a retry never meets the previous attempt's
@@ -278,26 +281,44 @@ PY
     fi
   fi
 
-  echo "web game: [${label}] PASS (canvas, ${frames_reported} frames, ${distinct_reported} distinct colours${probe_node:+, input moved ${moved_reported}})"
+  local input_note=""
+  if [[ -n "${probe_node}" ]]; then
+    input_note=", input moved ${moved_reported}"
+    [[ "${probe_touch}" == "1" ]] && input_note+=" (touch)"
+  fi
+  echo "web game: [${label}] PASS (canvas, ${frames_reported} frames, ${distinct_reported} distinct colours${input_note})"
 }
 
 # A single project can be named for a focused run; by default both renderers are
 # exercised, because the 3D path shares the whole shipping path with the 2D one
 # and the point of the check is that a regression in either fails the run.
 #
-# The 3D run is the playable game (`game3d_project`), and it is run with the
-# input probe watching its Player node: that is what proves a synthetic key in a
-# browser reaches the action layer and drives a behaviour, so "input works on the
-# web" is checked rather than assumed. The probe pins a fixed simulation step
-# (see the player's --fixed-step), so two frames are enough: the distance it
-# reports is a property of the input and the behaviour, not of how fast the
-# browser happened to run the frames.
+# The 3D project is run twice, because the two device paths are proved
+# separately and each run must be unambiguous.
+#
+#   1. the key probe (the default): W, D and Space are pressed with synthetic
+#      DOM key events, so the node moving proves a key reaches the action layer
+#      and the peak rise proves the jump edge reaches the controller.
+#   2. the touch probe: *no* key is pressed, and a synthetic touch is dispatched
+#      on the canvas at a point (0.5, 0.75) that no built-in region covers but the
+#      game's own `input/bindings.json` MoveForward region does. So the node only
+#      moves if the document was packed, read, parsed and applied — the whole
+#      declarative path, end to end in a browser (docs/PLAN.md,
+#      `touch-gesture-regions`). This run does not require a jump: a jump would
+#      move the node too, and then `moved > 0` would no longer mean the touch
+#      landed. The key run above is what proves the jump.
+#
+# The probe pins a fixed simulation step (see the player's --fixed-step), so two
+# frames are enough: the distance it reports is a property of the input and the
+# behaviour, not of how fast the browser happened to run the frames.
 if [[ -n "${FE_WEB_GAME_PROJECT:-}" ]]; then
   run_project "${FE_WEB_GAME_PROJECT}" "$(basename "${FE_WEB_GAME_PROJECT}")" \
-    "${FE_WEB_GAME_PORT:-8733}" "${FE_WEB_GAME_PROBE_NODE:-}"
+    "${FE_WEB_GAME_PORT:-8733}" "${FE_WEB_GAME_PROBE_NODE:-}" "${FE_WEB_GAME_PROBE_TOUCH:-0}"
 else
   run_project "${ROOT_DIR}/examples/demo_project" "2d" "${FE_WEB_GAME_PORT:-8733}"
   run_project "${ROOT_DIR}/examples/game3d_project" "3d" \
     "$((${FE_WEB_GAME_PORT:-8733} + 4))" "Player"
+  FE_WEB_GAME_REQUIRE_JUMP=0 run_project "${ROOT_DIR}/examples/game3d_project" "3d-touch" \
+    "$((${FE_WEB_GAME_PORT:-8733} + 8))" "Player" "1"
 fi
 

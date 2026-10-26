@@ -56,6 +56,14 @@ struct ExportManifest {
     // The key the startup scene is stored under inside the pack, which is the
     // path the scene reader is given ("scenes/main.fescene").
     std::string scene;
+    // The key a declarative input-binding document is stored under inside the
+    // pack ("input/bindings.json"), or empty for a build that declares no
+    // bindings of its own (docs/PLAN.md, `touch-gesture-regions`). The player
+    // reads it after the engine's own declarations, so a game's regions are data
+    // rather than code. Empty is the common case and is omitted from the
+    // document, so a build without bindings is byte-for-byte what it was before
+    // this field existed.
+    std::string bindings;
     // The gameplay modules to load, in order, relative to the manifest's
     // directory. Each is a shared library the player loads before it reads the
     // scene, so the behaviours the scene binds are registered by the time the

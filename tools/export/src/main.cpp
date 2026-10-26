@@ -76,6 +76,7 @@ struct ProjectFile {
     std::string name;
     std::string directory;     // the directory the project file lives in
     std::string startup_scene; // resolved against `directory`
+    std::string bindings;      // declarative input bindings, resolved against `directory`
 };
 
 [[nodiscard]] std::string resolve_against(const std::string& directory, const std::string& path) {
@@ -119,6 +120,7 @@ struct ProjectFile {
     project.name = document.value("name", std::string{});
     project.directory = fe::fs::parent_path(fe::fs::normalize(file));
     project.startup_scene = resolve_against(project.directory, document.value("startup_scene", std::string{}));
+    project.bindings = resolve_against(project.directory, document.value("bindings", std::string{}));
     return project;
 }
 
@@ -315,6 +317,19 @@ int main(int argc, char** argv) {
     FE_LOG_INFO("fork_export: indexed %llu asset(s) under '%s'", static_cast<unsigned long long>(assets.asset_count()),
                 pack_root.c_str());
 
+    // The key the declarative input bindings are stored under, if the project
+    // declares any. Resolved relative to the pack root like the scene, so the
+    // player asks the pack for it by the same key the export wrote it under.
+    std::string bindings_key;
+    if (!project.value().bindings.empty()) {
+        if (!fe::fs::exists(project.value().bindings)) {
+            std::fprintf(stderr, "fork_export: the project names bindings at '%s', which does not exist\n",
+                         project.value().bindings.c_str());
+            return 1;
+        }
+        bindings_key = fe::fs::relative_to(pack_root, project.value().bindings);
+    }
+
     // Build the pack in memory first, then write the whole export. A failure
     // here (a missing scene, an unreadable asset) leaves no half-written build.
     fe::pack::PackOptions pack_options;
@@ -326,6 +341,14 @@ int main(int argc, char** argv) {
         }
         pack_options.prune = true;
         pack_options.include = std::move(paths.value());
+        // The bindings document is not referenced by the scene, so pruning would
+        // drop it and the shipped game would silently lose its regions. It is an
+        // input the build needs, not an asset the scene names, so it is added
+        // here explicitly - the same reason the startup scene is packed whether or
+        // not anything references it.
+        if (!bindings_key.empty()) {
+            pack_options.include.push_back(bindings_key);
+        }
         FE_LOG_INFO("fork_export: pruning to %llu scene-referenced asset(s)",
                     static_cast<unsigned long long>(pack_options.include.size()));
     }
@@ -385,6 +408,7 @@ int main(int argc, char** argv) {
     manifest.target = options.target;
     manifest.pack = pack_name;
     manifest.scene = scene_key;
+    manifest.bindings = bindings_key;
 
     // Copy each gameplay module in beside the player and record it by its file
     // name, so the player loads it from the export directory. Modules are named

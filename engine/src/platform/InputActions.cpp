@@ -62,6 +62,18 @@ void ActionMap::bind_touch_region(Id action, f32 x0, f32 y0, f32 x1, f32 y1) {
     }
 }
 
+void ActionMap::clear_key_bindings(Id action) {
+    std::erase_if(keys_, [action](const KeyBinding& binding) { return binding.action == action; });
+}
+
+void ActionMap::clear_mouse_bindings(Id action) {
+    std::erase_if(buttons_, [action](const ButtonBinding& binding) { return binding.action == action; });
+}
+
+void ActionMap::clear_touch_regions(Id action) {
+    std::erase_if(touch_regions_, [action](const TouchRegion& region) { return region.action == action; });
+}
+
 void ActionMap::update(const InputState& input, Vec2 viewport) {
     const usize count = names_.size();
     // Preserve the previous frame's `down` so the edges can be derived; the

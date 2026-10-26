@@ -37,6 +37,7 @@
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics3d/Collider3D.h"
 #include "fe/physics3d/Physics3DSystem.h"
+#include "fe/player/ActionBindings.h"
 #include "fe/player/BuiltinBehaviours.h"
 #include "fe/renderer3d/Renderer3D.h"
 #include "fe/runtime/Application.h"
@@ -74,6 +75,11 @@ struct Options {
     std::string scene;
     std::vector<std::string> modules;
     std::string name;
+    // The pack key of a declarative input-binding document, if the build ships
+    // one (docs/PLAN.md, `touch-gesture-regions`). Read from the pack after the
+    // engine's own declarations, so a game's touch regions are data rather than
+    // code. Empty means the build declares no bindings of its own.
+    std::string bindings;
     fe::u32 headless_frames = 0;
     // Stop after this many frames and exit cleanly. 0 means run until the window
     // closes. It is the interactive counterpart of --headless N: the web build
@@ -89,6 +95,19 @@ struct Options {
     // The node whose movement the input probe measures. A scene names its camera
     // "Camera" by convention; a game that does not can override it.
     std::string probe_node = "Camera";
+    // Drive the probe with a *touch* instead of a key: dispatch a synthetic
+    // touchstart on the canvas at a normalised point and report how far the
+    // watched node moved. This is the acceptance test for "touch works in the web
+    // build" (docs/PLAN.md, `touch-gesture-regions`): a browser check can dispatch
+    // an event but cannot touch a screen, so the player does it and reports the
+    // result. Ignored off the web target.
+    bool probe_touch = false;
+    // Where the synthetic touch lands, normalised (0..1, origin top-left). The
+    // default sits inside the built-in walk pad (the lower-left forward region),
+    // so a run with no bindings document still proves the touch path; a project
+    // that declares its own regions aims it where only its document covers.
+    fe::f32 probe_touch_x = 0.1f;
+    fe::f32 probe_touch_y = 0.6f;
     // A fixed simulation step in seconds, or 0 to step by the measured frame
     // time. The input probe pins it, so the distance it measures is a property of
     // the input and the behaviour rather than of how fast the browser happened to
@@ -128,6 +147,10 @@ struct Options {
     out.pack = resolve_against(directory, manifest.value().pack);
     out.scene = manifest.value().scene;
     out.name = manifest.value().name;
+    // The bindings key is a path *inside the pack*, not beside the manifest, so
+    // it is taken verbatim: resolving it against the manifest's directory would
+    // turn a pack key into a filesystem path the pack does not use.
+    out.bindings = manifest.value().bindings;
     // A manifest's modules are recorded beside it, so resolve each against the
     // manifest's directory. Modules named on the command line are appended after
     // these, so a developer can add one to an exported build without re-exporting.
@@ -167,6 +190,30 @@ protected:
         // same declaration (ADR-0075). A game's own module may add more actions
         // or rebind these; the standard names are the built-ins' contract.
         fe::player::declare_builtin_actions(actions());
+
+        // A game's own bindings, if the build ships a document for them. Applied
+        // after the standard set, so a game can add actions, rebind the built-ins
+        // to its own layout, or declare touch regions of its own - and it does so
+        // in data, without a rebuild (docs/PLAN.md, `touch-gesture-regions`).
+        //
+        // A malformed document is fatal rather than ignored: a game whose regions
+        // silently did not load is a game whose touch controls do nothing, which is
+        // worse than saying why it did not start. An absent one is the common case
+        // and is not an error - most builds declare no bindings of their own.
+        if (!options_.bindings.empty()) {
+            auto text = engine().resources().read_text(options_.bindings);
+            if (!text) {
+                return fe::Error("fork_player: the manifest names bindings at '" + options_.bindings +
+                                 "', which is not in the pack: " + text.error().message());
+            }
+            auto bindings = fe::player::ActionBindings::from_json(text.value());
+            if (!bindings) {
+                return bindings.error();
+            }
+            bindings.value().apply(actions());
+            FE_LOG_INFO("fork_player: applied %llu declared action(s) from '%s'",
+                        static_cast<unsigned long long>(bindings.value().actions.size()), options_.bindings.c_str());
+        }
 
         // The gameplay modules named on the command line. Each registers the
         // behaviours it provides into the registry the scene's script bindings
@@ -312,17 +359,69 @@ protected:
         probe_start_position_ = watched->transform().position;
         probe_active_ = true;
 
-        // Held down for the rest of the run, so the behaviour keeps moving the
-        // node every frame and the delta grows past any rounding noise. Space is
-        // pressed once to jump: the controller consumes it as an edge and the
-        // character leaves the ground, so the peak height proves the jump path
-        // (action -> controller -> physics) works, not just the walk path.
+        // Movement is driven by whichever device the probe was asked for.
+        //
+        // The two devices are probed in separate runs on purpose. A key probe
+        // presses W, D *and* Space: the movement proves the key path and the jump
+        // proves the key edge reaches the controller. A touch probe presses *no*
+        // keys, so the only thing that can move the node is the synthetic touch —
+        // otherwise a jump would move it and `moved` would be non-zero even if the
+        // touch never landed, which is exactly the false pass that makes a probe
+        // worthless. Keeping them apart is what lets `moved > 0` mean "the touch
+        // reached gameplay" without a second measurement.
+        if (options_.probe_touch) {
+            dispatch_touch_probe();
+            return;
+        }
         EM_ASM({
             window.dispatchEvent(new KeyboardEvent('keydown', {code : 'KeyW', bubbles : true}));
             window.dispatchEvent(new KeyboardEvent('keydown', {code : 'KeyD', bubbles : true}));
             window.dispatchEvent(new KeyboardEvent('keydown', {code : 'Space', bubbles : true}));
         });
         FE_LOG_INFO("fork_player: input probe pressed W, D and Space; watching node '%s'", options_.probe_node.c_str());
+    }
+
+    // The touch half of the input probe: dispatch a real synthetic touch on the
+    // canvas and leave it down for the run. The point is that the event travels
+    // the whole shipped path a finger would - a DOM touch on the canvas, the
+    // backend's listener, InputState, the action map's region test, the
+    // behaviour - rather than calling into the engine directly, which would prove
+    // nothing about whether touch reaches gameplay in a browser.
+    //
+    // The canvas is the dispatch target because that is where the backend binds
+    // its touch listener (WebWindow); dispatching on `window` would miss it.
+    void dispatch_touch_probe() {
+        const int ok = EM_ASM_INT(
+            {
+                const canvas = document.getElementById('canvas') || document.querySelector('canvas');
+                if (!canvas) {
+                    return 0;
+                }
+                const rect = canvas.getBoundingClientRect();
+                const x = rect.left + rect.width * $0;
+                const y = rect.top + rect.height * $1;
+                // A Touch is constructed with client coordinates; the backend converts
+                // them to canvas pixels and normalises against the viewport, so the
+                // fraction the caller asked for is the fraction the region test sees.
+                const touch = new Touch({identifier : 1, target : canvas, clientX : x, clientY : y});
+                canvas.dispatchEvent(new TouchEvent('touchstart', {
+                    touches : [touch],
+                    targetTouches : [touch],
+                    changedTouches : [touch],
+                    bubbles : true,
+                    cancelable : true,
+                }));
+                return 1;
+            },
+            static_cast<double>(options_.probe_touch_x), static_cast<double>(options_.probe_touch_y));
+        if (ok == 0) {
+            FE_LOG_WARN("fork_player: touch probe found no canvas to touch");
+            probe_active_ = false;
+            return;
+        }
+        FE_LOG_INFO("fork_player: touch probe touched the canvas at (%.2f, %.2f); watching node '%s'",
+                    static_cast<double>(options_.probe_touch_x), static_cast<double>(options_.probe_touch_y),
+                    options_.probe_node.c_str());
     }
 
     // Called each frame while the probe runs, so the report can state how high the
@@ -341,8 +440,17 @@ protected:
         probe_peak_rise_ = rise > probe_peak_rise_ ? rise : probe_peak_rise_;
     }
 
-    // How far the watched node moved since the probe began, in world units, and
-    // whether the run proved input reached gameplay at all.
+    // How far the watched node moved *horizontally* since the probe began, in
+    // world units, and whether the run proved input reached gameplay at all.
+    //
+    // Horizontal on purpose. A character standing still still moves a little
+    // vertically: it settles onto the ground for a frame or two as the solver
+    // resolves its initial penetration, which is a few thousandths of a unit and
+    // happens with no input at all. A total-distance check counts that settle and
+    // reports a pass for a game whose input never arrived. Walking is horizontal
+    // (the character's own controller zeroes the move's y), so measuring only the
+    // horizontal part separates "walked" from "settled" — the difference between a
+    // real input check and a number that is non-zero whatever the input does.
     [[nodiscard]] fe::f32 probe_moved_distance() const {
         if (!probe_active_) {
             return 0.0f;
@@ -351,7 +459,8 @@ protected:
         if (watched == nullptr) {
             return 0.0f;
         }
-        return (watched->transform().position - probe_start_position_).length();
+        const fe::Vec3 delta = watched->transform().position - probe_start_position_;
+        return fe::Vec3{delta.x, 0.0f, delta.z}.length();
     }
 
     // The highest the watched node rose above its start, in world units. Non-zero
@@ -475,11 +584,18 @@ void print_usage() {
               "                  (its pack, scene, and gameplay modules)\n"
               "  --pack FILE     a pack file to mount (direct form)\n"
               "  --scene KEY     the startup scene's key inside the pack (direct form)\n"
+              "  --bindings KEY  a declarative input-binding document's key inside the\n"
+              "                  pack (direct form; --export reads it from the manifest)\n"
               "  --module PATH   an extra gameplay module to load (repeatable)\n"
               "  --frames N      run N frames and exit (the web build's bounded run)\n"
               "  --probe-input   (web) press movement keys with synthetic events and\n"
               "                  report how far --probe-node moved; proves input reaches\n"
               "                  gameplay in a browser\n"
+              "  --probe-touch   (web) like --probe-input, but dispatch a synthetic\n"
+              "                  touch on the canvas instead of a key press; proves a\n"
+              "                  declared touch region reaches gameplay\n"
+              "  --probe-touch-at X,Y  (web) where the synthetic touch lands, normalised\n"
+              "                  (default 0.1,0.6, inside the built-in walk pad)\n"
               "  --probe-node N  the node the input probe watches (default: Camera)\n"
               "  --headless N    run N frames with no window\n"
               "  --render        run the render path against the null RHI device\n"
@@ -500,12 +616,34 @@ void print_usage() {
             out.pack = argv[++i];
         } else if (arg == "--scene" && has_value) {
             out.scene = argv[++i];
+        } else if (arg == "--bindings" && has_value) {
+            // The pack key of a declarative input-binding document. `--export`
+            // reads this from the manifest; the web shell, which is handed the
+            // pack and scene directly rather than a directory, passes it here.
+            // Without it a web build would silently drop the game's own layout
+            // and fall back to the built-ins, which is exactly the failure this
+            // option exists to make impossible.
+            out.bindings = argv[++i];
         } else if (arg == "--module" && has_value) {
             out.modules.emplace_back(argv[++i]);
         } else if (arg == "--frames" && has_value) {
             out.frames = static_cast<fe::u32>(std::strtoul(argv[++i], nullptr, 10));
         } else if (arg == "--probe-input") {
             out.probe_input = true;
+        } else if (arg == "--probe-touch") {
+            out.probe_input = true;
+            out.probe_touch = true;
+        } else if (arg == "--probe-touch-at" && has_value) {
+            // "x,y" as normalised fractions, so a project can aim the probe at the
+            // region its own bindings document covers without a rebuild.
+            const std::string value = argv[++i];
+            const std::size_t comma = value.find(',');
+            if (comma == std::string::npos) {
+                std::fprintf(stderr, "fork_player: --probe-touch-at wants 'x,y' in 0..1\n");
+                return false;
+            }
+            out.probe_touch_x = static_cast<fe::f32>(std::strtod(value.substr(0, comma).c_str(), nullptr));
+            out.probe_touch_y = static_cast<fe::f32>(std::strtod(value.substr(comma + 1).c_str(), nullptr));
         } else if (arg == "--probe-node" && has_value) {
             out.probe_node = argv[++i];
         } else if (arg == "--fixed-step" && has_value) {

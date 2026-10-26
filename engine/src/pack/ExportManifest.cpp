@@ -29,6 +29,11 @@ Result<std::string> ExportManifest::to_json() const {
     }
     document["pack"] = pack;
     document["scene"] = scene;
+    // Written only when set, so a build without declarative bindings keeps the
+    // manifest it had before this field existed.
+    if (!bindings.empty()) {
+        document["bindings"] = bindings;
+    }
     // Omitted when empty, so a data-only build's manifest stays as small and as
     // readable as it was before modules existed.
     if (!modules.empty()) {
@@ -70,6 +75,7 @@ Error ExportManifest::from_json(std::string_view text, ExportManifest& out) {
     }
     parsed.pack = document.value("pack", std::string{});
     parsed.scene = document.value("scene", std::string{});
+    parsed.bindings = document.value("bindings", std::string{});
     if (parsed.pack.empty()) {
         return Error("export manifest: no pack file named");
     }

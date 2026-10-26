@@ -3,5 +3,6 @@
   "format_version": 1,
   "name": "Game3D",
   "asset_root": "assets",
-  "startup_scene": "scenes/main3d.fescene"
+  "startup_scene": "scenes/main3d.fescene",
+  "bindings": "input/bindings.json"
 }

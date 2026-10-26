@@ -7,9 +7,10 @@ physics the character and the props share. It is the acceptance target for 3D
 gameplay on the web, and for input reaching gameplay at all in a browser build.
 
 ```
-fork.project.json      name, asset root, and startup scene
+fork.project.json      name, asset root, startup scene, and input bindings
 assets/meshes/         the cube and sphere every object uses, plus the imported crate
 assets/textures/       the checker texture the floor uses
+input/bindings.json    the game's own keys and touch regions (fork_input document)
 scenes/main3d.fescene  the scene: a character, a follow camera, a course, props
 ```
 
@@ -70,12 +71,22 @@ python3 -m http.server 8000 --directory /tmp/game3d-web
 
 ## Controls
 
-| Action | Keyboard | Touch |
+The game declares its own layout in `input/bindings.json`, a `fork_input`
+document ([ADR-0090](../../docs/adr/0090-declarative-input-bindings.md)). It is
+packed with the game and applied by the player in place of the engine's built-in
+layout, so the layout is data a designer can change without a rebuild.
+
+| Action | Keyboard | Touch region (normalised, origin top-left) |
 | --- | --- | --- |
-| Walk forward / back | `W` / `S` | lower-left forward / back regions |
-| Turn left / right | `A` / `D` | lower-left left / right regions |
-| Jump | `Space` | — |
-| Run | `Left Ctrl` | — |
+| Walk forward | `W` / `↑` | the middle column of the lower half |
+| Walk back | `S` / `↓` | the middle column of the upper half |
+| Turn left | `A` / `←` | the left column of the lower half |
+| Turn right | `D` / `→` | the right column of the lower half |
+| Jump | `Space` | the right half of the upper band |
+
+Every entry carries `"replace": true`, so the document's regions replace the
+engine's built-in ones for the kinds it binds. Without that the built-in pads and
+the document's pads would overlap, and one touch would fire two actions.
 
 The character walks along its own facing and turns with `A`/`D`, so the whole
 game is playable with a keyboard alone and with a touchscreen alone — no mouse

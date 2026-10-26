@@ -1,0 +1,36 @@
+{
+  "format": "fork_input",
+  "format_version": 1,
+  "actions": [
+    {
+      "name": "MoveForward",
+      "keys": ["KeyW", "ArrowUp"],
+      "touch": [[0.34, 0.5, 0.66, 1.0]],
+      "replace": true
+    },
+    {
+      "name": "MoveBack",
+      "keys": ["KeyS", "ArrowDown"],
+      "touch": [[0.34, 0.0, 0.66, 0.5]],
+      "replace": true
+    },
+    {
+      "name": "MoveLeft",
+      "keys": ["KeyA", "ArrowLeft"],
+      "touch": [[0.0, 0.5, 0.34, 1.0]],
+      "replace": true
+    },
+    {
+      "name": "MoveRight",
+      "keys": ["KeyD", "ArrowRight"],
+      "touch": [[0.66, 0.5, 1.0, 1.0]],
+      "replace": true
+    },
+    {
+      "name": "Jump",
+      "keys": ["Space"],
+      "touch": [[0.75, 0.0, 1.0, 0.5]],
+      "replace": true
+    }
+  ]
+}

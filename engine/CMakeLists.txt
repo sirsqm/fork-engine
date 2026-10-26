@@ -156,6 +156,7 @@ set(FE_ENGINE_SOURCES
     src/jobs/JobSystem.cpp
     src/script/ScriptLibrary.cpp
     src/script/ScriptBinding.cpp
+    src/player/ActionBindings.cpp
     src/player/BuiltinBehaviours.cpp
 )
 
