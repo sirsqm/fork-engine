@@ -101,6 +101,18 @@ bool Application::step_frame() {
     const bool recording = profiling_enabled_ && profiler_.begin_frame();
     const ProfileScope frame_scope("frame");
 
+    // If the platform recorded any page-visibility transitions — a backgrounded
+    // browser tab — tell the engine about each, before it reads the clock. Drain
+    // the whole queue: no frame runs while the page is hidden, so a tab that was
+    // backgrounded and restored between two frames recorded *two* transitions
+    // (hidden, then visible) and the engine must see the hidden one to know the
+    // span was not simulation time (docs/adr/0082). A desktop window records
+    // none, so this loop does not run there.
+    bool page_hidden = false;
+    while (engine_.window().take_page_visibility_change(page_hidden)) {
+        engine_.notify_page_visibility(!page_hidden);
+    }
+
     engine_.tick();
 
     // Ordering: advance the input edges, then let the OS deliver this frame's

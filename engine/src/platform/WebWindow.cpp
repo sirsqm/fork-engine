@@ -191,6 +191,22 @@ bool on_resize(int /*eventType*/, const EmscriptenUiEvent* /*event*/, void* user
     return false;
 }
 
+// The page became visible or hidden. A backgrounded tab receives no animation
+// frames, so the wall clock runs on while the engine is not stepped; on the way
+// back the next frame would otherwise charge that whole span to one step. Record
+// the transition here, in the event, because the frames that would observe the
+// hidden state never run — a poll would only ever see "visible". The host reads
+// it at the frame boundary and reports it to the engine
+// (Engine::notify_page_visibility). See
+// docs/adr/0082-page-visibility-wiring.md.
+bool on_visibilitychange(int /*eventType*/, const EmscriptenVisibilityChangeEvent* event, void* user_data) {
+    WebWindow* window = window_from(user_data);
+    if (window != nullptr) {
+        window->note_page_visibility(event->hidden);
+    }
+    return false;
+}
+
 } // namespace
 
 WebWindow::WebWindow() : Window("web") {}
@@ -226,6 +242,11 @@ void WebWindow::install_input_callbacks() {
     // place; the callback recomputes the drawing buffer from the new CSS box.
     emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, &on_resize);
 
+    // A backgrounded tab receives no animation frames, so the engine's clock would
+    // jump by the hidden span on return. The event is what records that
+    // discontinuity, because no frame runs while it is hidden.
+    emscripten_set_visibilitychange_callback(self, EM_TRUE, &on_visibilitychange);
+
     // Pointer, wheel and touch on the canvas, so their coordinates are already in
     // canvas space and need no page-offset correction.
     const char* const canvas = canvas_selector_.c_str();
@@ -248,6 +269,7 @@ void WebWindow::remove_input_callbacks() {
     emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
     emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
     emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, self, EM_TRUE, nullptr);
+    emscripten_set_visibilitychange_callback(self, EM_TRUE, nullptr);
 
     const char* const canvas = canvas_selector_.c_str();
     emscripten_set_mousedown_callback(canvas, self, EM_TRUE, nullptr);

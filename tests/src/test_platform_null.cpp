@@ -424,6 +424,51 @@ TEST_CASE("a fixed simulation step makes the frame delta independent of wall tim
     CHECK(app.deltas.front() == app.deltas.back());
 }
 
+// The web visibility pause wiring (ADR-0082). The engine rebaselines its clock
+// when a backgrounded page returns, but only if the host tells it the page
+// changed visibility. The web backend records the transition; Application, the
+// frame loop, reads the one-shot and reports it to the engine. This test drives
+// the window's one-shot directly — the same call the web backend's
+// visibilitychange callback makes — and proves the frame loop forwards it, so
+// the whole path is covered without a browser.
+TEST_CASE("the frame loop reports a page-visibility change to the engine") {
+    // A host-supplied clock stands in for the browser's frame timestamps, so the
+    // test can move time by an exact amount instead of sleeping. It is set before
+    // initialize() so the clock's baseline is the host's.
+    f64 now = 0.0;
+
+    SteppedApp app(null_config());
+    app.engine().set_time_source([&now] { return now; });
+    app.set_headless(0);
+    REQUIRE(app.initialize().ok());
+
+    // A normal frame measures the frame's own duration.
+    now += 1.0 / 60.0;
+    REQUIRE(app.step_frame());
+    CHECK(app.engine().delta_time() == doctest::Approx(1.0f / 60.0f));
+
+    // The page is hidden, no frames run, and a long span passes.
+    app.engine().window().note_page_visibility(true);
+    now += 30.0;
+
+    // The page returns. The next frame the loop steps must rebaseline the clock
+    // rather than charge the hidden 30 seconds to the simulation: the delta is
+    // bounded, and elapsed time does not jump by the hidden span.
+    const f64 elapsed_before = app.engine().elapsed_time();
+    app.engine().window().note_page_visibility(false);
+    REQUIRE(app.step_frame());
+    CHECK(app.engine().delta_time() <= 0.25f);
+    CHECK(app.engine().elapsed_time() - elapsed_before <= 0.25);
+
+    // The next frame measures normally again: a rebaseline is a one-frame
+    // correction, not a permanent change to the clock.
+    now += 1.0 / 60.0;
+    REQUIRE(app.step_frame());
+    CHECK(app.engine().delta_time() == doctest::Approx(1.0f / 60.0f));
+
+    app.shutdown();
+}
+
 TEST_CASE("the frame primitives are inert outside an initialised run") {
     SteppedApp app(null_config());
 

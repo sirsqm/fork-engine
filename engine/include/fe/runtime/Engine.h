@@ -168,7 +168,8 @@ public:
     // as one delta. notify_page_visibility() lets the host report the browser's
     // visibilitychange event so tick() can rebaseline the clock on the first
     // frame after the tab returns, bounding the step to a single frame
-    // (ADR-0082).
+    // (ADR-0082). The web backend records the event and Application forwards it;
+    // a host that calls tick() directly reports it itself.
     //
     // A desktop run never calls this, so its clock is unchanged.
     void notify_page_visibility(bool visible) noexcept;

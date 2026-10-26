@@ -137,6 +137,66 @@ public:
     // graphics backend, which must not be given a typed platform header.
     [[nodiscard]] void* native_handle() const noexcept { return native_handle_; }
 
+    // --- Page visibility (web) ---------------------------------------------
+    //
+    // A hidden page is one the platform may stop drawing and stop scheduling
+    // frames for: a backgrounded browser tab receives no animation frames at all.
+    // The wall clock keeps running while it is hidden, so on the way back the gap
+    // is not simulation time. The platform records each transition here as it
+    // happens, and the host drains them at the frame boundary and reports each to
+    // the engine (Engine::notify_page_visibility), which rebaselines the clock so
+    // the gap is not charged to one step. See
+    // docs/adr/0082-page-visibility-wiring.md.
+    //
+    // Transitions are *queued*, not collapsed to the current state. On the web no
+    // frame runs while the page is hidden, so a tab that is backgrounded and
+    // restored between two frames produces two transitions — hidden, then
+    // visible — with no frame in between to observe the first. A single
+    // "latest state" flag would report only "visible" and the engine would never
+    // learn a hidden span occurred, so the resume would not be rebaselined. The
+    // host drains the queue, so it sees both, in order, on the next frame.
+    //
+    // Only the web backend drives note_page_visibility(); a desktop window never
+    // does, so its queue stays empty and its clock is untouched. Both methods are
+    // public for the same reason InputState's on_key() is: the platform reports
+    // events through the object they belong to, and a test can inject one to
+    // exercise the path.
+
+    // The most transitions that can be pending. A page hides and returns between
+    // frames at most once in practice; the extra room is slack for a pathological
+    // flip, and the cap keeps the queue a fixed, allocation-free array.
+    static constexpr u32 kMaxPendingVisibilityChanges = 8;
+
+    // Records a page-visibility transition. `hidden` is the visibility the page
+    // changed to. Called by the web backend's visibilitychange callback. On a full
+    // queue the pending transitions are collapsed to this one: a page flipping
+    // faster than the frame loop cannot be replayed transition by transition, and
+    // reporting the current state keeps the engine consistent with reality rather
+    // than a stale sequence.
+    void note_page_visibility(bool hidden) noexcept {
+        if (pending_visibility_count_ == kMaxPendingVisibilityChanges) {
+            pending_visibility_head_ = 0;
+            pending_visibility_count_ = 0;
+        }
+        const u32 tail = (pending_visibility_head_ + pending_visibility_count_) % kMaxPendingVisibilityChanges;
+        pending_visibility_hidden_[tail] = hidden;
+        ++pending_visibility_count_;
+    }
+
+    // Removes and reports the oldest pending page-visibility transition: true with
+    // `hidden` set to the visibility it changed to, or false when none is pending.
+    // A host drains this in a loop, forwarding each transition to the engine, so a
+    // hidden span that both began and ended between frames is reported in full.
+    [[nodiscard]] bool take_page_visibility_change(bool& hidden) noexcept {
+        if (pending_visibility_count_ == 0) {
+            return false;
+        }
+        hidden = pending_visibility_hidden_[pending_visibility_head_];
+        pending_visibility_head_ = (pending_visibility_head_ + 1) % kMaxPendingVisibilityChanges;
+        --pending_visibility_count_;
+        return true;
+    }
+
     // A human-readable description of the platform/windowing backend in use.
     [[nodiscard]] const char* backend_name() const noexcept { return backend_name_; }
 
@@ -156,6 +216,13 @@ private:
     // called from a destructor or before the vtable is established.
     const char* backend_name_ = "unknown";
     InputState input_{};
+    // The page-visibility transitions recorded but not yet drained by a host, as
+    // a small ring: a hidden span that began and ended between frames is two
+    // transitions, so they are queued rather than collapsed. See
+    // note_page_visibility().
+    bool pending_visibility_hidden_[kMaxPendingVisibilityChanges] = {};
+    u32 pending_visibility_head_ = 0;
+    u32 pending_visibility_count_ = 0;
 };
 
 } // namespace fe

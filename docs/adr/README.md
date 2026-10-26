@@ -87,6 +87,7 @@ rather than editing it.
 | [0079](0079-fixed-simulation-step.md) | A fixed simulation step | Accepted |
 | [0080](0080-required-and-candidate-references.md) | Required references and candidate references | Accepted |
 | [0081](0081-web-audio-autoplay-gesture.md) | The browser autoplay policy and the user gesture | Accepted |
+| [0082](0082-page-visibility-wiring.md) | The page visibility event is what the clock is told about | Accepted |
 
 ## Format
 

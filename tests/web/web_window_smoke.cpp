@@ -229,6 +229,35 @@ int main() {
     window.set_vsync(true);
     report.check("the frame-loop calls are safe on the web backend", true);
 
+    // --- Page visibility ----------------------------------------------------
+    //
+    // A backgrounded tab receives no animation frames, so the wall clock runs on
+    // while the engine is not stepped; on return the frame that spans the hidden
+    // span must be rebaselined, not charged to one step (docs/adr/0082). The
+    // backend records the transition so the host can report it to the engine.
+    //
+    // This drives the real `visibilitychange` event with the document's state
+    // flipped, which is what the browser does when a tab is backgrounded and
+    // restored. The listener is bound to the *document*, so that is where the
+    // event is dispatched. Crucially it does it the way the browser does — hidden
+    // then visible with no frame in between — so the check proves both
+    // transitions are reported, in order, not just the latest state: a single
+    // "is it hidden now?" flag would lose the hidden one and the engine would
+    // never rebaseline.
+    bool hidden = false;
+    report.check("no page-visibility change is pending at rest", !window.take_page_visibility_change(hidden));
+    EM_ASM({
+        Object.defineProperty(document, 'hidden', {value : true, configurable : true});
+        document.dispatchEvent(new Event('visibilitychange'));
+        Object.defineProperty(document, 'hidden', {value : false, configurable : true});
+        document.dispatchEvent(new Event('visibilitychange'));
+    });
+    report.check("the hidden transition is reported first", window.take_page_visibility_change(hidden));
+    report.check("the first report says the page is hidden", hidden);
+    report.check("the visible transition follows it", window.take_page_visibility_change(hidden));
+    report.check("the second report says the page is visible", !hidden);
+    report.check("the queue is drained", !window.take_page_visibility_change(hidden));
+
     report.check("the web window does not claim to be closing", !window.should_close());
     window.request_close();
     report.check("request_close() is recorded", window.should_close());
