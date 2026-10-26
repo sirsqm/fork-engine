@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 #include "fe/editor/EditorHost.h"
 
+#include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/editor/AssetBrowserPanel.h"
+#include "fe/editor/ConfirmPanel.h"
+#include "fe/editor/FileDialogPanel.h"
 #include "fe/editor/HierarchyPanel.h"
 #include "fe/editor/InspectorPanel.h"
 #include "fe/editor/PlayPanel.h"
@@ -95,6 +98,14 @@ Error EditorHost::initialize() {
     ui_.add_panel(std::make_unique<PlayPanel>());
     ui_.add_panel(std::make_unique<ProfilerPanel>());
 
+    // The file dialog and the confirmation prompt are modals: they draw nothing
+    // until asked, so they can sit in the panel set from the start. They are held
+    // by pointer as well, because the host opens them and reads them.
+    auto file_dialog = std::make_unique<FileDialogPanel>();
+    file_dialog_panel_ = file_dialog.get();
+    ui_.add_panel(std::move(file_dialog));
+    ui_.add_panel(std::make_unique<ConfirmPanel>());
+
     // The profiler panel always reads a profiler, so create it up front. It is
     // created here rather than by the panel so the panel stays a pure reader and
     // the object's lifetime is the document's.
@@ -126,6 +137,7 @@ void EditorHost::step() {
     engine_.window().poll_events();
 
     handle_play_request();
+    handle_file_request();
 
     // Hot-reload any gameplay module whose image was rebuilt on disk, before the
     // frame runs, so the frame that follows executes the new code (ADR-0066).
@@ -248,6 +260,139 @@ void EditorHost::handle_play_request() {
     }
     case PlayRequest::Stop:
         context_.play().stop();
+        return;
+    }
+}
+
+void EditorHost::handle_file_request() {
+    const FileRequest request = context_.take_file_request();
+    if (request == FileRequest::None) {
+        return;
+    }
+
+    if (request == FileRequest::ConfirmDiscard) {
+        // The user confirmed: perform the action that was waiting on the prompt.
+        // The host owns the prompt's lifetime, so it dismisses it here rather than
+        // relying on the panel (which only clears it on a click; a test or a
+        // programmatic answer goes through this path).
+        context_.clear_confirm();
+        const FileRequest pending = pending_file_request_;
+        pending_file_request_ = FileRequest::None;
+        if (pending != FileRequest::None) {
+            perform_file_request(pending);
+        }
+        return;
+    }
+    if (request == FileRequest::CancelDiscard) {
+        context_.clear_confirm();
+        pending_file_request_ = FileRequest::None;
+        return;
+    }
+
+    if (needs_confirmation(request)) {
+        // Hold the action and ask. It runs only if the user confirms, so a stray
+        // New or Quit cannot silently drop unsaved work.
+        pending_file_request_ = request;
+        context_.ask_confirm("The scene has unsaved changes. Discard them?");
+        return;
+    }
+
+    perform_file_request(request);
+}
+
+bool EditorHost::needs_confirmation(FileRequest request) const {
+    // Only the actions that replace or abandon the document can lose work, and
+    // only when there is something to lose. Save, Save As, and Revert do not: a
+    // save preserves work and a revert is an explicit discard of a document that
+    // has a file behind it.
+    if (!context_.is_dirty()) {
+        return false;
+    }
+    switch (request) {
+    case FileRequest::NewScene:
+    case FileRequest::OpenScene:
+    case FileRequest::OpenProject:
+    case FileRequest::Quit:
+        return true;
+    default:
+        return false;
+    }
+}
+
+std::string EditorHost::dialog_start_directory() const {
+    // The scene's own directory first, so a save lands beside the file being
+    // edited, then the project, then the working directory. fs::parent_path of a
+    // bare name is empty, which the dialog itself turns into ".".
+    if (!context_.scene_path().empty()) {
+        const std::string parent = fs::parent_path(context_.scene_path());
+        if (!parent.empty()) {
+            return parent;
+        }
+    }
+    if (!context_.project_root().empty()) {
+        return context_.project_root();
+    }
+    return ".";
+}
+
+void EditorHost::perform_file_request(FileRequest request) {
+    switch (request) {
+    case FileRequest::None:
+    case FileRequest::ConfirmDiscard:
+    case FileRequest::CancelDiscard:
+        return;
+    case FileRequest::NewScene: {
+        // Play shows a copy; a new document while playing would leave the copy
+        // pointing at a scene that no longer exists, so stop first.
+        context_.play().stop();
+        if (Error error = context_.new_scene(&engine_.resources()); error) {
+            FE_LOG_ERROR("editor: could not create a new scene: %s", error.message().c_str());
+        }
+        return;
+    }
+    case FileRequest::OpenScene:
+        if (file_dialog_panel_ != nullptr) {
+            file_dialog_panel_->open_scene(dialog_start_directory());
+        }
+        return;
+    case FileRequest::SaveScene: {
+        // A document that has never been saved has no path to write to, so fall
+        // through to Save As and let the user choose one.
+        if (context_.scene_path().empty()) {
+            if (file_dialog_panel_ != nullptr) {
+                file_dialog_panel_->open_save_scene(dialog_start_directory(), context_.scene().name());
+            }
+            return;
+        }
+        if (Error error = context_.save_scene({}); error) {
+            FE_LOG_ERROR("editor: could not save the scene: %s", error.message().c_str());
+        }
+        return;
+    }
+    case FileRequest::SaveSceneAs:
+        if (file_dialog_panel_ != nullptr) {
+            // Suggest the current file name so an unedited Save As overwrites the
+            // same file rather than creating "Untitled".
+            std::string name = fs::filename(context_.scene_path());
+            if (name.empty()) {
+                name = context_.scene().name();
+            }
+            file_dialog_panel_->open_save_scene(dialog_start_directory(), std::move(name));
+        }
+        return;
+    case FileRequest::ReloadScene:
+        context_.play().stop();
+        if (Error error = context_.reload_scene(&engine_.resources()); error) {
+            FE_LOG_ERROR("editor: could not revert the scene: %s", error.message().c_str());
+        }
+        return;
+    case FileRequest::OpenProject:
+        if (file_dialog_panel_ != nullptr) {
+            file_dialog_panel_->open_project(dialog_start_directory());
+        }
+        return;
+    case FileRequest::Quit:
+        engine_.window().request_close();
         return;
     }
 }

@@ -280,4 +280,38 @@ std::vector<std::string> list_files_recursive(std::string_view directory) {
     return files;
 }
 
+bool is_directory(std::string_view path) {
+    std::error_code ec;
+    return stdfs::is_directory(to_native(path), ec);
+}
+
+std::vector<DirectoryEntry> list_directory(std::string_view directory) {
+    std::vector<DirectoryEntry> entries;
+
+    const stdfs::path root = to_native(directory);
+    std::error_code ec;
+    if (!stdfs::is_directory(root, ec)) {
+        return entries;
+    }
+
+    for (stdfs::directory_iterator it(root, ec), end; it != end; it.increment(ec)) {
+        if (ec) {
+            break;
+        }
+        std::error_code entry_ec;
+        const bool is_dir = it->is_directory(entry_ec);
+        entries.push_back(DirectoryEntry{to_utf8(it->path().filename()), is_dir});
+    }
+
+    // Directories first, then files, each sorted by name so the list is stable
+    // and reads like a file manager rather than in filesystem order.
+    std::sort(entries.begin(), entries.end(), [](const DirectoryEntry& a, const DirectoryEntry& b) {
+        if (a.is_directory != b.is_directory) {
+            return a.is_directory;
+        }
+        return a.name < b.name;
+    });
+    return entries;
+}
+
 } // namespace fe::fs

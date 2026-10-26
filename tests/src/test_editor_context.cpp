@@ -10,6 +10,7 @@
 
 #include "fe/core/FileSystem.h"
 #include "fe/editor/AssetBrowserViewModel.h"
+#include "fe/editor/Commands.h"
 #include "fe/editor/EditorContext.h"
 #include "fe/resources/AssetDatabase.h"
 #include "fe/resources/ResourceManager.h"
@@ -205,4 +206,94 @@ TEST_CASE("setting a project root without a manager records the path only") {
     EditorContext context;
     context.set_project_root("/tmp/fe_no_manager_root", nullptr);
     CHECK(context.project_root() == "/tmp/fe_no_manager_root");
+}
+
+TEST_CASE("the document tracks unsaved changes") {
+    EditorContext context;
+    context.register_default_component_factories();
+
+    // A brand-new document is clean: there is nothing to lose yet.
+    REQUIRE_FALSE(context.new_scene(nullptr));
+    CHECK_FALSE(context.is_dirty());
+
+    // An edit through the command stack marks it.
+    REQUIRE(context.execute(std::make_unique<CreateNodeCommand>("Added", Uuid{}, 0)));
+    CHECK(context.is_dirty());
+
+    // Saving clears it.
+    const std::string path = scratch_path("dirty_save");
+    REQUIRE_FALSE(context.save_scene(path));
+    CHECK_FALSE(context.is_dirty());
+
+    // Undo and redo are edits too, so they mark it again.
+    REQUIRE(context.undo());
+    CHECK(context.is_dirty());
+    REQUIRE(context.redo());
+    CHECK(context.is_dirty());
+
+    // Loading a different document is clean.
+    const std::string other = scratch_path("dirty_load");
+    {
+        EditorContext seed;
+        REQUIRE_FALSE(seed.new_scene(nullptr));
+        REQUIRE_FALSE(seed.save_scene(other));
+    }
+    REQUIRE_FALSE(context.load_scene(other, nullptr));
+    CHECK_FALSE(context.is_dirty());
+}
+
+TEST_CASE("reload_scene reverts in-memory edits") {
+    EditorContext context;
+    context.register_default_component_factories();
+    REQUIRE_FALSE(context.new_scene(nullptr));
+
+    const std::string path = scratch_path("revert");
+    REQUIRE_FALSE(context.save_scene(path));
+    const usize saved_count = context.scene().node_count();
+
+    // Add a node, so the in-memory document diverges from the file.
+    REQUIRE(context.execute(std::make_unique<CreateNodeCommand>("Extra", Uuid{}, 0)));
+    CHECK(context.scene().node_count() == saved_count + 1);
+    CHECK(context.is_dirty());
+
+    // Reverting re-reads the file: the extra node is gone and the document is
+    // clean again.
+    REQUIRE_FALSE(context.reload_scene(nullptr));
+    CHECK(context.scene().node_count() == saved_count);
+    CHECK(context.scene().find_node_by_name("Extra") == nullptr);
+    CHECK_FALSE(context.is_dirty());
+    CHECK(context.scene_path() == path);
+
+    // A document that has never been saved has nothing to revert to.
+    EditorContext fresh;
+    REQUIRE_FALSE(fresh.new_scene(nullptr));
+    CHECK(fresh.reload_scene(nullptr));
+}
+
+TEST_CASE("file requests are a one-shot handshake") {
+    EditorContext context;
+
+    CHECK(context.file_request() == FileRequest::None);
+    CHECK(context.take_file_request() == FileRequest::None);
+
+    context.request_file(FileRequest::SaveScene);
+    CHECK(context.file_request() == FileRequest::SaveScene);
+    // Taking it clears it, so the host acts once per request.
+    CHECK(context.take_file_request() == FileRequest::SaveScene);
+    CHECK(context.file_request() == FileRequest::None);
+    CHECK(context.take_file_request() == FileRequest::None);
+}
+
+TEST_CASE("the confirmation prompt is explicit state the UI projects") {
+    EditorContext context;
+    CHECK_FALSE(context.is_confirming());
+    CHECK(context.confirm_message().empty());
+
+    context.ask_confirm("Discard unsaved changes?");
+    CHECK(context.is_confirming());
+    CHECK(context.confirm_message() == "Discard unsaved changes?");
+
+    context.clear_confirm();
+    CHECK_FALSE(context.is_confirming());
+    CHECK(context.confirm_message().empty());
 }

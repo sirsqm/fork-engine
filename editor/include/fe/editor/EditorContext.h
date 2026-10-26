@@ -34,6 +34,34 @@ enum class PlayRequest {
     Stop,
 };
 
+// A document-level request from the menu. Like `PlayRequest`, the UI only sets
+// it; the host - which owns the embedded Engine and the window - performs it
+// between frames, so document replacement and window control never happen from
+// inside a panel's draw. The host decides which of these need a file dialog or a
+// confirmation first.
+enum class FileRequest {
+    None,
+    // Replace the document with a fresh example scene.
+    NewScene,
+    // Browse for a scene to open.
+    OpenScene,
+    // Save to the current path, or browse for one when the document has none.
+    SaveScene,
+    // Always browse for a path, even when the document has one.
+    SaveSceneAs,
+    // Re-read the current scene from disk, discarding in-memory edits.
+    ReloadScene,
+    // Browse for a project file to open.
+    OpenProject,
+    // Close the editor, after a confirmation when there are unsaved changes.
+    Quit,
+    // The user answered the "discard unsaved changes?" prompt affirmatively; the
+    // host performs the action held in the context's pending action.
+    ConfirmDiscard,
+    // The user declined it; the host clears the pending action and does nothing.
+    CancelDiscard,
+};
+
 // The editor's document: the authored scene plus the view state and play
 // session that operate on it.
 //
@@ -90,6 +118,20 @@ public:
     // scene that has never been persisted.
     [[nodiscard]] const std::string& scene_path() const noexcept { return scene_path_; }
 
+    // --- Unsaved-changes tracking -----------------------------------------
+    // True when the document has been edited since it was last created, loaded,
+    // or saved. Every edit that goes through the command stack - a component
+    // property, a script property, a structural command, an undo or a redo -
+    // marks it; new_scene, load_scene, save_scene, and reload_scene clear it.
+    //
+    // This is what lets the editor ask "discard unsaved changes?" before a New,
+    // an Open, or a quit, and what a future "modified" marker in the title bar
+    // reads. It is deliberately conservative: a false positive (dirty when the
+    // file happens to match) is harmless, a false negative loses work.
+    [[nodiscard]] bool is_dirty() const noexcept { return dirty_; }
+    void clear_dirty() noexcept { dirty_ = false; }
+    void mark_dirty() noexcept { dirty_ = true; }
+
     // Replaces the document with a newly built example scene (a camera and a
     // few sprites). `resources` may be null, in which case sprites are created
     // without textures. Clears the path and the hierarchy.
@@ -98,6 +140,12 @@ public:
     // Loads a scene file into the document. `resources` may be null. On failure
     // the existing document is left untouched.
     [[nodiscard]] Error load_scene(std::string_view path, ResourceManager* resources = nullptr);
+
+    // Re-reads the current scene from its file, discarding in-memory edits. This
+    // is the editor's "revert" (and the file-watch reload): it is load_scene on
+    // the current path, so it clears the undo history and the dirty flag. Returns
+    // an Error when the document has never been saved (no path to re-read).
+    [[nodiscard]] Error reload_scene(ResourceManager* resources = nullptr);
 
     // Saves the current scene to `path` (or to the current path when `path` is
     // empty). On success `scene_path()` becomes the saved path.
@@ -167,6 +215,39 @@ public:
         const PlayRequest request = play_request_;
         play_request_ = PlayRequest::None;
         return request;
+    }
+
+    // --- File control ------------------------------------------------------
+    // Records a document-level request from the menu. The host consumes it with
+    // take_file_request() in the same frame. Requests that need a file dialog or
+    // a confirmation are the host's to resolve, not the menu's, so the menu stays
+    // a pure emitter of intent.
+    void request_file(FileRequest request) noexcept { file_request_ = request; }
+
+    [[nodiscard]] FileRequest file_request() const noexcept { return file_request_; }
+
+    // Returns the pending request and clears it.
+    [[nodiscard]] FileRequest take_file_request() noexcept {
+        const FileRequest request = file_request_;
+        file_request_ = FileRequest::None;
+        return request;
+    }
+
+    // --- Confirmation prompt ----------------------------------------------
+    // A yes/no question the UI must show before a destructive action (replacing
+    // the document, quitting with unsaved changes). The host asks; the confirm
+    // panel draws it; the answer comes back as ConfirmDiscard/CancelDiscard
+    // through the file-request channel, so the host performs the action and the
+    // panel stays a pure reader/emitter.
+    void ask_confirm(std::string message) {
+        confirm_message_ = std::move(message);
+        confirming_ = true;
+    }
+    [[nodiscard]] bool is_confirming() const noexcept { return confirming_; }
+    [[nodiscard]] const std::string& confirm_message() const noexcept { return confirm_message_; }
+    void clear_confirm() noexcept {
+        confirming_ = false;
+        confirm_message_.clear();
     }
 
     // --- Editing -----------------------------------------------------------
@@ -250,11 +331,15 @@ private:
     ScriptCatalog scripts_;
     CommandStack commands_;
     std::string scene_path_;
+    bool dirty_ = false;
     ProjectSettings project_;
     std::string project_path_;
     std::string project_root_;
     ResourceManager* resources_ = nullptr;
     PlayRequest play_request_ = PlayRequest::None;
+    FileRequest file_request_ = FileRequest::None;
+    bool confirming_ = false;
+    std::string confirm_message_;
     std::optional<Profiler> profiler_;
 };
 

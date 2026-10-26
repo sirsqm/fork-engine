@@ -160,3 +160,41 @@ TEST_CASE("copy_file overwrites an existing destination") {
     REQUIRE(bytes);
     CHECK(std::string(bytes.value().begin(), bytes.value().end()) == "new");
 }
+
+TEST_CASE("list_directory separates files from directories, folders first") {
+    TempDir dir("listdir");
+    REQUIRE_FALSE(fs::write_text_file(dir.file("b.txt"), "b"));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("a.txt"), "a"));
+    REQUIRE_FALSE(fs::create_directories(dir.file("zdir")));
+    REQUIRE_FALSE(fs::create_directories(dir.file("adir")));
+    // A nested file must not appear in the top-level listing.
+    REQUIRE_FALSE(fs::write_text_file(dir.file("adir/nested.txt"), "n"));
+
+    const auto entries = fs::list_directory(dir.str());
+    REQUIRE(entries.size() == 4);
+    CHECK(entries[0].name == "adir");
+    CHECK(entries[0].is_directory);
+    CHECK(entries[1].name == "zdir");
+    CHECK(entries[1].is_directory);
+    CHECK(entries[2].name == "a.txt");
+    CHECK_FALSE(entries[2].is_directory);
+    CHECK(entries[3].name == "b.txt");
+}
+
+TEST_CASE("is_directory distinguishes a folder from a file and from nothing") {
+    TempDir dir("isdir");
+    REQUIRE_FALSE(fs::create_directories(dir.file("folder")));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("file.txt"), "x"));
+
+    CHECK(fs::is_directory(dir.file("folder")));
+    CHECK_FALSE(fs::is_directory(dir.file("file.txt")));
+    CHECK_FALSE(fs::is_directory(dir.file("missing")));
+}
+
+TEST_CASE("list_directory of a missing directory is empty, not an error") {
+    TempDir dir("listdir_missing");
+    CHECK(fs::list_directory(dir.file("nope")).empty());
+    // A file, not a directory, is also empty rather than a crash.
+    REQUIRE_FALSE(fs::write_text_file(dir.file("file.txt"), "x"));
+    CHECK(fs::list_directory(dir.file("file.txt")).empty());
+}

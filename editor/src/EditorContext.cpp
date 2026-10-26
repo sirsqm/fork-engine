@@ -182,6 +182,8 @@ Error EditorContext::new_scene(ResourceManager* resources) {
     scene_path_.clear();
     // A new document has no history: undo must not reach back across documents.
     commands_.clear();
+    // A freshly created document matches nothing on disk yet, so it is clean.
+    dirty_ = false;
 
     // A camera plus a small sprite cluster. When a resource manager is present,
     // load the sample checker texture so the scene renders something; otherwise
@@ -249,6 +251,8 @@ Error EditorContext::load_scene(std::string_view path, ResourceManager* resource
     // Loading replaces the document, so the previous document's history no
     // longer applies to what is on screen.
     commands_.clear();
+    // A freshly loaded document matches its file, so it is clean.
+    dirty_ = false;
     // The reader attached the scene's scripts through the ordinary host, not
     // through the module library, so hand the library the bindings it now needs
     // to rebind them on a hot reload (ADR-0066).
@@ -283,8 +287,19 @@ Error EditorContext::save_scene(std::string_view path) {
         return error;
     }
     scene_path_ = target;
+    // The file now matches the document, so there is nothing unsaved.
+    dirty_ = false;
     FE_LOG_INFO("editor: saved '%s'", scene_path_.c_str());
     return Error::none();
+}
+
+Error EditorContext::reload_scene(ResourceManager* resources) {
+    if (scene_path_.empty()) {
+        return Error("EditorContext::reload_scene: the scene has never been saved");
+    }
+    // load_scene re-reads the file, clears the undo history, and clears the dirty
+    // flag (a fresh load is clean), which is exactly a revert.
+    return load_scene(scene_path_, resources);
 }
 
 void EditorContext::refresh_hierarchy() {
@@ -302,6 +317,9 @@ bool EditorContext::execute(std::unique_ptr<Command> command) {
     // node's name, so the hierarchy is rebuilt unconditionally: it is cheap and
     // the alternative is a stale panel.
     refresh_hierarchy();
+    // Any edit through the stack leaves the file stale, so the document is
+    // unsaved from here until the next save or load.
+    dirty_ = true;
     return true;
 }
 
@@ -334,6 +352,10 @@ bool EditorContext::undo() {
     const bool undone = commands_.undo(scene_);
     if (undone) {
         refresh_hierarchy();
+        // Undoing an edit also diverges from the file (unless the undo returns
+        // to the saved state, which the editor does not track: conservative is
+        // the safe direction here).
+        dirty_ = true;
     }
     return undone;
 }
@@ -345,6 +367,7 @@ bool EditorContext::redo() {
     const bool redone = commands_.redo(scene_);
     if (redone) {
         refresh_hierarchy();
+        dirty_ = true;
     }
     return redone;
 }

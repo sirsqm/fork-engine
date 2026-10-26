@@ -151,6 +151,7 @@ if(FE_BUILD_EDITOR)
       src/test_hierarchy_view_model.cpp
       src/test_asset_browser.cpp
       src/test_editor_context.cpp
+      src/test_file_dialog.cpp
       src/test_editor_scripts.cpp
       src/test_editor_script_modules.cpp
       src/test_project_settings.cpp

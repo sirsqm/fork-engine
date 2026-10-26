@@ -94,5 +94,28 @@ namespace fs {
 // that scan for optional asset trees treat absence as "nothing to scan".
 [[nodiscard]] std::vector<std::string> list_files_recursive(std::string_view directory);
 
+// One entry in a directory listing, as returned by `list_directory`.
+struct DirectoryEntry {
+    // The entry's name, without a path (a file name or a directory name).
+    std::string name;
+    // True for a directory, false for a regular file. Anything that is neither
+    // (a symlink, a socket) is reported as a file.
+    bool is_directory = false;
+};
+
+// True when `path` names a directory. False for a file, a missing path, or
+// anything else. This is the one place directory-ness is decided, so a caller
+// that must distinguish a folder from a file asks here rather than inferring it
+// from a listing.
+[[nodiscard]] bool is_directory(std::string_view path);
+
+// Lists the immediate children of `directory` - its files and subdirectories,
+// but not their contents - sorted with directories first and then by name, so a
+// caller that renders the list top to bottom shows folders above files. A
+// directory that does not exist (or is not a directory) yields an empty list,
+// not an error, matching `list_files_recursive`. This is the primitive a file
+// browser builds on; it never recurses.
+[[nodiscard]] std::vector<DirectoryEntry> list_directory(std::string_view directory);
+
 } // namespace fs
 } // namespace fe

@@ -14,6 +14,8 @@
 
 #include "fe/core/FileSystem.h"
 #include "fe/editor/EditorHost.h"
+#include "fe/editor/FileDialogPanel.h"
+#include "fe/editor/FileDialogViewModel.h"
 #include "fe/editor/ProjectSettings.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Property.h"
@@ -251,4 +253,125 @@ TEST_CASE("a configured project file sets the asset root and opens its startup s
 
     host.shutdown();
     std::filesystem::remove_all(root);
+}
+
+TEST_CASE("the editor's file dialog saves and reopens a scene through the host") {
+    if (!graphics_available()) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "fe_editor_host_dialog_test";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+
+    fe::editor::EditorHost::Config config;
+    config.engine.window.title = "fork engine editor host dialog test";
+    config.engine.window.width = 128;
+    config.engine.window.height = 96;
+    config.engine.window.visible = false;
+    config.engine.window.vsync = false;
+    config.engine.log_level = fe::LogLevel::Error;
+    config.max_frames = 1;
+
+    fe::editor::EditorHost host(std::move(config));
+    REQUIRE_FALSE(host.initialize());
+
+    fe::editor::FileDialogPanel* dialog = host.file_dialog();
+    REQUIRE(dialog != nullptr);
+
+    // A brand-new document has no path, so "Save Scene" opens the dialog rather
+    // than writing silently. This is the whole point of the File menu: the
+    // editor could not save a scene from the UI before.
+    host.context().request_file(fe::editor::FileRequest::SaveScene);
+    host.step();
+    CHECK(dialog->is_open());
+
+    // Point the dialog at the temporary directory with a name, and confirm. The
+    // confirm path is exercised headlessly, exactly as the modal's Save button
+    // drives it.
+    dialog->model().set_directory_for_test(root.string());
+    dialog->model().set_file_name("level.fescene");
+    REQUIRE_FALSE(dialog->confirm(host.context()));
+    CHECK_FALSE(dialog->is_open());
+    CHECK(fe::fs::exists((root / "level.fescene").string()));
+    CHECK(fe::fs::normalize(host.context().scene_path()) == fe::fs::normalize((root / "level.fescene").string()));
+    // Saving cleared the dirty flag.
+    CHECK_FALSE(host.context().is_dirty());
+
+    // An edit marks the document dirty, so opening another scene asks first.
+    fe::Node* node = host.context().scene().create_node("Edited");
+    REQUIRE(node != nullptr);
+    host.context().mark_dirty();
+    CHECK(host.context().is_dirty());
+
+    // Opening the saved scene through the dialog restores the document. Because
+    // the document is dirty, the host asks before replacing it; confirm.
+    host.context().request_file(fe::editor::FileRequest::OpenScene);
+    host.step();
+    REQUIRE(host.context().is_confirming());
+    host.context().request_file(fe::editor::FileRequest::ConfirmDiscard);
+    host.step();
+    CHECK(dialog->is_open());
+    dialog->model().set_directory_for_test(root.string());
+    dialog->model().set_file_name("level.fescene");
+    REQUIRE_FALSE(dialog->confirm(host.context()));
+    CHECK_FALSE(host.context().is_dirty());
+    // "Edited" was not saved, so it is gone after the reopen.
+    CHECK(host.context().scene().find_node_by_name("Edited") == nullptr);
+
+    host.shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("a destructive request with unsaved changes asks before acting") {
+    if (!graphics_available()) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    fe::editor::EditorHost::Config config;
+    config.engine.window.title = "fork engine editor host confirm test";
+    config.engine.window.width = 128;
+    config.engine.window.height = 96;
+    config.engine.window.visible = false;
+    config.engine.window.vsync = false;
+    config.engine.log_level = fe::LogLevel::Error;
+    config.max_frames = 1;
+
+    fe::editor::EditorHost host(std::move(config));
+    REQUIRE_FALSE(host.initialize());
+
+    // Clean document: New is immediate, no prompt.
+    host.context().request_file(fe::editor::FileRequest::NewScene);
+    host.step();
+    CHECK_FALSE(host.context().is_confirming());
+
+    // Dirty document: New is held pending confirmation.
+    (void)host.context().scene().create_node("Dirty");
+    host.context().mark_dirty();
+    host.context().request_file(fe::editor::FileRequest::NewScene);
+    host.step();
+    CHECK(host.context().is_confirming());
+    CHECK_FALSE(host.context().confirm_message().empty());
+
+    // Declining leaves the document as it was.
+    const std::size_t count = host.context().scene().node_count();
+    host.context().request_file(fe::editor::FileRequest::CancelDiscard);
+    host.step();
+    CHECK_FALSE(host.context().is_confirming());
+    CHECK(host.context().scene().node_count() == count);
+    CHECK(host.context().is_dirty());
+
+    // Confirming performs the held New.
+    host.context().request_file(fe::editor::FileRequest::NewScene);
+    host.step();
+    REQUIRE(host.context().is_confirming());
+    host.context().request_file(fe::editor::FileRequest::ConfirmDiscard);
+    host.step();
+    CHECK_FALSE(host.context().is_confirming());
+    CHECK_FALSE(host.context().is_dirty());
+    CHECK(host.context().scene().find_node_by_name("Dirty") == nullptr);
+
+    host.shutdown();
 }

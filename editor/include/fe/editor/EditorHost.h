@@ -14,6 +14,7 @@
 namespace fe::editor {
 
 class ViewportPanel;
+class FileDialogPanel;
 
 // The editor host: an embedded `Engine`, the document, and the ImGui UI, wired
 // into one loop.
@@ -95,10 +96,33 @@ public:
     // a panel-sized target rather than only the window.
     [[nodiscard]] rhi::RenderTarget* viewport_target() const noexcept;
 
+    // The file dialog panel, exposed for tests so a dialog can be opened and
+    // confirmed headlessly through `FileDialogPanel::confirm`. Null before
+    // initialize().
+    [[nodiscard]] FileDialogPanel* file_dialog() const noexcept { return file_dialog_panel_; }
+
 private:
     // Consumes a pending play request from the UI and performs it against the
     // embedded engine.
     void handle_play_request();
+
+    // Consumes a pending document-level request from the menu and performs it:
+    // opening the file dialog, saving directly, confirming a destructive action,
+    // or closing the window. The split from `handle_play_request` keeps the two
+    // request kinds independent.
+    void handle_file_request();
+
+    // Performs `request`, assuming any confirmation it needs has already been
+    // given. Split out so the confirmation path can defer to it.
+    void perform_file_request(FileRequest request);
+
+    // True when `request` would discard unsaved work, so it needs the
+    // confirmation prompt first.
+    [[nodiscard]] bool needs_confirmation(FileRequest request) const;
+
+    // The directory a file dialog should start in: the current scene's, then the
+    // project's, then the working directory. Never empty.
+    [[nodiscard]] std::string dialog_start_directory() const;
 
     // Draws `scene` into the engine's current framebuffer, choosing the clear
     // colour from the active camera exactly as the runtime does.
@@ -111,6 +135,12 @@ private:
     // Borrowed from the panel set owned by `ui_`; used to release the viewport's
     // GPU target before the device shuts down.
     ViewportPanel* viewport_panel_ = nullptr;
+    // Borrowed from the panel set owned by `ui_`; the host opens and reads it when
+    // a file request needs a dialog.
+    FileDialogPanel* file_dialog_panel_ = nullptr;
+    // A destructive action waiting on the confirmation prompt. Set when a request
+    // needs confirmation; performed on ConfirmDiscard, dropped on CancelDiscard.
+    FileRequest pending_file_request_ = FileRequest::None;
     bool initialized_ = false;
     u32 frame_ = 0;
 };

@@ -27,6 +27,7 @@ add_library(fork_editor_core STATIC
     src/ProfilerPanelViewModel.cpp
     src/Viewport.cpp
     src/Command.cpp
+    src/FileDialogViewModel.cpp
     src/Commands.cpp
     src/OperationCommand.cpp
 )
@@ -50,6 +51,8 @@ add_library(fork_editor STATIC
     src/PlayPanel.cpp
     src/InspectorPanel.cpp
     src/ProfilerPanel.cpp
+    src/FileDialogPanel.cpp
+    src/ConfirmPanel.cpp
     src/ViewportPanel.cpp
 )
 add_library(FE::editor ALIAS fork_editor)

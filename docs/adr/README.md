@@ -89,6 +89,8 @@ rather than editing it.
 | [0081](0081-web-audio-autoplay-gesture.md) | The browser autoplay policy and the user gesture | Accepted |
 | [0082](0082-page-visibility-wiring.md) | The page visibility event is what the clock is told about | Accepted |
 | [0083](0083-in-engine-text-rendering.md) | In-engine text rendering | Accepted |
+| [0084](0084-install-rules.md) | Install rules and an installed-tree smoke test | Accepted |
+| [0085](0085-editor-file-dialog-and-dirty-tracking.md) | The editor File menu, file dialog, and unsaved-changes tracking | Accepted |
 
 ## Format
 

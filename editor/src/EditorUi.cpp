@@ -174,6 +174,37 @@ void EditorUi::draw_toolbar(EditorContext& context) {
         return;
     }
 
+    if (ImGui::BeginMenu("File")) {
+        if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
+            context.request_file(FileRequest::NewScene);
+        }
+        if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
+            context.request_file(FileRequest::OpenScene);
+        }
+        ImGui::Separator();
+        // Save is enabled whenever there is a document; it either writes to the
+        // known path or the host opens the dialog for a new one.
+        if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
+            context.request_file(FileRequest::SaveScene);
+        }
+        if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S")) {
+            context.request_file(FileRequest::SaveSceneAs);
+        }
+        ImGui::Separator();
+        // Revert only makes sense for a document that has a file to revert to.
+        if (ImGui::MenuItem("Revert Scene", nullptr, false, !context.scene_path().empty())) {
+            context.request_file(FileRequest::ReloadScene);
+        }
+        if (ImGui::MenuItem("Open Project...")) {
+            context.request_file(FileRequest::OpenProject);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Quit", "Ctrl+Q")) {
+            context.request_file(FileRequest::Quit);
+        }
+        ImGui::EndMenu();
+    }
+
     if (ImGui::BeginMenu("Edit")) {
         // The label names the operation undo/redo would perform, which is the
         // convention users expect. Disabled while playing (the scene is hidden).
@@ -204,7 +235,11 @@ void EditorUi::draw_toolbar(EditorContext& context) {
     ImGui::SameLine();
     const std::string scene_name = context.scene().name();
     const std::string path = context.scene_path().empty() ? "(unsaved)" : context.scene_path();
-    ImGui::Text("  %s  -  %s  |  %zu nodes", scene_name.c_str(), path.c_str(), context.scene().node_count());
+    // A trailing "*" marks unsaved changes, the convention every editor uses, so
+    // the user can tell at a glance whether quitting will lose work.
+    const char* dirty_marker = context.is_dirty() ? " *" : "";
+    ImGui::Text("  %s%s  -  %s  |  %zu nodes", scene_name.c_str(), dirty_marker, path.c_str(),
+                context.scene().node_count());
     if (play.is_playing()) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "  PLAYING");
@@ -228,6 +263,20 @@ void EditorUi::draw_toolbar(EditorContext& context) {
         }
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
             context.redo();
+        }
+        // File shortcuts. These only emit requests; the host performs them, so a
+        // Ctrl+S that needs a path opens the dialog rather than writing silently.
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_N, false)) {
+            context.request_file(FileRequest::NewScene);
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) {
+            context.request_file(FileRequest::OpenScene);
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+            context.request_file(io.KeyShift ? FileRequest::SaveSceneAs : FileRequest::SaveScene);
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Q, false)) {
+            context.request_file(FileRequest::Quit);
         }
     }
 }
