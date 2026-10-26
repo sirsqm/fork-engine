@@ -599,9 +599,9 @@ parse_impl(std::string_view path, std::string_view bytes,
 
     // Resolve every buffer: the GLB binary chunk (no uri), a data uri, or an
     // external file read relative to the glTF file's directory.
+    const std::string base = fs::parent_path(path);
     std::vector<std::vector<u8>> buffers;
     if (doc.contains("buffers")) {
-        const std::string base = fs::parent_path(path);
         buffers.reserve(doc.at("buffers").size());
         for (const json& buffer : doc.at("buffers")) {
             if (buffer.contains("uri")) {
@@ -652,7 +652,12 @@ parse_impl(std::string_view path, std::string_view bytes,
         if (uri.rfind("data:", 0) == 0) {
             return {};
         }
-        return Texture2DLoader::reference_key(uri);
+        // A glTF image URI is relative to the glTF file, exactly as a buffer URI
+        // is, so a document in a subdirectory keys its maps under that
+        // subdirectory too. Keying the bare URI would name a path the file is
+        // not at, and the material's map would never resolve.
+        const std::string relative = base.empty() ? uri : fs::join(base, uri);
+        return Texture2DLoader::reference_key(relative);
     };
 
     std::vector<std::shared_ptr<Resource>> meshes;

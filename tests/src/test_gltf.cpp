@@ -519,3 +519,21 @@ TEST_CASE("a glTF material texture with a data-uri image resolves to no texture"
     CHECK(mesh->material().value().base_color_texture.empty());
     CHECK(mesh->material().value().metallic == doctest::Approx(0.5f));
 }
+
+TEST_CASE("a glTF in a subdirectory keys its material's maps under that directory") {
+    // A glTF image URI is relative to the glTF file, so a document that lives in
+    // a subdirectory names its maps there too. Keying the bare URI would produce
+    // a reference the file is not at, and the map would never load.
+    auto parsed = GltfLoader::parse("assets/models/prop.gltf", material_gltf());
+    REQUIRE(parsed);
+    REQUIRE(parsed.value().size() == 1);
+
+    auto mesh = as_mesh(parsed.value().front());
+    REQUIRE(mesh);
+    REQUIRE(mesh->has_material());
+
+    const Material& material = mesh->material().value();
+    CHECK(material.base_color_texture == "tex:assets/models/textures/albedo.png");
+    CHECK(material.normal_texture == "tex:assets/models/textures/normal.png");
+    CHECK(material.emissive_texture == "tex:assets/models/textures/glow.png");
+}
