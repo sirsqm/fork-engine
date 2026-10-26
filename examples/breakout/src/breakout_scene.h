@@ -29,6 +29,10 @@ struct SceneAssets {
     std::shared_ptr<fe::Resource> paddle;
     std::shared_ptr<fe::Resource> ball;
     std::shared_ptr<fe::Resource> brick;
+    // The HUD font: the glyph atlas and metrics behind the score and lives text.
+    // Missing is not fatal -- the field is built anyway and the text simply does
+    // not draw, which is what a headless run wants.
+    std::shared_ptr<fe::Resource> font;
 };
 
 // Builds the canonical breakout field into `scene`: camera, three walls, paddle,

@@ -17,6 +17,7 @@ class Mesh;
 class MeshRenderer3D;
 class Scene;
 class Sprite2D;
+class TextLabel;
 class Tilemap;
 
 namespace rhi {
@@ -69,6 +70,10 @@ struct SpriteInstance {
     // The tilemap component, when this instance is a tile rather than a sprite.
     // Null for a sprite; `sprite` is null for a tile.
     const Tilemap* tilemap = nullptr;
+    // The text label, when this instance is a glyph rather than a sprite or a
+    // tile. At most one of `sprite`, `tilemap`, and `label` is non-null; like
+    // `tilemap` it is provenance the draw step does not read.
+    const TextLabel* label = nullptr;
     // The owning node's world matrix, already composed with the tile's own cell
     // offset for a tilemap instance.
     Mat4 world{};
@@ -164,6 +169,22 @@ void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out, JobSy
 // result identical to serial.
 void extract_tiles(const Scene& scene, std::vector<SpriteInstance>& out, JobSystem* jobs = nullptr);
 
+// Appends the glyph quads of every `TextLabel` in `scene` to `out`. Like
+// extract_tiles this does *not* clear, so a HUD's text and the sprites under it
+// land in one array and the layer sort orders them together.
+//
+// One glyph becomes one `SpriteInstance` whose `world` is the label node's world
+// matrix composed with the glyph's local offset and whose `uv` is the glyph's
+// atlas cell. The metrics are in em units, so the label's `size` is the single
+// scale factor. A label with no font, no text, or a font whose atlas is missing
+// contributes nothing; a byte with no glyph contributes nothing but still
+// advances by zero, so an unsupported character is a gap and not a broken line.
+//
+// `jobs` behaves as it does for extract_sprites. A single label is laid out
+// serially -- a line is at most a few dozen quads and the fan-out would cost more
+// than it saves -- so text never splits mid-line.
+void extract_text(const Scene& scene, std::vector<SpriteInstance>& out, JobSystem* jobs = nullptr);
+
 // --- Arena-backed extraction (ADR-0054 follow-on) --------------------------
 //
 // The `std::vector` overloads above are correct and remain the default. These
@@ -195,10 +216,23 @@ usize extract_sprites_into(FrameArena& arena, const Scene& scene, std::span<Spri
 usize extract_tiles_into(FrameArena& arena, const Scene& scene, std::span<SpriteInstance> out, usize offset,
                          JobSystem* jobs = nullptr);
 
+// Appends text glyphs into `out` starting at `offset`, returning the new end
+// index. It appends for the same reason the other walks do: text shares one
+// array with the sprites and tiles so the layer sort orders them together. Pass
+// the count the previous walk returned as `offset`.
+usize extract_text_into(FrameArena& arena, const Scene& scene, std::span<SpriteInstance> out, usize offset,
+                        JobSystem* jobs = nullptr);
+
 // An upper bound on the number of sprite instances `scene` can produce: one
-// sprite per node, plus one per non-empty cell of every tilemap. A caller sizing
-// an arena destination uses this so the extraction can never overflow the span.
-// It walks the scene once and allocates nothing.
+// sprite per node, plus one per non-empty cell of every tilemap, plus one per
+// byte of every label's text. A caller sizing an arena destination uses this so
+// the extraction can never overflow the span. It walks the scene once and
+// allocates nothing.
+//
+// The text term counts bytes rather than glyphs because the bound must never be
+// short: an unlisted byte draws nothing, so counting it is safe, and the count is
+// what keeps the arena from being sized for a short string and then handed a long
+// one.
 [[nodiscard]] usize sprite_instance_bound(const Scene& scene);
 
 // Collects every drawable mesh instance in `scene` into `out` (cleared first).

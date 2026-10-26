@@ -867,6 +867,19 @@ the exported manifest and show it in the game.
 
 The bar: the slice is a game a stranger can play, not a demo.
 
+### `text-label`
+
+The engine cannot draw a character: text lives only in the editor's ImGui
+panels and the web shell's HTML. Nothing in Phase 4 can be built without it —
+a title, a score, a menu, and a settings screen are all strings. Add a
+`TextLabel` component that emits one glyph quad per character through the
+existing 2D extraction seam, and a generated bitmap-font atlas behind it
+([ADR-0083](adr/0083-in-engine-text-rendering.md)).
+
+**Done when** a test lays out a string, extracts it, and observes one instance
+per glyph with the expected advance, and the breakout slice draws its score and
+lives on screen in a headless browser run.
+
 ### `slice-title-and-menus`
 
 A title screen, a pause, and a game-over screen, so the slice has a shape.

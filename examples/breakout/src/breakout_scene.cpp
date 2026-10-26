@@ -12,9 +12,11 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene/TextLabel.h"
 #include "fe/systems/SceneSchedule.h"
 
 #include <string>
+#include <string_view>
 
 namespace breakout {
 namespace {
@@ -42,6 +44,21 @@ void add_wall(fe::Scene& scene, const char* name, const fe::Vec3& position, cons
     node->transform().position = position;
     add_sprite(node, texture, fe::Vec2{half_extent.x * 2.0f, half_extent.y * 2.0f}, fe::Vec4{0.5f, 0.55f, 0.7f, 1.0f},
                0);
+}
+
+// A HUD text node. The label is positioned by its node transform, so the same
+// component serves the corner counters and the centred end-of-game message.
+void add_hud_label(fe::Scene& scene, std::string_view name, const fe::Vec3& position, fe::TextLabel::Align align,
+                   const std::shared_ptr<fe::Resource>& font) {
+    fe::Node* node = scene.create_node(std::string(name));
+    node->transform().position = position;
+    auto* label = node->add_component<fe::TextLabel>();
+    label->font = font;
+    label->size = cfg::kHudTextSize;
+    label->align = align;
+    // Above the field's sprites (which sit at layer 0) and below any future
+    // overlay, so the HUD reads over the walls and the ball.
+    label->layer = 10;
 }
 
 } // namespace
@@ -136,6 +153,15 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
     source->gain = 0.7f;
     source->loop = false;
     source->play_on_start = false;
+
+    // The HUD: the score pinned to the top-left and the lives to the top-right,
+    // both inside the walls. The text is filled in each frame by HudSystem, so
+    // the field is authored with empty labels and the game's state is what makes
+    // them readable. An empty label draws nothing, which is the right default.
+    add_hud_label(scene, names::kScoreLabel, fe::Vec3{cfg::kHudLeftX, cfg::kHudTopY, 0.0f}, fe::TextLabel::Align::Left,
+                  assets.font);
+    add_hud_label(scene, names::kLivesLabel, fe::Vec3{cfg::kHudRightX, cfg::kHudTopY, 0.0f},
+                  fe::TextLabel::Align::Right, assets.font);
 }
 
 fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule, BreakoutState& state,
@@ -191,6 +217,11 @@ fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& sche
 
     auto* game_state = schedule.add_system<GameStateSystem>();
     game_state->set_state(&state);
+
+    // Last, so it reads the state the systems above it produced this frame. It
+    // owns nothing, so a restart that rebuilds the field needs no hand-off.
+    auto* hud = schedule.add_system<HudSystem>();
+    hud->set_state(&state);
 
     return physics;
 }

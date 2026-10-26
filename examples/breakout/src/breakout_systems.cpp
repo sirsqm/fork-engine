@@ -10,6 +10,7 @@
 #include "fe/platform/InputState.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/TextLabel.h"
 #include "fe/systems/FrameContext.h"
 
 #include <algorithm>
@@ -258,6 +259,35 @@ void GameStateSystem::respawn_ball(fe::Scene& scene) {
         body->velocity = fe::Vec2{};
         body->angular_velocity = 0.0f;
         body->wake();
+    }
+}
+
+void HudSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
+    (void)context;
+    if (state_ == nullptr) {
+        return;
+    }
+
+    if (fe::Node* node = scene.find_node_by_name(names::kScoreLabel); node != nullptr) {
+        if (auto* label = node->get_component<fe::TextLabel>(); label != nullptr) {
+            label->text = "SCORE " + std::to_string(state_->score());
+        }
+    }
+
+    if (fe::Node* node = scene.find_node_by_name(names::kLivesLabel); node != nullptr) {
+        if (auto* label = node->get_component<fe::TextLabel>(); label != nullptr) {
+            // The result replaces the lives once the game ends, so the end state
+            // is legible in the browser without reading the console. It is
+            // centred over the field so it reads as a message, not a counter.
+            if (state_->is_over()) {
+                label->text = state_->won() ? "YOU WIN" : "GAME OVER";
+                label->align = fe::TextLabel::Align::Center;
+                node->transform().position.x = 0.0f;
+                node->transform().position.y = 0.0f;
+            } else {
+                label->text = "LIVES " + std::to_string(state_->lives());
+            }
+        }
     }
 }
 

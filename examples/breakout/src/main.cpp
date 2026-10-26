@@ -80,6 +80,9 @@ breakout::SceneAssets load_assets(fe::ResourceManager& resources) {
     assets.paddle = load("examples/breakout/assets/textures/paddle.png");
     assets.ball = load("examples/breakout/assets/textures/ball.png");
     assets.brick = load("examples/breakout/assets/textures/brick.png");
+    // The HUD font. The scheme selects the font loader, so the same path the
+    // metrics file lives at resolves to a `Font` rather than a bare file.
+    assets.font = load("font:examples/breakout/assets/fonts/hud.fefont");
     return assets;
 }
 

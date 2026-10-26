@@ -12,6 +12,7 @@
 #include "fe/mesh/ObjLoader.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/renderer3d/Renderer3D.h"
+#include "fe/resources/FontLoader.h"
 #include "fe/resources/ImageLoader.h"
 #include "fe/resources/Texture2DLoader.h"
 #include "fe/version/Version.h"
@@ -133,6 +134,9 @@ Error Engine::initialize(const Config& config) {
         // device registers only the CPU image loader, so an asset can still be
         // decoded and inspected with no context.
         resources_->register_loader(std::make_unique<Texture2DLoader>(*device_, *resources_));
+        // A font resolves its atlas through the texture loader, so it registers
+        // here rather than in the device-free path.
+        resources_->register_loader(std::make_unique<FontLoader>(*resources_));
     }
     resources_->register_loader(std::make_unique<ObjLoader>());
     resources_->register_loader(std::make_unique<GltfLoader>());

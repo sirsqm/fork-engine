@@ -75,6 +75,16 @@ inline constexpr int kBrickCount = kBrickCols * kBrickRows;
 // The bottom of the field is open: the ball is missed once it falls past it.
 inline constexpr fe::f32 kFieldBottomY = -kFieldHalfHeight;
 
+// The heads-up display. The score is pinned to the top-left corner and the lives
+// to the top-right, both inside the walls so the field's own sprites never draw
+// over them. The text is drawn in engine units, so it scales with the camera fit
+// like everything else in the field.
+inline constexpr fe::f32 kHudTextSize = 44.0f;
+inline constexpr fe::f32 kHudMargin = 24.0f;
+inline constexpr fe::f32 kHudTopY = kFieldHalfHeight - kHudMargin;
+inline constexpr fe::f32 kHudLeftX = -kFieldHalfWidth + kHudMargin;
+inline constexpr fe::f32 kHudRightX = kFieldHalfWidth - kHudMargin;
+
 } // namespace config
 
 // The score, the lives, and the win/lose transition.

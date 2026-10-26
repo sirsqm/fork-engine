@@ -75,6 +75,8 @@ set(FE_ENGINE_SOURCES
     src/rhi/null/NullDevice.cpp
     src/rhi/opengl/OpenGLDevice.cpp
     src/resources/ResourceManager.cpp
+    src/resources/Font.cpp
+    src/resources/FontLoader.cpp
     src/resources/ImageLoader.cpp
     src/resources/Texture2DLoader.cpp
     src/resources/AssetDatabase.cpp
@@ -84,6 +86,8 @@ set(FE_ENGINE_SOURCES
     src/scene/Scene.cpp
     src/scene/Camera2D.cpp
     src/scene/Components.cpp
+    src/scene/TextLabel.cpp
+    src/scene/TextLabelTypes.cpp
     src/scene/Tilemap.cpp
     src/scene/TilemapTypes.cpp
     src/reflect/Property.cpp

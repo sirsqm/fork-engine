@@ -225,6 +225,7 @@ void Renderer2D::extract(const Scene& scene, std::vector<render::SpriteInstance>
     // sprites over it together.
     render::extract_sprites(scene, out, jobs);
     render::extract_tiles(scene, out, jobs);
+    render::extract_text(scene, out, jobs);
 }
 
 usize Renderer2D::cull(std::vector<render::SpriteInstance>& out, const Frustum* frustum, JobSystem* jobs) {
@@ -294,6 +295,7 @@ Result<usize> Renderer2D::render(rhi::Device& device, const Scene& scene, u32 vi
     std::span<render::SpriteInstance> instances(storage, bound);
     usize used = render::extract_sprites_into(arena, scene, instances, jobs);
     used = render::extract_tiles_into(arena, scene, instances, used, jobs);
+    used = render::extract_text_into(arena, scene, instances, used, jobs);
 
     const Frustum frustum =
         Frustum::from_view_projection(sprite_view_projection(scene, viewport_width, viewport_height));

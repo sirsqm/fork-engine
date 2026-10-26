@@ -16,6 +16,7 @@
 #include "fe/core/FileSystem.h"
 #include "fe/platform/Window.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/resources/Font.h"
 #include "fe/resources/ImageLoader.h"
 #include "fe/resources/ImportCache.h"
 #include "fe/resources/ImportSettings.h"
@@ -27,6 +28,7 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene/TextLabel.h"
 
 #include <array>
 #include <cmath>
@@ -146,6 +148,42 @@ TEST_CASE("renderer draws a sprite at the centre of the screen") {
 
     const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
     // The sprite covers the centre, so the read-back pixel must be red.
+    CHECK(centre.r > 200);
+    CHECK(centre.g < 60);
+    CHECK(centre.b < 60);
+}
+
+TEST_CASE("renderer draws a glyph through the sprite pipeline") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // A one-glyph font whose 'A' covers the whole atlas and is two ems square
+    // around the baseline, so a label at the origin has its centre at the
+    // origin. That makes the read-back pixel the middle of the glyph, and proves
+    // the text path reached the framebuffer rather than only the instance list.
+    std::vector<Font::Glyph> glyphs('A' + 1);
+    glyphs['A'].uv = Vec4{0.0f, 0.0f, 1.0f, 1.0f};
+    glyphs['A'].advance = 1.0f;
+    glyphs['A'].bearing = Vec2{-1.0f, -1.0f};
+    glyphs['A'].size = Vec2{2.0f, 2.0f};
+    auto font = std::make_shared<Font>("test.fefont", make_solid_texture(*context.device, 255, 255, 255, 255), 1.0f,
+                                       std::move(glyphs));
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->add_component<Camera2D>();
+
+    Node* label_node = scene.create_node("Label");
+    auto* label = label_node->add_component<TextLabel>();
+    label->font = font;
+    label->text = "A";
+    label->size = 32.0f;
+    label->color = Vec4{1.0f, 0.0f, 0.0f, 1.0f}; // Red, against a dark clear.
+
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
     CHECK(centre.r > 200);
     CHECK(centre.g < 60);
     CHECK(centre.b < 60);

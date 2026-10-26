@@ -18,6 +18,7 @@
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/TextLabel.h"
 #include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/FrameContext.h"
 #include "fe/systems/SceneSchedule.h"
@@ -235,12 +236,14 @@ TEST_CASE("the game systems are installed in order") {
 
     auto* physics = breakout::install_breakout_systems(schedule, state, /*autoplay=*/false);
     CHECK(physics != nullptr);
-    REQUIRE(schedule.system_count() == 5);
+    REQUIRE(schedule.system_count() == 6);
     CHECK(std::string(schedule.system_at(0)->name()) == "PaddleControlSystem");
     CHECK(std::string(schedule.system_at(1)->name()) == "BallLaunchSystem");
     CHECK(std::string(schedule.system_at(2)->name()) == "Physics2DSystem");
     CHECK(std::string(schedule.system_at(3)->name()) == "BallContactSystem");
     CHECK(std::string(schedule.system_at(4)->name()) == "GameStateSystem");
+    // The HUD runs last so it reads the state every system above it produced.
+    CHECK(std::string(schedule.system_at(5)->name()) == "HudSystem");
 }
 
 TEST_CASE("the field is gravity-free") {
@@ -283,6 +286,73 @@ TEST_CASE("autoplay launches the ball and it breaks bricks") {
     // The paddle tracks the ball, so it should be returning it: the aimed bounce
     // is what lets the ball reach bricks across the field rather than looping.
     CHECK(state.paddle_hits() >= 1);
+}
+
+// ---------------------------------------------------------------------------
+// The HUD: the score and lives the player reads on screen.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the HUD writes the score and lives into the scene's text labels") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    Node* score_node = scene.find_node_by_name(breakout::names::kScoreLabel);
+    Node* lives_node = scene.find_node_by_name(breakout::names::kLivesLabel);
+    REQUIRE(score_node != nullptr);
+    REQUIRE(lives_node != nullptr);
+    auto* score_label = score_node->get_component<TextLabel>();
+    auto* lives_label = lives_node->get_component<TextLabel>();
+    REQUIRE(score_label != nullptr);
+    REQUIRE(lives_label != nullptr);
+
+    // Authored empty: the game's state is what makes the text readable.
+    CHECK(score_label->text.empty());
+    CHECK(lives_label->text.empty());
+
+    schedule.update(step(1.0f / 60.0f), scene);
+    CHECK(score_label->text == "SCORE 0");
+    CHECK(lives_label->text == "LIVES 3");
+
+    // Break a brick and miss a ball through the rules, then step: the labels
+    // must follow the state, not a private copy of it.
+    state.brick_hit();
+    state.ball_missed();
+    schedule.update(step(1.0f / 60.0f), scene);
+    CHECK(score_label->text == "SCORE 10");
+    CHECK(lives_label->text == "LIVES 2");
+
+    // The HUD sits above the field's sprites so it is never drawn over.
+    CHECK(score_label->layer > 0);
+    CHECK(lives_label->layer > 0);
+}
+
+TEST_CASE("the HUD replaces the lives with the result once the game ends") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    Node* lives_node = scene.find_node_by_name(breakout::names::kLivesLabel);
+    REQUIRE(lives_node != nullptr);
+    auto* lives_label = lives_node->get_component<TextLabel>();
+    REQUIRE(lives_label != nullptr);
+
+    // Lose every life. The end-of-game message replaces the counter and is
+    // centred over the field so it reads as a message rather than a readout.
+    for (int i = 0; i < breakout::config::kStartingLives; ++i) {
+        state.ball_missed();
+    }
+    REQUIRE(state.is_over());
+    schedule.update(step(1.0f / 60.0f), scene);
+
+    CHECK(lives_label->text == "GAME OVER");
+    CHECK(lives_label->align == TextLabel::Align::Center);
+    CHECK(lives_node->transform().position.x == doctest::Approx(0.0f));
+    CHECK(lives_node->transform().position.y == doctest::Approx(0.0f));
 }
 
 TEST_CASE("a paddle hit off-centre aims the ball away from the paddle's centre") {

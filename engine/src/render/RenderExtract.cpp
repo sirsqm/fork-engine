@@ -5,10 +5,12 @@
 #include "fe/core/FrameArena.h"
 #include "fe/jobs/JobSystem.h"
 #include "fe/mesh/Mesh.h"
+#include "fe/resources/Font.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene/TextLabel.h"
 #include "fe/scene/Tilemap.h"
 #include "fe/scene3d/MeshRenderer3D.h"
 
@@ -144,6 +146,78 @@ void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* te
     return true;
 }
 
+// The pen's starting x, in the node's local space: where alignment places the
+// line's left edge relative to the node origin. Measuring first is what lets a
+// score be pinned to a corner without the author knowing its width. Shared by
+// the vector and arena walks.
+[[nodiscard]] f32 pen_origin(const TextLabel& label, const Font& font) noexcept {
+    if (label.align == TextLabel::Align::Left) {
+        return 0.0f;
+    }
+    const f32 width = font.measure(label.text) * label.size;
+    return label.align == TextLabel::Align::Center ? -width * 0.5f : -width;
+}
+
+// One glyph quad's resolved instance, or a reason to skip it. `pen` is the
+// label's pen origin in the node's local space, already advanced past the glyphs
+// before this one. Shared by the vector and arena text walks so the two cannot
+// disagree on a glyph's placement or cell.
+[[nodiscard]] bool resolve_glyph(const TextLabel& label, const Font& font, const Mat4& node_world, u8 code,
+                                 const Vec2& pen, const Texture2D* texture, SpriteInstance& out) {
+    const Font::Glyph* glyph = font.glyph(code);
+    // A byte the atlas does not hold draws nothing. It is not an error: an
+    // unsupported character in a string should be a gap, and the caller's
+    // advance() already skipped its width.
+    if (glyph == nullptr || glyph->size.x <= 0.0f || glyph->size.y <= 0.0f) {
+        return false;
+    }
+    // A zero-area cell is the atlas's way of saying "no ink" -- a space, or a
+    // glyph the generator deliberately left blank. It advances but draws
+    // nothing, so a blank never costs a transparent quad.
+    if (glyph->uv.z <= glyph->uv.x || glyph->uv.w <= glyph->uv.y) {
+        return false;
+    }
+
+    // The metrics are em units, so `size` is the single scale factor. The glyph
+    // quad's centre is the pen plus the bearing plus half the glyph, and the
+    // bearing's +Y is up while the world's +Y is up too, so no flip is needed
+    // here: the atlas's V axis is handled by the generator writing v0 top-down.
+    const f32 scale = label.size;
+    const Vec2 half{glyph->size.x * 0.5f * scale, glyph->size.y * 0.5f * scale};
+    const f32 local_x = pen.x + glyph->bearing.x * scale + half.x;
+    const f32 local_y = pen.y + glyph->bearing.y * scale + half.y;
+
+    out = SpriteInstance{};
+    out.texture = &texture->texture();
+    out.label = &label;
+    out.world = node_world * Mat4::translation(Vec3{local_x, local_y, 0.0f});
+    out.size = Vec2{glyph->size.x * scale, glyph->size.y * scale};
+    out.uv = glyph->uv;
+    out.color = label.color;
+    out.layer = label.layer;
+    return true;
+}
+
+// Lays out one label's text and appends a quad per drawable glyph to `out`.
+// Returns how many were appended. Shared by every text walk.
+usize append_label(const TextLabel& label, const Mat4& node_world, const Font& font, const Texture2D* texture,
+                   std::vector<SpriteInstance>& out) {
+    f32 pen_x = pen_origin(label, font);
+
+    const usize before = out.size();
+    for (const char raw : label.text) {
+        const u8 code = static_cast<u8>(raw);
+        SpriteInstance instance;
+        if (resolve_glyph(label, font, node_world, code, Vec2{pen_x, 0.0f}, texture, instance)) {
+            out.push_back(instance);
+        }
+        // The pen advances whether or not the glyph drew, so a missing glyph is
+        // a gap in a line of the right length rather than a shifted one.
+        pen_x += font.advance(code) * label.size;
+    }
+    return out.size() - before;
+}
+
 // Appends the resolved instances of `chunks` chunk-local lists to `out`, in
 // chunk order. Every parallel walk ends this way, and it is the whole reason the
 // parallel result equals the serial one: the fan-out order is unspecified, but
@@ -207,6 +281,31 @@ void extract_sprites(const Scene& scene, std::vector<SpriteInstance>& out, JobSy
         }
     });
     concatenate(out, parts, chunks);
+}
+
+void extract_text(const Scene& scene, std::vector<SpriteInstance>& out, JobSystem* jobs) {
+    // `jobs` is accepted for symmetry with the other walks and so a caller can
+    // pass its pool through without branching. A line is at most a few dozen
+    // quads, so the fan-out would cost more than it saves; the layout is always
+    // serial, which is also what keeps a line from splitting across chunks.
+    (void)jobs;
+    scene.for_each_node([&](Node& node) {
+        const auto* label = node.get_component<TextLabel>();
+        if (label == nullptr || label->empty()) {
+            return;
+        }
+        const auto* font = dynamic_cast<const Font*>(label->font.get());
+        if (font == nullptr || !font->has_atlas()) {
+            return;
+        }
+        // A glyph is drawn from the same texture type a sprite is, so an
+        // unrecognised atlas is skipped for the same reason.
+        const auto* texture = dynamic_cast<const Texture2D*>(font->atlas().get());
+        if (texture == nullptr) {
+            return;
+        }
+        append_label(*label, node.world_matrix(), *font, texture, out);
+    });
 }
 
 void extract_tiles(const Scene& scene, std::vector<SpriteInstance>& out, JobSystem* jobs) {
@@ -317,6 +416,14 @@ usize sprite_instance_bound(const Scene& scene) {
         const auto* map = node.get_component<Tilemap>();
         if (map != nullptr) {
             bound += static_cast<usize>(map->width) * map->height;
+        }
+        // A label can draw at most one quad per byte of its text (an unlisted
+        // byte draws none), so counting the bytes can never be short. Counting
+        // glyphs would under-count a string whose font is missing, which is
+        // exactly the case the arena path must not overflow on.
+        const auto* label = node.get_component<TextLabel>();
+        if (label != nullptr) {
+            bound += label->text.size();
         }
     });
     return bound;
@@ -496,6 +603,48 @@ usize extract_tiles_into(FrameArena& arena, const Scene& scene, std::span<Sprite
         });
 
         written = total;
+    });
+    return written;
+}
+
+usize extract_text_into(FrameArena& arena, const Scene& scene, std::span<SpriteInstance> out, usize offset,
+                        JobSystem* jobs) {
+    // The arena variant needs no scratch of its own: the layout is serial and
+    // each glyph is written straight into its final slot, so this walk allocates
+    // nothing from the heap and asks the arena for nothing. `arena` and `jobs`
+    // are accepted for signature parity with the other walks.
+    (void)arena;
+    (void)jobs;
+    usize written = offset;
+    scene.for_each_node([&](Node& node) {
+        if (written == out.size()) {
+            return;
+        }
+        const auto* label = node.get_component<TextLabel>();
+        if (label == nullptr || label->empty()) {
+            return;
+        }
+        const auto* font = dynamic_cast<const Font*>(label->font.get());
+        if (font == nullptr || !font->has_atlas()) {
+            return;
+        }
+        const auto* texture = dynamic_cast<const Texture2D*>(font->atlas().get());
+        if (texture == nullptr) {
+            return;
+        }
+
+        const Mat4 node_world = node.world_matrix();
+        f32 pen_x = pen_origin(*label, *font);
+        for (const char raw : label->text) {
+            if (written == out.size()) {
+                return;
+            }
+            const u8 code = static_cast<u8>(raw);
+            if (resolve_glyph(*label, *font, node_world, code, Vec2{pen_x, 0.0f}, texture, out[written])) {
+                ++written;
+            }
+            pen_x += font->advance(code) * label->size;
+        }
     });
     return written;
 }

@@ -48,6 +48,8 @@ inline constexpr std::string_view kPaddle = "Paddle";
 inline constexpr std::string_view kBall = "Ball";
 inline constexpr std::string_view kBrick = "Brick";
 inline constexpr std::string_view kAudio = "BrickAudio";
+inline constexpr std::string_view kScoreLabel = "ScoreLabel";
+inline constexpr std::string_view kLivesLabel = "LivesLabel";
 } // namespace names
 
 // Shared tuning for the systems that drive the ball and paddle.
@@ -178,6 +180,26 @@ private:
     // Puts the ball back at its launch position, motionless, ready to launch.
     static void respawn_ball(fe::Scene& scene);
 
+    BreakoutState* state_ = nullptr;
+};
+
+// Writes the score, the lives, and the end-of-game result into the scene's text
+// labels every frame, so the player can read the game's state on screen instead
+// of in the log. It is the last system in the schedule: it reads the state the
+// systems above it produced, and nothing reads its output.
+//
+// It owns no scene data of its own. The labels are created by the scene builder
+// (or loaded from the authored document) and this system only fills in their
+// text, which is why it is safe to rebuild the field without touching it.
+class HudSystem final : public fe::System {
+public:
+    [[nodiscard]] std::string_view name() const noexcept override { return "HudSystem"; }
+
+    void update(const fe::FrameContext& context, fe::Scene& scene) override;
+
+    void set_state(BreakoutState* state) noexcept { state_ = state; }
+
+private:
     BreakoutState* state_ = nullptr;
 };
 
