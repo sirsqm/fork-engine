@@ -11,6 +11,8 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene3d/MeshRenderer3D.h"
+#include "fe/scene3d/Scene3DTypes.h"
 #include "fe/serialization/SceneReferences.h"
 #include "fe/serialization/SceneSerializer.h"
 
@@ -593,4 +595,89 @@ TEST_CASE("a resolve de-duplicates a reference named by many nodes") {
     auto paths = serialization::scene::resolve_scene_asset_paths(references.value(), dir.str(), assets);
     REQUIRE(paths);
     CHECK(paths.value().size() == 1);
+}
+
+TEST_CASE("a 3D mesh renderer's material survives a round trip") {
+    // The material is a nested struct on the component, so this exercises the
+    // nested-group serialization path: the writer emits an object of the
+    // material's fields and the reader writes each one back through its setter.
+    reflect::register_scene3d_types();
+
+    Scene original;
+    Node* node = original.create_node("Prop");
+    auto* renderer = node->add_component<MeshRenderer3D>();
+    renderer->override_material = true;
+    renderer->material.base_color = Vec4{0.25f, 0.5f, 0.75f, 1.0f};
+    renderer->material.metallic = 0.6f;
+    renderer->material.roughness = 0.4f;
+    renderer->material.emissive = Vec3{0.1f, 0.2f, 0.3f};
+    renderer->material.double_sided = true;
+
+    auto text = serialization::scene::to_json(original);
+    REQUIRE(text);
+
+    Scene restored;
+    REQUIRE_FALSE(serialization::scene::from_json(text.value(), restored));
+
+    Node* reloaded = restored.find_node_by_name("Prop");
+    REQUIRE(reloaded != nullptr);
+    const auto* loaded = reloaded->get_component<MeshRenderer3D>();
+    REQUIRE(loaded != nullptr);
+    CHECK(loaded->override_material);
+    CHECK(loaded->material.base_color.x == doctest::Approx(0.25f));
+    CHECK(loaded->material.base_color.y == doctest::Approx(0.5f));
+    CHECK(loaded->material.base_color.z == doctest::Approx(0.75f));
+    CHECK(loaded->material.base_color.w == doctest::Approx(1.0f));
+    CHECK(loaded->material.metallic == doctest::Approx(0.6f));
+    CHECK(loaded->material.roughness == doctest::Approx(0.4f));
+    CHECK(loaded->material.emissive.y == doctest::Approx(0.2f));
+    CHECK(loaded->material.double_sided);
+}
+
+TEST_CASE("a scene without a material keeps the override flag off") {
+    // An older document has no `material` key. The reader must leave the
+    // component's defaults in place rather than zeroing the material, so a scene
+    // authored before materials existed still renders as it did.
+    reflect::register_scene3d_types();
+
+    Scene original;
+    Node* node = original.create_node("Plain");
+    node->add_component<MeshRenderer3D>();
+
+    auto text = serialization::scene::to_json(original);
+    REQUIRE(text);
+
+    Scene restored;
+    REQUIRE_FALSE(serialization::scene::from_json(text.value(), restored));
+    const auto* loaded = restored.find_node_by_name("Plain")->get_component<MeshRenderer3D>();
+    REQUIRE(loaded != nullptr);
+    CHECK_FALSE(loaded->override_material);
+    // The glTF defaults are still in place.
+    CHECK(loaded->material.metallic == doctest::Approx(0.0f));
+    CHECK(loaded->material.roughness == doctest::Approx(0.6f));
+}
+
+TEST_CASE("the reference collector finds a material's texture maps") {
+    // A material names its maps as reference keys, so a pruned pack must carry
+    // them. The nested group is walked by the same collector that reads a flat
+    // resource property.
+    runtime::register_all_component_types();
+
+    const std::string document = R"({
+        "format": "fork_scene",
+        "format_version": 4,
+        "roots": [
+            { "name": "Prop", "type": "Node",
+              "components": [ { "type": "MeshRenderer3D",
+                                "override_material": true,
+                                "material": { "base_color_texture": "tex:assets/prop_albedo.png",
+                                              "normal_texture": "tex:assets/prop_normal.png" } } ] }
+        ]
+    })";
+
+    auto references = serialization::scene::collect_resource_references(document);
+    REQUIRE(references);
+    REQUIRE(references.value().required.size() == 2);
+    CHECK(references.value().required[0] == "tex:assets/prop_albedo.png");
+    CHECK(references.value().required[1] == "tex:assets/prop_normal.png");
 }

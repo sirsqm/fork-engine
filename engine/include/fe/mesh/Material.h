@@ -60,6 +60,26 @@ struct Material {
     [[nodiscard]] bool has_normal_texture() const noexcept { return !normal_texture.empty(); }
     [[nodiscard]] bool has_emissive_texture() const noexcept { return !emissive_texture.empty(); }
 
+    // The Blinn-Phong specular strength this material implies. The renderer's
+    // shading is still Blinn-Phong, so the metallic-roughness parameters are
+    // projected onto it here, in one place, rather than in the shader: a
+    // dielectric keeps a small specular lobe and a metal reflects almost all of
+    // its base colour, which is the standard cheap mapping.
+    [[nodiscard]] f32 specular_strength() const noexcept {
+        const f32 dielectric = 0.04f;
+        const f32 base = dielectric + (1.0f - dielectric) * metallic;
+        return base * (1.0f - roughness);
+    }
+
+    // The Blinn-Phong shininess exponent implied by roughness: the standard
+    // inverse-square mapping, clamped so a roughness of 0 does not produce an
+    // infinite exponent and a roughness of 1 does not produce a zero one.
+    [[nodiscard]] f32 shininess() const noexcept {
+        const f32 clamped = roughness < 0.05f ? 0.05f : (roughness > 1.0f ? 1.0f : roughness);
+        const f32 exponent = 2.0f / (clamped * clamped * clamped * clamped) - 2.0f;
+        return exponent > 512.0f ? 512.0f : exponent;
+    }
+
     // True when every field is at its default. Used to decide whether a mesh
     // carries a material worth preferring over a component's own fields, and to
     // keep an untextured, non-metallic, non-emissive import on the old path.

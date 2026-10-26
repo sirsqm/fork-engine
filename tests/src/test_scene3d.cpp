@@ -161,3 +161,100 @@ TEST_CASE("the 3D types can be constructed from their factories") {
     CHECK(instance != nullptr);
     CHECK(std::string(instance->type_name()) == "Camera3D");
 }
+
+TEST_CASE("a mesh renderer exposes its material to reflection") {
+    reflect::register_scene3d_types();
+    reflect::Registry& registry = reflect::Registry::instance();
+
+    const reflect::TypeDesc* type = registry.find("MeshRenderer3D");
+    REQUIRE(type != nullptr);
+
+    const auto find = [&](std::string_view name) -> const reflect::Property* {
+        for (const reflect::Property& property : type->properties) {
+            if (property.name == name) {
+                return &property;
+            }
+        }
+        return nullptr;
+    };
+
+    const reflect::Property* override_flag = find("override_material");
+    REQUIRE(override_flag != nullptr);
+    CHECK(override_flag->kind() == reflect::ValueKind::Bool);
+
+    const reflect::Property* material = find("material");
+    REQUIRE(material != nullptr);
+    REQUIRE(material->is_group());
+
+    // The material's editable fields, by name, and each with a working accessor
+    // so the inspector and the serializer can read and write them.
+    const auto member = [&](std::string_view name) -> const reflect::Property* {
+        for (const reflect::Property& property : material->members) {
+            if (property.name == name) {
+                return &property;
+            }
+        }
+        return nullptr;
+    };
+    for (const std::string_view name : {"base_color", "metallic", "roughness", "emissive", "double_sided"}) {
+        CHECK(member(name) != nullptr);
+    }
+    CHECK(member("base_color")->color.has_value());
+    CHECK(member("emissive")->color.has_value());
+
+    // A value written through a nested member lands on the component's material.
+    MeshRenderer3D renderer;
+    const reflect::Property* metallic = member("metallic");
+    REQUIRE(metallic != nullptr);
+    REQUIRE(metallic->setter(&renderer, reflect::Value{f64{0.75}}));
+    CHECK(renderer.material.metallic == doctest::Approx(0.75f));
+
+    const reflect::Property* base_color = member("base_color");
+    REQUIRE(base_color != nullptr);
+    REQUIRE(base_color->members.size() == 4);
+    REQUIRE(base_color->members[1].setter(&renderer, reflect::Value{f64{0.25}}));
+    CHECK(renderer.material.base_color.y == doctest::Approx(0.25f));
+}
+
+TEST_CASE("resolve_surface prefers an authored material over the imported one") {
+    MeshRenderer3D renderer;
+
+    // No mesh, no override: the component's own fields are the surface.
+    renderer.base_color = Vec4{0.1f, 0.2f, 0.3f, 1.0f};
+    renderer.specular = 0.5f;
+    MeshRenderer3D::Surface plain = renderer.resolve_surface();
+    CHECK(plain.material.base_color.x == doctest::Approx(0.1f));
+    CHECK(plain.material.base_color.z == doctest::Approx(0.3f));
+    CHECK(plain.specular == doctest::Approx(0.5f));
+    CHECK(plain.shininess == doctest::Approx(32.0f));
+
+    // An authored material replaces the base colour and derives its own
+    // specular/shininess from metallic and roughness.
+    renderer.override_material = true;
+    renderer.material.base_color = Vec4{0.9f, 0.8f, 0.7f, 1.0f};
+    renderer.material.metallic = 1.0f;
+    renderer.material.roughness = 0.25f;
+    MeshRenderer3D::Surface authored = renderer.resolve_surface();
+    CHECK(authored.material.base_color.x == doctest::Approx(0.9f));
+    CHECK(authored.specular == doctest::Approx(1.0f * (1.0f - 0.25f)));
+    CHECK(authored.shininess > 32.0f); // A smooth material gets a tighter lobe.
+}
+
+TEST_CASE("a material's specular and shininess follow from metallic and roughness") {
+    Material rough;
+    rough.metallic = 0.0f;
+    rough.roughness = 1.0f;
+    CHECK(rough.specular_strength() == doctest::Approx(0.0f));
+
+    Material shiny;
+    shiny.metallic = 1.0f;
+    shiny.roughness = 0.0f;
+    // Fully metallic, fully smooth: near-maximal specular and a clamped exponent.
+    CHECK(shiny.specular_strength() == doctest::Approx(1.0f));
+    CHECK(shiny.shininess() == doctest::Approx(512.0f));
+
+    Material dielectric;
+    dielectric.metallic = 0.0f;
+    dielectric.roughness = 0.5f;
+    CHECK(dielectric.specular_strength() == doctest::Approx(0.04f * 0.5f));
+}

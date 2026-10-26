@@ -15,6 +15,7 @@
 #include "fe/scene3d/SpotLight3D.h"
 
 #include <memory>
+#include <optional>
 
 // The 3D scene component registrations, in the same style as ComponentTypes.cpp
 // and PhysicsTypes.cpp: each block describes a component's properties once, and
@@ -73,6 +74,31 @@ void register_mesh_renderer3d(Registry& registry) {
             return texture != nullptr ? Texture2DLoader::reference_key(texture->path()) : std::string{};
         },
         [](std::shared_ptr<Resource>& slot, std::shared_ptr<Resource> loaded) { slot = std::move(loaded); }));
+
+    // The authored material, edited as one nested group: the override flag and,
+    // beside it, the material's own fields. Describing the material here rather
+    // than as a registered type keeps it a plain value the component owns; the
+    // serializer and the inspector both read this one description.
+    desc.properties.push_back(make_scalar<MeshRenderer3D, bool>("override_material", &MeshRenderer3D::override_material,
+                                                                ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_group(
+        "material", "Material", 0,
+        {with_color(make_nested_vector_group<MeshRenderer3D, Material, Vec4>(
+             "base_color", &MeshRenderer3D::material, &Material::base_color, "Vec4", {"r", "g", "b", "a"})),
+         make_nested_scalar<MeshRenderer3D, Material, f32>("metallic", &MeshRenderer3D::material, &Material::metallic,
+                                                           ValueKind::Float, &defaults),
+         make_nested_scalar<MeshRenderer3D, Material, f32>("roughness", &MeshRenderer3D::material, &Material::roughness,
+                                                           ValueKind::Float, &defaults),
+         with_color(make_nested_vector_group<MeshRenderer3D, Material, Vec3>(
+             "emissive", &MeshRenderer3D::material, &Material::emissive, "Vec3", {"r", "g", "b"})),
+         make_nested_scalar<MeshRenderer3D, Material, bool>("double_sided", &MeshRenderer3D::material,
+                                                            &Material::double_sided, ValueKind::Bool, &defaults),
+         make_nested_key_ref<MeshRenderer3D, Material>("base_color_texture", &MeshRenderer3D::material,
+                                                       &Material::base_color_texture, "Texture2D"),
+         make_nested_key_ref<MeshRenderer3D, Material>("normal_texture", &MeshRenderer3D::material,
+                                                       &Material::normal_texture, "Texture2D"),
+         make_nested_key_ref<MeshRenderer3D, Material>("emissive_texture", &MeshRenderer3D::material,
+                                                       &Material::emissive_texture, "Texture2D")}));
 
     registry.register_type(std::move(desc));
 }
@@ -145,3 +171,42 @@ void register_scene3d_types() {
 }
 
 } // namespace fe::reflect
+
+namespace fe {
+
+MeshRenderer3D::Surface MeshRenderer3D::resolve_surface() const noexcept {
+    Surface surface;
+
+    // The imported material, when the mesh has one. Reading it off the mesh keeps
+    // the glTF loader free of any dependency on the scene.
+    const std::optional<Material>* imported = nullptr;
+    if (const auto* typed = dynamic_cast<const Mesh*>(mesh.get()); typed != nullptr && typed->has_material()) {
+        imported = &typed->material();
+    }
+
+    if (override_material) {
+        surface.material = material;
+        surface.specular = material.specular_strength();
+        surface.shininess = material.shininess();
+        return surface;
+    }
+
+    if (imported != nullptr) {
+        surface.material = imported->value();
+        surface.specular = surface.material.specular_strength();
+        surface.shininess = surface.material.shininess();
+        return surface;
+    }
+
+    // The pre-material shape: a base colour, a specular strength, and an optional
+    // texture. This is the path every scene authored before materials existed
+    // takes, so it must produce the same draw it always did. Roughness is left at
+    // its glTF default and the specular strength is taken from the authored
+    // field, which is the control that always existed.
+    surface.material.base_color = base_color;
+    surface.specular = specular;
+    surface.shininess = 32.0f;
+    return surface;
+}
+
+} // namespace fe

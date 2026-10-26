@@ -758,3 +758,91 @@ TEST_CASE("an occluder darkens the floor beneath it") {
     CHECK(relit.r > 200);
     CHECK(static_cast<int>(relit.r) - static_cast<int>(dark.r) > 40);
 }
+
+TEST_CASE("renderer3d uses a mesh's imported material when the component has none") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    auto mesh = Mesh::make_cube();
+    // The mesh carries a red material, as an import would. The component authors
+    // nothing, so this is the surface the draw must use.
+    Material imported;
+    imported.base_color = Vec4{1.0f, 0.0f, 0.0f, 1.0f};
+    imported.roughness = 1.0f;
+    mesh->set_material(imported);
+    renderer->mesh = mesh;
+
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
+    CHECK(centre.r > 100);
+    CHECK(centre.g < 40);
+    CHECK(centre.b < 40);
+}
+
+TEST_CASE("renderer3d prefers an authored material over the mesh's imported one") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    auto mesh = Mesh::make_cube();
+    Material imported;
+    imported.base_color = Vec4{1.0f, 0.0f, 0.0f, 1.0f}; // red
+    imported.roughness = 1.0f;
+    mesh->set_material(imported);
+    renderer->mesh = mesh;
+
+    // The designer overrides it with green, which must win.
+    renderer->override_material = true;
+    renderer->material.base_color = Vec4{0.0f, 1.0f, 0.0f, 1.0f};
+    renderer->material.roughness = 1.0f;
+
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
+    CHECK(centre.g > 100);
+    CHECK(centre.r < 40);
+}
+
+TEST_CASE("renderer3d adds a material's emissive colour in the dark") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 3.0f};
+    camera_node->add_component<Camera3D>();
+
+    // No light at all: the directional light contributes nothing and ambient is
+    // zero, so any brightness at the centre can only be the emissive term.
+    Node* sun = scene.create_node("Sun");
+    auto* sun_light = sun->add_component<DirectionalLight3D>();
+    sun_light->intensity = 0.0f;
+    sun_light->ambient = 0.0f;
+
+    Node* cube_node = scene.create_node("Cube");
+    auto* renderer = cube_node->add_component<MeshRenderer3D>();
+    renderer->mesh = Mesh::make_cube();
+    renderer->override_material = true;
+    renderer->material.base_color = Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+    renderer->material.emissive = Vec3{0.0f, 0.0f, 1.0f};
+
+    const Pixel centre = render_and_sample_centre(context, scene, 64, 64);
+    CHECK(centre.b > 100);
+    CHECK(centre.r < 40);
+    CHECK(centre.g < 40);
+}

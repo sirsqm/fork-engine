@@ -12,6 +12,7 @@
 #include "fe/rhi/Device.h"
 
 #include <array>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -19,8 +20,10 @@
 namespace fe {
 
 class JobSystem;
+class ResourceManager;
 class Scene;
 class Node;
+class Texture2D;
 class Camera3D;
 class MeshRenderer3D;
 class DirectionalLight3D;
@@ -78,6 +81,13 @@ public:
     // Creates the renderer's GPU resources. Returns an Error if shader
     // compilation fails.
     [[nodiscard]] Error initialize(rhi::Device& device);
+
+    // Supplies the resource manager material texture references resolve through.
+    // Optional: a renderer with none simply cannot resolve a material's texture
+    // maps and falls back to the component's own texture or the default texel,
+    // which is what a standalone test wants. The Engine sets this on the
+    // renderer it owns.
+    void set_resource_manager(ResourceManager* resources) noexcept { resources_ = resources; }
 
     // Renders `scene` into the current frame. The caller must have called
     // Device::begin_frame() first. `viewport_width`/`viewport_height` are in
@@ -235,6 +245,13 @@ private:
     // Returns the GPU buffers for `mesh`, uploading on first use.
     [[nodiscard]] Result<const GpuMesh*> acquire_mesh(rhi::Device& device, const Mesh& mesh);
 
+    // Resolves a material texture reference ("tex:assets/hero.png") to a loaded
+    // Texture2D, or nullptr when it cannot be loaded. The result is memoised per
+    // frame so a material shared by many instances resolves once; a reference
+    // that fails to load is remembered as a miss so a typo does not retry every
+    // instance.
+    [[nodiscard]] const Texture2D* load_texture(const std::string& reference);
+
     // Creates the shadow map render target on first use. Returns an Error if the
     // device rejects it; the caller reports it and skips shadows for the frame.
     [[nodiscard]] Error ensure_shadow_target(rhi::Device& device);
@@ -325,6 +342,18 @@ private:
     u32 scene_target_height_ = 0;
     u32 post_process_frames_ = 0;
     u32 background_draws_ = 0;
+
+    // The resource manager material textures resolve through, borrowed from the
+    // Engine that created this renderer. Null when the renderer was constructed
+    // with no manager (a test that builds one directly), in which case a material
+    // texture cannot be resolved and the draw falls back to the component's own
+    // texture or the default white texel.
+    ResourceManager* resources_ = nullptr;
+
+    // The per-frame texture-resolution memo: reference -> loaded texture (null
+    // when the reference failed to load). Cleared at the top of each draw, so a
+    // hot-reloaded asset is picked up on the next frame rather than pinned.
+    std::unordered_map<std::string, const Texture2D*> texture_cache_;
 
     // Reused across frames to avoid per-frame allocation. Each holds one vec4
     // per light in a fixed-size array, packed as the shader expects:

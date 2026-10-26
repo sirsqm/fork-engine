@@ -150,6 +150,10 @@ Error Engine::initialize(const Config& config) {
         }
 
         renderer_3d_ = std::make_unique<renderer3d::Renderer3D>();
+        // Material texture references resolve through the same manager the scene
+        // loads its assets from, so a glTF material's maps bind without the scene
+        // having to preload them.
+        renderer_3d_->set_resource_manager(resources_.get());
         if (Error error = renderer_3d_->initialize(*device_); error) {
             renderer_2d_.reset();
             device_.reset();

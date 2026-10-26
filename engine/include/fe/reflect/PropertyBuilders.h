@@ -183,6 +183,67 @@ template <typename Class, typename VectorT>
                       std::move(members));
 }
 
+// A scalar property over a field of a struct-valued member of `Class`: the
+// two-level accessor a nested value needs ("MeshRenderer3D::material.base_color").
+// The nested struct is addressed by a member pointer, so the property stays a
+// plain description of the component's layout and no offsets are hand-written.
+template <typename Class, typename Nested, typename FieldT>
+[[nodiscard]] Property make_nested_scalar(std::string name, Nested Class::* nested, FieldT Nested::* field,
+                                          ValueKind kind, const void* default_object = nullptr) {
+    Property property;
+    property.name = std::move(name);
+    property.value_kind = kind;
+    property.getter = [nested, field](const void* object) -> Value {
+        return detail::to_value((static_cast<const Class*>(object)->*nested).*field);
+    };
+    property.setter = [nested, field](void* object, const Value& value) -> bool {
+        FieldT out{};
+        if (!detail::from_value(value, out)) {
+            return false;
+        }
+        (static_cast<Class*>(object)->*nested).*field = out;
+        return true;
+    };
+    property.default_value = default_object != nullptr ? property.getter(default_object) : detail::to_value(FieldT{});
+    return property;
+}
+
+// A vector group over a struct-valued member of `Class`, the nested counterpart
+// of make_vector_group. The vector must be standard-layout and hold only floats,
+// which is asserted rather than assumed.
+template <typename Class, typename Nested, typename VectorT>
+[[nodiscard]] Property make_nested_vector_group(std::string name, Nested Class::* nested, VectorT Nested::* field,
+                                                std::string type_name, std::vector<std::string> component_names) {
+    static_assert(std::is_standard_layout_v<VectorT>, "reflect vector groups require a standard-layout type");
+    static_assert(sizeof(VectorT) == sizeof(f32) * 2 || sizeof(VectorT) == sizeof(f32) * 3 ||
+                      sizeof(VectorT) == sizeof(f32) * 4,
+                  "reflect vector groups support Vec2, Vec3 and Vec4");
+
+    std::vector<Property> members;
+    members.reserve(component_names.size());
+    for (u32 i = 0; i < component_names.size(); ++i) {
+        Property member;
+        member.name = component_names[i];
+        member.value_kind = ValueKind::Float;
+        member.getter = [nested, field, i](const void* object) -> Value {
+            const VectorT& value = (static_cast<const Class*>(object)->*nested).*field;
+            return static_cast<f64>(reinterpret_cast<const f32*>(&value)[i]);
+        };
+        member.setter = [nested, field, i](void* object, const Value& value) -> bool {
+            f32 out = 0.0f;
+            if (!detail::from_value(value, out)) {
+                return false;
+            }
+            VectorT& target = (static_cast<Class*>(object)->*nested).*field;
+            reinterpret_cast<f32*>(&target)[i] = out;
+            return true;
+        };
+        members.push_back(std::move(member));
+    }
+    return make_group(std::move(name), std::move(type_name), static_cast<u32>(component_names.size()),
+                      std::move(members));
+}
+
 // A group over four separate float fields (an RGBA colour stored across four
 // members), with one float member per named channel.
 [[nodiscard]] inline Property make_float_group(std::string name, std::string type_name,
@@ -250,6 +311,59 @@ template <typename Class, typename MemberT>
         }
         assign(static_cast<Class*>(object)->*field, loaded.value());
         return loaded.value();
+    };
+    return property;
+}
+
+// A resource-reference property whose value is the reference key itself, stored
+// in a `std::string` member, rather than a `shared_ptr<Resource>`. This is for a
+// value type that names a texture without owning it (a `Material`'s map slots):
+// the property still reads and writes as a resource reference, so the packer's
+// reference tracer collects it and the inspector offers an asset drop target,
+// but resolving it writes the key back and loads nothing into the value.
+template <typename Class>
+[[nodiscard]] Property make_key_ref(std::string name, std::string Class::* field, std::string resource_type) {
+    Property property;
+    property.name = std::move(name);
+    property.value_kind = ValueKind::ResourceRef;
+    property.resource = ResourceHint{std::move(resource_type)};
+    property.resource_ref = [field](const void* object) -> std::string {
+        return static_cast<const Class*>(object)->*field;
+    };
+    property.resolve_resource = [field](void* object, std::string_view key,
+                                        ResourceManager& manager) -> std::shared_ptr<Resource> {
+        static_cast<Class*>(object)->*field = std::string(key);
+        if (key.empty()) {
+            return nullptr;
+        }
+        // Load so the reference is validated and reported when missing; the
+        // value keeps only the key, so the loaded resource is not stored here.
+        auto loaded = manager.load(key);
+        return loaded ? loaded.value() : nullptr;
+    };
+    return property;
+}
+
+// The nested counterpart of make_key_ref: a key-valued resource reference on a
+// struct-valued member of `Class` (a `Material`'s map slot).
+template <typename Class, typename Nested>
+[[nodiscard]] Property make_nested_key_ref(std::string name, Nested Class::* nested, std::string Nested::* field,
+                                           std::string resource_type) {
+    Property property;
+    property.name = std::move(name);
+    property.value_kind = ValueKind::ResourceRef;
+    property.resource = ResourceHint{std::move(resource_type)};
+    property.resource_ref = [nested, field](const void* object) -> std::string {
+        return (static_cast<const Class*>(object)->*nested).*field;
+    };
+    property.resolve_resource = [nested, field](void* object, std::string_view key,
+                                                ResourceManager& manager) -> std::shared_ptr<Resource> {
+        (static_cast<Class*>(object)->*nested).*field = std::string(key);
+        if (key.empty()) {
+            return nullptr;
+        }
+        auto loaded = manager.load(key);
+        return loaded ? loaded.value() : nullptr;
     };
     return property;
 }

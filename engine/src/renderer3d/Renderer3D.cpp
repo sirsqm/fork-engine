@@ -5,6 +5,7 @@
 #include "fe/core/Assert.h"
 #include "fe/core/Frustum.h"
 #include "fe/core/Log.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -56,6 +57,13 @@ in vec2 v_uv;
 uniform sampler2D u_texture;
 uniform vec4 u_base_color;
 uniform float u_specular;
+// Blinn-Phong exponent. Derived on the CPU from the material's roughness, so the
+// shader stays a single lobe while the material stays metallic-roughness.
+uniform float u_shininess;
+// Emissive colour, added after lighting and not affected by any light.
+uniform vec3 u_emissive;
+uniform sampler2D u_emissive_map;
+uniform float u_emissive_map_enabled;
 
 uniform vec3 u_camera_position;
 
@@ -124,12 +132,13 @@ float shadow_factor(vec3 world_position, vec3 to_light) {
 vec3 shade(vec3 n, vec3 v, vec3 to_light, vec3 light_color, float attenuation) {
     float diffuse = max(dot(n, to_light), 0.0);
     vec3 h = normalize(to_light + v);
-    float spec = pow(max(dot(n, h), 0.0), 32.0) * u_specular;
+    float spec = pow(max(dot(n, h), 0.0), u_shininess) * u_specular;
     return light_color * (diffuse + spec) * attenuation;
 }
 
 void main() {
     vec4 albedo = texture(u_texture, v_uv) * u_base_color;
+    vec3 emissive = u_emissive * mix(vec3(1.0), texture(u_emissive_map, v_uv).rgb, u_emissive_map_enabled);
 
     vec3 n = normalize(v_normal);
     vec3 v = normalize(u_camera_position - v_world_position);
@@ -180,7 +189,7 @@ void main() {
                           u_spot_light_color_intensity[i].a, attenuation);
     }
 
-    frag_color = vec4(albedo.rgb * lighting, albedo.a);
+    frag_color = vec4(albedo.rgb * lighting + emissive, albedo.a);
 }
 )glsl";
 
@@ -395,6 +404,32 @@ Result<const Renderer3D::GpuMesh*> Renderer3D::acquire_mesh(rhi::Device& device,
     return &inserted->second;
 }
 
+const Texture2D* Renderer3D::load_texture(const std::string& reference) {
+    if (reference.empty()) {
+        return nullptr;
+    }
+    if (const auto it = texture_cache_.find(reference); it != texture_cache_.end()) {
+        return it->second;
+    }
+    // A renderer with no manager cannot resolve a reference; remember the miss so
+    // the lookup is not repeated for every instance in the frame.
+    if (resources_ == nullptr) {
+        texture_cache_.emplace(reference, nullptr);
+        return nullptr;
+    }
+    const Texture2D* resolved = nullptr;
+    if (auto loaded = resources_->load(reference)) {
+        resolved = dynamic_cast<const Texture2D*>(loaded.value().get());
+        if (resolved == nullptr) {
+            FE_LOG_WARN("renderer3d: material texture '%s' is not a Texture2D", reference.c_str());
+        }
+    } else {
+        FE_LOG_WARN("renderer3d: could not load material texture '%s'", reference.c_str());
+    }
+    texture_cache_.emplace(reference, resolved);
+    return resolved;
+}
+
 Error Renderer3D::ensure_shadow_target(rhi::Device& device) {
     if (shadow_target_ != nullptr || shadow_target_attempted_) {
         return Error::none();
@@ -541,6 +576,10 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     last_point_lights_ = 0;
     last_spot_lights_ = 0;
     last_shadow_casters_ = 0;
+    // The material-texture memo is per frame: a reference re-resolves each frame
+    // so a hot-reloaded map is picked up, while instances within one frame share
+    // the single lookup.
+    texture_cache_.clear();
 
     if (instances.empty()) {
         return usize{0};
@@ -679,6 +718,7 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
         device.bind_shader(*shader_);
         shader_->set_mat4("u_view_projection", view_projection);
         shader_->set_int("u_texture", 0);
+        shader_->set_int("u_emissive_map", 2);
         shader_->set_vec3("u_light_color", light_color);
         shader_->set_float("u_light_intensity", light_intensity);
         shader_->set_float("u_ambient", ambient);
@@ -738,22 +778,39 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
             continue;
         }
 
+        // The surface the draw uses: the component's authored material, else the
+        // mesh's imported one, else the component's base_color/specular. Resolved
+        // once per instance and reused for every uniform below, so the
+        // precedence rule lives in MeshRenderer3D and not in the renderer.
+        const MeshRenderer3D::Surface surface = instance.renderer->resolve_surface();
+
         shader_->set_mat4("u_model", instance.model);
         const std::array<f32, 9> normal_mat = normal_matrix(instance.model);
         shader_->set_mat3("u_normal_matrix", normal_mat.data());
-        shader_->set_vec4("u_base_color", instance.renderer->base_color);
-        shader_->set_float("u_specular", instance.renderer->specular);
+        shader_->set_vec4("u_base_color", surface.material.base_color);
+        shader_->set_float("u_specular", surface.specular);
+        shader_->set_float("u_shininess", surface.shininess);
+        shader_->set_vec3("u_emissive", surface.material.emissive);
 
-        if (instance.renderer->has_texture()) {
-            if (const auto* texture = dynamic_cast<const Texture2D*>(instance.renderer->texture.get());
-                texture != nullptr) {
-                device.bind_texture(0, texture->texture());
-            } else {
-                device.bind_texture(0, *default_texture_);
-            }
-        } else {
-            device.bind_texture(0, *default_texture_);
+        // The base-colour texture: the material's, resolved through the resource
+        // manager, or the component's own `texture` when the material names none.
+        const Texture2D* base_texture = nullptr;
+        if (!surface.material.base_color_texture.empty()) {
+            base_texture = load_texture(surface.material.base_color_texture);
         }
+        if (base_texture == nullptr && instance.renderer->has_texture()) {
+            base_texture = dynamic_cast<const Texture2D*>(instance.renderer->texture.get());
+        }
+        device.bind_texture(0, base_texture != nullptr ? base_texture->texture() : *default_texture_);
+
+        // The emissive map. A material without one keeps the emissive factor
+        // alone, which is what the shader's `u_emissive_map_enabled = 0` selects.
+        const Texture2D* emissive_texture = nullptr;
+        if (!surface.material.emissive_texture.empty()) {
+            emissive_texture = load_texture(surface.material.emissive_texture);
+        }
+        shader_->set_float("u_emissive_map_enabled", emissive_texture != nullptr ? 1.0f : 0.0f);
+        device.bind_texture(2, emissive_texture != nullptr ? emissive_texture->texture() : *default_texture_);
 
         device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
         device.bind_index_buffer(*gpu.value()->index_buffer);
