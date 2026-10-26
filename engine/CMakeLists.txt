@@ -204,3 +204,27 @@ endif()
 
 # Generated version header; engine sources include it, so they must wait for it.
 target_sources(fork_engine PRIVATE "${CMAKE_BINARY_DIR}/generated/fe/version/Version.h")
+
+# ---------------------------------------------------------------------------
+# Install rules
+#
+# An installed engine is the library, its public headers, and the generated
+# version header. The private window backend, the fetched dependencies, and the
+# internal module headers are not installed: a consumer uses the public API only,
+# and the fetched dependencies are static and already inside the library.
+#
+# The header tree is installed whole (every module under fe/), because the public
+# API spans them - a game includes <fe/scene/Scene.h>, <fe/renderer3d/Renderer3D.h>,
+# and so on. See cmake/FEInstall.cmake for where each artifact lands.
+# ---------------------------------------------------------------------------
+fe_install_target(fork_engine)
+fe_install_header_tree("${CMAKE_CURRENT_SOURCE_DIR}/include/fe")
+# The generated version header lives in the build tree, not the source tree, so
+# it is installed separately (Version.h includes only the macros, so it has no
+# dependencies of its own). Guarded by FE_INSTALL like every other install rule.
+if(FE_INSTALL)
+  install(
+    FILES "${CMAKE_BINARY_DIR}/generated/fe/version/Version.h"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/fe/version"
+  )
+endif()

@@ -38,6 +38,28 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+## Packaging (install rules)
+
+The engine, the editor, and the tools install with a plain `cmake --install`.
+There is no export/`find_package` config yet: an installed tree is runnable
+(binaries, shared libraries, headers), not yet linkable from another CMake
+project.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/fe-install
+cmake --build build --parallel
+cmake --install build
+```
+
+- The install uses GNUInstallDirs, so `bin`, `lib`, `include`, and `share`
+  land where the platform expects them; on Windows the shared libraries go to
+  `bin` beside the executables (the DLL-search rule), not to `lib`.
+- Set `-DFE_INSTALL_RPATH=ON` (default ON on Linux) to bake a `$ORIGIN/../lib`
+  RPATH into the installed binaries, so a relocated tree runs without
+  `LD_LIBRARY_PATH`.
+- `FE_INSTALL=OFF` disables every install rule, for a build tree that is never
+  installed (the CI jobs that only test).
+
 ## Building for the web (Emscripten)
 
 Much of the shipping queue is web work, so most runs need this build as well as

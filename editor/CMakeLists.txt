@@ -73,3 +73,13 @@ add_executable(fork_editor_shell shell/main.cpp)
 target_link_libraries(fork_editor_shell PRIVATE FE::editor fe_warnings)
 target_compile_features(fork_editor_shell PRIVATE cxx_std_20)
 set_target_properties(fork_editor_shell PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# ---------------------------------------------------------------------------
+# Install rules
+#
+# The editor shell is the user-facing executable; the two editor libraries are
+# implementation details of it and are not installed (they are static and linked
+# into the shell). The engine library the shell needs is installed by
+# engine/CMakeLists.txt.
+# ---------------------------------------------------------------------------
+fe_install_target(fork_editor_shell)

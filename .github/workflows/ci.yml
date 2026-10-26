@@ -128,6 +128,16 @@ jobs:
           ./build/bin/fork_export --project examples/demo_project --out /tmp/fork_export_pruned --prune
           (cd /tmp/fork_export_pruned && ./fork_player --export . --headless 30)
 
+      - name: Install the engine and run the installed tools (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          # `cmake --install` is what a packager and a downstream consumer use,
+          # and a missing library, a wrong RPATH, or a header tree that installs
+          # to the wrong place is invisible in a build tree. The script installs
+          # to a temporary prefix, checks the layout, and runs every installed
+          # tool from that prefix.
+          tests/install/run_install_smoke.sh
+
       - name: Load a gameplay module in the editor (Linux smoke test)
         if: runner.os == 'Linux'
         run: |

@@ -51,11 +51,18 @@ option(FE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(FE_USE_SYSTEM_DEPS "Prefer system-installed dependencies over FetchContent" OFF)
 option(FE_ENABLE_ASAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer (Debug)" OFF)
 option(FE_ENABLE_TSAN "Enable ThreadSanitizer (Debug; see ADR-0068)" OFF)
+# Install rules. ON by default so `cmake --install` works out of the box; a build
+# tree that is never installed (a CI job that only tests) can turn them off.
+option(FE_INSTALL "Generate install rules for the engine, editor, and tools" ON)
+# Bake a relative RPATH into installed binaries on Linux, so a relocated tree
+# runs without LD_LIBRARY_PATH. Windows and macOS do not use it.
+option(FE_INSTALL_RPATH "Set a relative install RPATH on Linux" ON)
 
 include(FESettings)
 include(FEWarnings)
 include(FEVersion)
 include(FEDependencies)
+include(FEInstall)
 
 if(FE_ENABLE_ASAN AND NOT MSVC)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -109,6 +116,22 @@ if(FE_BUILD_BENCHMARKS)
 endif()
 
 # ---------------------------------------------------------------------------
+# Install rules
+#
+# The engine library, the editor, and the shipping tools install; the examples,
+# tests, and benchmark do not (they are development artifacts). The layout is
+# GNUInstallDirs', decided in one place by cmake/FEInstall.cmake. See AGENTS.md
+# for the install command.
+#
+# The license and the readme travel with the binaries: a redistributed engine
+# must carry its license, and the readme says what the tree is.
+# ---------------------------------------------------------------------------
+if(FE_INSTALL)
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" DESTINATION "${CMAKE_INSTALL_DATADIR}/fork-engine")
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION "${CMAKE_INSTALL_DATADIR}/fork-engine")
+endif()
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 message(STATUS "")
@@ -121,4 +144,5 @@ message(STATUS "  Editor           : ${FE_BUILD_EDITOR}")
 message(STATUS "  Benchmarks       : ${FE_BUILD_BENCHMARKS}")
 message(STATUS "  Warnings as errs : ${FE_WARNINGS_AS_ERRORS}")
 message(STATUS "  System deps      : ${FE_USE_SYSTEM_DEPS}")
+message(STATUS "  Install rules    : ${FE_INSTALL}")
 message(STATUS "")

@@ -35,3 +35,7 @@ if(FE_TARGETS_WEB)
       "-sEXIT_RUNTIME=1"
   )
 endif()
+
+# The export tool is the last shipping step, so it installs too: an installed
+# tree can turn a project into a runnable build without the checkout.
+fe_install_target(fork_export)

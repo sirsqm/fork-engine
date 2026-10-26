@@ -171,6 +171,12 @@ if(FE_BUILD_TESTS)
   endif()
 
   if(NOT FE_DOCTEST_TARGET)
+    # doctest ships its own install() rules, which would drop its headers and a
+    # CMake package into our installed tree - dependency pollution in a shipped
+    # engine. Turn them off before the fetch so the framework stays a build-time
+    # artifact. (Same reason a fetched dependency is never installed: only our
+    # own targets get install rules.)
+    set(DOCTEST_NO_INSTALL ON CACHE BOOL "" FORCE)
     FetchContent_Declare(
       doctest
       GIT_REPOSITORY https://github.com/doctest/doctest.git

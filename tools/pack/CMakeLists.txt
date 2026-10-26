@@ -12,3 +12,7 @@ target_compile_features(fork_pack PRIVATE cxx_std_20)
 set_target_properties(fork_pack PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+# Installing fork_pack ships the packing step beside the engine: a developer with
+# an installed tree can build a pack without the source checkout.
+fe_install_target(fork_pack)

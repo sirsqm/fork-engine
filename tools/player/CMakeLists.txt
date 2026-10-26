@@ -41,3 +41,7 @@ if(FE_TARGETS_WEB)
       "-sEXIT_RUNTIME=0"
   )
 endif()
+
+# The player is the shipped runtime; installing it lets an export reuse an
+# installed runtime rather than a build-tree one.
+fe_install_target(fork_player)

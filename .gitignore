@@ -4,7 +4,10 @@ build/
 build-*/
 cmake-build-*/
 out/
-install/
+# An installed tree written into the checkout (cmake --install with a prefix
+# under the source root). Anchored, so it does not swallow a source directory
+# named "install" such as tests/install/.
+/install/
 
 # CMake
 CMakeCache.txt

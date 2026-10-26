@@ -816,6 +816,21 @@ that a macOS host can sign and run.
 
 The bar: a player downloads one file per OS, runs it, and plays the game.
 
+### `install-rules`
+
+Every packaging step in this phase starts from an installed engine, and there
+was none: `cmake --install` did nothing, so the only way to use the tools or
+build against the public headers was from the source checkout. Add install rules
+for the engine library, its public headers, the editor shell, and the three
+shipping tools, with the layout decided in one place (GNUInstallDirs, Windows
+libraries in `bin`, a relative RPATH on Linux), and cover the installed tree with
+a smoke test that runs every installed tool from the prefix. See
+[ADR-0084](adr/0084-install-rules.md).
+
+**Done when** `cmake --install` produces a tree with `bin`, `lib`, `include`, and
+`share`; every installed tool runs from the prefix; and the smoke test asserts
+it in CI.
+
 ### `desktop-export-templates`
 
 The export path copies the player built beside it. Shipping needs a *prebuilt*

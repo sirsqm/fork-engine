@@ -65,6 +65,13 @@ set(FE_BUILD_EDITOR OFF CACHE BOOL "Build the Fork Engine editor" FORCE)
 set(FE_BUILD_TESTS OFF CACHE BOOL "Build the Fork Engine unit tests" FORCE)
 set(FE_BUILD_BENCHMARKS OFF CACHE BOOL "Build the Fork Engine benchmarks" FORCE)
 
+# A web build ships as an export directory (the shell, the pack, the wasm pair),
+# not as an installed tree: `cmake --install` would scatter the .js/.wasm glue
+# into bin/, which is not how a browser build is served. The export template is
+# the web packaging path (ADR-0071), so the install rules are off here. A caller
+# that wants them can still pass -DFE_INSTALL=ON.
+set(FE_INSTALL OFF CACHE BOOL "Generate install rules for the engine, editor, and tools" FORCE)
+
 # FE_USE_SYSTEM_DEPS=ON would look for host GLFW/nlohmann/doctest, none of which
 # are linkable into wasm; the fetches are pinned and cross-compile cleanly.
 set(FE_USE_SYSTEM_DEPS OFF CACHE BOOL "Prefer system-installed dependencies over FetchContent" FORCE)
