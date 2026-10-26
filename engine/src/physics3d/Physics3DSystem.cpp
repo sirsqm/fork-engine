@@ -253,6 +253,15 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
                 continue;
             }
 
+            // Collision filtering. A pair whose layers and masks disagree is
+            // ignored entirely: it never reaches the narrow phase, is never
+            // recorded as touching, and so produces no contact event. "Ignored"
+            // has to mean ignored for events too, or a game would get a begin
+            // event for a pair it told the engine never to touch.
+            if (!a.collider->can_collide_with(*b.collider)) {
+                continue;
+            }
+
             const Contact3D contact =
                 intersect_shapes(a.collider->shape, a.collider->box(a.position), a.collider->sphere(a.position),
                                  b.collider->shape, b.collider->box(b.position), b.collider->sphere(b.position));
@@ -273,6 +282,14 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
                 pair.first = a_first ? a.node->id() : b.node->id();
                 pair.second = a_first ? b.node->id() : a.node->id();
                 active_pairs_.push_back(pair);
+            }
+
+            // A trigger is a sensor: the touching pair was recorded above (so
+            // the contact-event pass reports Begin and End exactly as for a
+            // solid pair), but no impulse and no positional correction is
+            // applied, so bodies pass through it.
+            if (a.collider->is_trigger || b.collider->is_trigger) {
+                continue;
             }
 
             const f32 inv_mass_sum = a.inv_mass + b.inv_mass;

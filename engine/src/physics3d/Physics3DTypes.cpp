@@ -60,6 +60,16 @@ void register_collider3d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics3d::Collider3D, f32>("friction", &physics3d::Collider3D::friction,
                                                                       ValueKind::Float, &defaults));
 
+    // Collision filtering. `layer` and `mask` are bit sets, exposed as integers
+    // (the inspector shows them as an int field); `is_trigger` is a bool. All
+    // three serialize, so a saved scene keeps its filtering.
+    desc.properties.push_back(
+        make_scalar<physics3d::Collider3D, u32>("layer", &physics3d::Collider3D::layer, ValueKind::Int, &defaults));
+    desc.properties.push_back(
+        make_scalar<physics3d::Collider3D, u32>("mask", &physics3d::Collider3D::mask, ValueKind::Int, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::Collider3D, bool>("is_trigger", &physics3d::Collider3D::is_trigger,
+                                                                       ValueKind::Bool, &defaults));
+
     registry.register_type(std::move(desc));
 }
 

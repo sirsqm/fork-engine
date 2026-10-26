@@ -278,6 +278,12 @@ is missing than ten roadmap items, and it is the precondition for a community.
       a 3D scene (`DebugDrawList`) and a `DebugRenderer` draws them as a single
       line list over the world camera, built on a new RHI line primitive — see
       [ADR-0058](adr/0058-editor-physics3d-and-debug-draw.md)
+- [x] Collision filtering and trigger colliders in both modules: a collider
+      carries `layer` / `mask` bits and an `is_trigger` flag; a pair is
+      considered only when both sides' masks agree, and a trigger reports its
+      contacts but applies no impulse, so a body passes through it. The defaults
+      are open, so a scene that sets nothing behaves exactly as before — see
+      [ADR-0087](adr/0087-collision-filtering-and-triggers.md)
 
 ## M6 — Animation and audio
 
@@ -910,6 +916,19 @@ through the existing 2D seam, and driven by one input system
 equals the rectangle the input system hit tests, and the breakout HUD is a
 screen-space canvas whose score and lives stay in the window's corners at any
 aspect ratio.
+
+### `collision-filtering-and-triggers`
+
+Every collider collides with every other collider, so a game cannot say "these
+two never touch" or "this shape is a zone, not a solid". A pickup the player
+passes through, a projectile that ignores its owner, and team collision are all
+the same missing idea. Add `layer`/`mask` filtering and a trigger flag to
+`Collider2D` and `Collider3D`, applied in one place in each solver
+([ADR-0087](adr/0087-collision-filtering-and-triggers.md)).
+
+**Done when** a test proves two colliders with non-overlapping masks pass
+through each other and report no contact, and a trigger reports a contact
+without applying an impulse, in both 2D and 3D.
 
 ### `slice-title-and-menus`
 

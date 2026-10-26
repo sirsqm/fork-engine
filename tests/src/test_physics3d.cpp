@@ -459,6 +459,65 @@ TEST_CASE("linear damping decays a body's speed") {
 }
 
 // ---------------------------------------------------------------------------
+// Collision filtering and triggers.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the 3D layer/mask rule is symmetric and default-open") {
+    physics3d::Collider3D a;
+    physics3d::Collider3D b;
+    CHECK(a.can_collide_with(b));
+
+    a.layer = 0x1u;
+    a.mask = 0x1u;
+    b.layer = 0x2u;
+    b.mask = 0x2u;
+    CHECK_FALSE(a.can_collide_with(b));
+
+    b.mask = 0xFFFFFFFFu;
+    a.mask = 0xFFFFFFFFu;
+    CHECK(a.can_collide_with(b));
+}
+
+TEST_CASE("a filtered 3D pair passes through and reports no contact") {
+    Scene scene;
+    Node* floor = add_floor(scene, 20.0f);
+    Node* body = add_dynamic_box(scene, Vec3{0.0f, 5.0f, 0.0f}, 0.5f, 1.0f);
+
+    floor->get_component<physics3d::Collider3D>()->layer = 0x1u;
+    floor->get_component<physics3d::Collider3D>()->mask = 0x1u;
+    body->get_component<physics3d::Collider3D>()->layer = 0x2u;
+    body->get_component<physics3d::Collider3D>()->mask = 0x2u;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 120);
+
+    CHECK(body->transform().position.y < -1.0f);
+    CHECK(system.contact_count() == 0);
+    CHECK(system.contact_event_count() == 0);
+}
+
+TEST_CASE("a 3D trigger reports a contact but applies no impulse") {
+    Scene scene;
+    Node* floor = add_floor(scene, 20.0f);
+    Node* body = add_dynamic_box(scene, Vec3{0.0f, 5.0f, 0.0f}, 0.5f, 1.0f);
+    floor->get_component<physics3d::Collider3D>()->is_trigger = true;
+
+    physics3d::Physics3DSystem system;
+    bool saw_begin = false;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        for (const physics3d::ContactEvent& event : system.contact_events()) {
+            if (event.phase == physics3d::ContactPhase::Begin) {
+                saw_begin = true;
+            }
+        }
+    }
+
+    CHECK(body->transform().position.y < -1.0f);
+    CHECK(saw_begin);
+}
+
+// ---------------------------------------------------------------------------
 // Queries.
 // ---------------------------------------------------------------------------
 

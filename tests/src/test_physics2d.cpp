@@ -455,6 +455,131 @@ TEST_CASE("a collider with no rigid body does not move on its own") {
 
     CHECK(node->transform().position.y == doctest::Approx(4.0f));
 }
+// ---------------------------------------------------------------------------
+// Collision filtering and triggers.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the layer/mask rule is symmetric and default-open") {
+    physics2d::Collider2D a;
+    physics2d::Collider2D b;
+    // The defaults must collide: an unedited collider behaves as before.
+    CHECK(a.can_collide_with(b));
+
+    // One side opts out by dropping the other's layer from its mask.
+    a.layer = 0x1u;
+    b.layer = 0x2u;
+    b.mask = 0x1u;
+    a.mask = 0xFFFFFFFFu;
+    CHECK(a.can_collide_with(b)); // a sees b (a.mask has b.layer, b.mask has a.layer)
+
+    a.mask = 0x2u; // a now collides with layer 2
+    b.mask = 0xFFFFFFFFu;
+    CHECK(a.can_collide_with(b));
+
+    // Neither side's mask includes the other's layer: no collision.
+    a.layer = 0x1u;
+    a.mask = 0x1u; // a only collides with layer 1 (itself)
+    b.layer = 0x2u;
+    b.mask = 0x2u; // b only collides with layer 2 (itself)
+    CHECK_FALSE(a.can_collide_with(b));
+}
+
+TEST_CASE("a filtered pair passes through and reports no contact") {
+    Scene scene;
+    add_floor(scene, 20.0f);
+    Node* body = add_dynamic_box(scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+
+    // The floor and the body are put on layers that do not see each other.
+    scene.find_node_by_name("Floor")->get_component<physics2d::Collider2D>()->layer = 0x1u;
+    scene.find_node_by_name("Floor")->get_component<physics2d::Collider2D>()->mask = 0x1u;
+    body->get_component<physics2d::Collider2D>()->layer = 0x2u;
+    body->get_component<physics2d::Collider2D>()->mask = 0x2u;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    // The body falls straight through the floor: no impulse, no contact.
+    CHECK(body->transform().position.y < -1.0f);
+    CHECK(system.contact_count() == 0);
+    CHECK(system.contact_event_count() == 0);
+}
+
+TEST_CASE("a pair that agrees to collide still resolves") {
+    Scene scene;
+    add_floor(scene, 20.0f);
+    Node* body = add_dynamic_box(scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+
+    // Both on the same layer and seeing each other: the normal path.
+    scene.find_node_by_name("Floor")->get_component<physics2d::Collider2D>()->layer = 0x4u;
+    scene.find_node_by_name("Floor")->get_component<physics2d::Collider2D>()->mask = 0x4u;
+    body->get_component<physics2d::Collider2D>()->layer = 0x4u;
+    body->get_component<physics2d::Collider2D>()->mask = 0x4u;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 300; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(body->transform().position.y > 0.4f); // resting on the floor
+    CHECK(system.contact_count() >= 1);
+}
+
+TEST_CASE("a trigger reports a contact but applies no impulse") {
+    Scene scene;
+    Node* floor = add_floor(scene, 20.0f);
+    Node* body = add_dynamic_box(scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+
+    // The floor is a sensor: it detects the body but does not stop it.
+    floor->get_component<physics2d::Collider2D>()->is_trigger = true;
+
+    physics2d::Physics2DSystem system;
+    bool saw_begin = false;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        for (const physics2d::ContactEvent& event : system.contact_events()) {
+            if (event.phase == physics2d::ContactPhase::Begin) {
+                saw_begin = true;
+            }
+        }
+    }
+
+    // The body passed through, so its velocity was never reversed and it is now
+    // below the floor...
+    CHECK(body->transform().position.y < -1.0f);
+    // ...but the contact was reported while it overlapped the sensor.
+    CHECK(saw_begin);
+}
+
+TEST_CASE("a trigger emits a matching End event when the pair separates") {
+    Scene scene;
+    // A sensor the body falls through, so the pair begins and then ends.
+    Node* sensor = scene.create_node("Sensor");
+    auto* sensor_collider = sensor->add_component<physics2d::Collider2D>();
+    sensor_collider->half_extent = Vec2{5.0f, 0.5f};
+    sensor_collider->is_trigger = true;
+    sensor->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    add_dynamic_box(scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+
+    physics2d::Physics2DSystem system;
+    int begins = 0;
+    int ends = 0;
+    for (int i = 0; i < 180; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        for (const physics2d::ContactEvent& event : system.contact_events()) {
+            if (event.phase == physics2d::ContactPhase::Begin) {
+                ++begins;
+            } else {
+                ++ends;
+            }
+        }
+    }
+
+    CHECK(begins == 1);
+    CHECK(ends == 1);
+}
 
 // ---------------------------------------------------------------------------
 // Reflection: the components persist and appear in the registry.
@@ -507,6 +632,32 @@ TEST_CASE("a collider and rigid body round-trip through the serializer") {
     CHECK(loaded_body->mass == doctest::Approx(2.5f));
     CHECK(loaded_body->kinematic == true);
     CHECK(loaded_body->affected_by_gravity == false);
+}
+
+TEST_CASE("collision filtering fields round-trip through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* node = scene.create_node("Pickup");
+    auto* collider = node->add_component<physics2d::Collider2D>();
+    collider->layer = 0x8u;
+    collider->mask = 0x6u;
+    collider->is_trigger = true;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_node = loaded.find_node_by_name("Pickup");
+    REQUIRE(loaded_node != nullptr);
+    const auto* loaded_collider = loaded_node->get_component<physics2d::Collider2D>();
+    REQUIRE(loaded_collider != nullptr);
+    CHECK(loaded_collider->layer == 0x8u);
+    CHECK(loaded_collider->mask == 0x6u);
+    CHECK(loaded_collider->is_trigger == true);
 }
 
 // ---------------------------------------------------------------------------

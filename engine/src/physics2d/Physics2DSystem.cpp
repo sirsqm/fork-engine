@@ -302,6 +302,15 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
                 continue;
             }
 
+            // Collision filtering. A pair whose layers and masks disagree is
+            // ignored entirely: it never reaches the narrow phase, is never
+            // recorded as touching, and so produces no contact event. "Ignored"
+            // has to mean ignored for events too, or a game would get a begin
+            // event for a pair it told the engine never to touch.
+            if (!a.collider->can_collide_with(*b.collider)) {
+                continue;
+            }
+
             // Place each shape by its node's world position, offset, and Z
             // rotation, so a rotated box collides as its true oriented shape.
             const Contact2D contact = intersect_shapes(
@@ -330,6 +339,16 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
                 pair.first = a_first ? a.node->id() : b.node->id();
                 pair.second = a_first ? b.node->id() : a.node->id();
                 active_pairs_.push_back(pair);
+            }
+
+            // A trigger is a sensor: the touching pair was recorded above (so
+            // the contact-event pass reports Begin and End exactly as for a
+            // solid pair), but no impulse and no positional correction is
+            // applied, so bodies pass through it. This is checked after the pair
+            // record so a trigger still reports contacts, and before the sleeping
+            // and impulse guards so it never moves anything.
+            if (a.collider->is_trigger || b.collider->is_trigger) {
+                continue;
             }
 
             // A sleeping body is skipped by the solver. Its contacts were

@@ -55,6 +55,38 @@ public:
     // sliding along a contact, because there is no rotational dynamics yet.
     f32 friction = 0.5f;
 
+    // --- Collision filtering ------------------------------------------------
+    //
+    // A pair of colliders is considered only when both agree to collide:
+    //
+    //   (a.layer & b.mask) != 0 && (b.layer & a.mask) != 0
+    //
+    // `layer` is the single bit this collider belongs to; `mask` is the set of
+    // layers it will collide with. The test is symmetric, so either side can
+    // opt out without the other knowing -- a projectile that ignores its owner
+    // only has to drop the owner's layer from its mask.
+    //
+    // The defaults reproduce the pre-filtering behaviour exactly: bit 0 is the
+    // default layer and the mask is all-ones, so an unedited collider collides
+    // with everything.
+    u32 layer = 1u;
+
+    // The set of layers this collider collides with. All-ones by default.
+    u32 mask = 0xFFFFFFFFu;
+
+    // When true the collider is a sensor: it reports contacts (the contact-event
+    // stream is unchanged) but applies no impulse and no positional correction,
+    // so a body passes through it. A pickup zone, a checkpoint, a trigger
+    // volume.
+    bool is_trigger = false;
+
+    // Whether this collider and `other` may collide, by the symmetric layer/mask
+    // rule above. Kept here rather than in the solver so the rule has one
+    // definition that both physics modules and a future query API share.
+    [[nodiscard]] bool can_collide_with(const Collider2D& other) const noexcept {
+        return (layer & other.mask) != 0u && (other.layer & mask) != 0u;
+    }
+
     // The shape's world centre when the node is at `center` with Z rotation
     // `rotation`: the local offset rotated into world space and added to the
     // node's centre. With a zero offset this is just `center`.
