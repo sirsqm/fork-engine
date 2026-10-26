@@ -108,7 +108,9 @@ namespace {
                                               std::string metrics = make_metrics()) {
     std::string error;
     auto font = Font::from_json("test.fefont", metrics, atlas, error);
-    REQUIRE(font != nullptr);
+    // The extra parens stop MSVC's doctest from stringifying the shared_ptr and
+    // reaching for Font's operator<<, which does not exist (see AGENTS.md).
+    REQUIRE((font != nullptr));
     return font;
 }
 
@@ -155,23 +157,23 @@ TEST_CASE("a malformed font document is rejected rather than half-loaded") {
     std::string error;
 
     // Not JSON at all.
-    CHECK(Font::from_json("bad.fefont", "{ not json", atlas, error) == nullptr);
+    CHECK((Font::from_json("bad.fefont", "{ not json", atlas, error) == nullptr));
     CHECK_FALSE(error.empty());
 
     // JSON, but with no line height.
     error.clear();
-    CHECK(Font::from_json("bad.fefont", R"({"glyphs":[]})", atlas, error) == nullptr);
+    CHECK((Font::from_json("bad.fefont", R"({"glyphs":[]})", atlas, error) == nullptr));
     CHECK_FALSE(error.empty());
 
     // JSON with no glyph table.
     error.clear();
-    CHECK(Font::from_json("bad.fefont", R"({"line_height":1.0})", atlas, error) == nullptr);
+    CHECK((Font::from_json("bad.fefont", R"({"line_height":1.0})", atlas, error) == nullptr));
     CHECK_FALSE(error.empty());
 
     // A glyph entry missing a metric is rejected, so a corrupt atlas cannot
     // silently place every glyph at the origin.
     error.clear();
-    CHECK(Font::from_json("bad.fefont", R"({"line_height":1.0,"glyphs":[{"u0":0.0}]})", atlas, error) == nullptr);
+    CHECK((Font::from_json("bad.fefont", R"({"line_height":1.0,"glyphs":[{"u0":0.0}]})", atlas, error) == nullptr));
     CHECK_FALSE(error.empty());
 }
 

@@ -145,6 +145,13 @@ defect, not noise.
 - Raw-pointer identity checks in doctest (`CHECK(a == b)` on `T*`) fail to
   compile on MSVC because it tries the `shared_ptr` `operator<<`. Wrap the
   expression in an extra pair of parentheses: `CHECK((a == b))`.
+- The same trap fires on a `shared_ptr<T>` when `T` has no `operator<<`, and it
+  is not limited to identity checks: `REQUIRE(font != nullptr)` on a
+  `std::shared_ptr<Font>` fails to compile because stringifying the expression
+  reaches for `std::operator<<(ostream&, const shared_ptr<T>&)`, which needs
+  `T` to be streamable. Parenthesise it too: `REQUIRE((font != nullptr))`. The
+  type's own streamability is irrelevant to the check; the parens keep doctest
+  from stringifying it at all.
 - longjmp-based test harnesses trip MSVC C4611; suppress it at file scope with
   a comment, not globally.
 - Path tests must not assume POSIX. A leading `/` is not absolute on Windows
