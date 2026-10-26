@@ -175,6 +175,20 @@ defect, not noise.
   variable with a blanket `sed` also rewrites identifiers that merely contain
   the name (`find_active_camera` → `find_active_active_camera`); rename by hand
   or check the diff for mangled identifiers afterwards.
+- A web build does not go through `fork_player --export`, so a manifest field the
+  desktop path reads is not automatically available to it. The shell
+  (`WebExportTemplate.cpp`) builds the runtime's argv by hand from the manifest;
+  a field it forgets to forward reaches the desktop run and silently does
+  nothing in a browser. When adding a manifest field, wire it in both places
+  (`load_export` and the shell) and, if the runtime needs a direct-form flag for
+  it, add that too. `bindings` was one such field: the document packed and
+  applied natively and was dropped on the web until the shell passed
+  `--bindings`.
+- A game's own touch layout and the engine's built-in pads cover different
+  places on the screen, so a probe point proves nothing unless it is chosen to
+  discriminate. Check the point against the built-in regions *and* the document
+  before trusting a pass: a point inside a built-in region moves the node even
+  when the document never loaded.
 
 - A construct that is legal on a desktop GL 3.3 core context can be illegal in
   WebGL2 (GLSL ES 3.00), and the browser reports it only at run time. Two seen so
