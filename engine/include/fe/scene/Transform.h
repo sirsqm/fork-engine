@@ -4,6 +4,8 @@
 
 #include "fe/core/Math.h"
 
+#include <string_view>
+
 namespace fe {
 
 // A local-to-parent spatial transform.
@@ -41,5 +43,42 @@ struct Transform {
         return t;
     }
 };
+
+// One field of a transform, addressed by name. A transform has no reflection
+// entry (it is not a component), so an edit that has to travel as a serializable
+// path names its field as a string: "position". These two functions are the
+// single definition of that mapping, shared by the operation applier and the
+// inspector, so the wire form and the widget agree.
+//
+// The whole field is addressed, not one axis, so a drag that changes two axes in
+// a frame is still one operation and therefore one undo step.
+//
+// Returns nullptr for an unknown field, which is how a malformed or hand-written
+// operation is rejected rather than silently ignored.
+[[nodiscard]] inline Vec3* transform_field(Transform& transform, std::string_view field) noexcept {
+    if (field == "position") {
+        return &transform.position;
+    }
+    if (field == "rotation") {
+        return &transform.rotation;
+    }
+    if (field == "scale") {
+        return &transform.scale;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] inline const Vec3* transform_field(const Transform& transform, std::string_view field) noexcept {
+    if (field == "position") {
+        return &transform.position;
+    }
+    if (field == "rotation") {
+        return &transform.rotation;
+    }
+    if (field == "scale") {
+        return &transform.scale;
+    }
+    return nullptr;
+}
 
 } // namespace fe

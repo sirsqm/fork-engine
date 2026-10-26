@@ -167,3 +167,66 @@ TEST_CASE("a zero-sized viewport never picks") {
 
     CHECK(view.viewport.pick(view.scene, *view.camera, Vec2{0.0f, 0.0f}) == nullptr);
 }
+
+// --- Drag to move -----------------------------------------------------------
+//
+// The drag-to-move maths is pure, so it is tested here rather than through the
+// panel: a drag right and down must move the node right and *down* on screen,
+// which is world -Y, and the movement must shrink as the zoom grows.
+
+TEST_CASE("a screen drag maps to a world delta with the vertical axis flipped") {
+    View view;
+    view.viewport.set_size(100, 100);
+
+    // Zoom 1: one screen pixel is one world unit, and screen Y (down) is world
+    // -Y, so a drag right and down moves the node right and down in the world.
+    const Vec2 delta = view.viewport.drag_to_world_delta(*view.camera, Vec2{10.0f, 20.0f});
+    CHECK(delta.x == doctest::Approx(10.0f));
+    CHECK(delta.y == doctest::Approx(-20.0f));
+}
+
+TEST_CASE("a screen drag is divided by the zoom") {
+    View view;
+    view.viewport.set_size(100, 100);
+    view.camera->zoom = 2.0f;
+
+    const Vec2 delta = view.viewport.drag_to_world_delta(*view.camera, Vec2{10.0f, 20.0f});
+    CHECK(delta.x == doctest::Approx(5.0f));
+    CHECK(delta.y == doctest::Approx(-10.0f));
+}
+
+TEST_CASE("a dragged node keeps its grab offset and tracks the cursor") {
+    View view;
+    view.viewport.set_size(100, 100);
+
+    // The node starts at the world origin, which is the viewport centre. Grab it
+    // 10 world units to the right of where it sits, then move the cursor: the
+    // node must keep that 10-unit offset rather than snap under the cursor.
+    const Vec2 origin{0.0f, 0.0f};
+    const Vec2 cursor_world_start{10.0f, 0.0f};
+
+    // Cursor travels to (30, 5) in the world: a +20 in X and a +5 in Y.
+    const Vec2 cursor_world_now{30.0f, 5.0f};
+    const Vec2 travel{cursor_world_now.x - cursor_world_start.x, cursor_world_now.y - cursor_world_start.y};
+    const Vec2 moved = Vec2{origin.x + travel.x, origin.y + travel.y};
+
+    CHECK(moved.x == doctest::Approx(20.0f));
+    CHECK(moved.y == doctest::Approx(5.0f));
+
+    // The same result through `dragged_position`, which is the helper the panel
+    // uses: a mouse delta of the same travel (screen Y flipped) lands identically.
+    const Vec2 via_helper = view.viewport.dragged_position(*view.camera, origin, Vec2{travel.x, -travel.y});
+    CHECK(via_helper.x == doctest::Approx(20.0f));
+    CHECK(via_helper.y == doctest::Approx(5.0f));
+}
+
+TEST_CASE("drag_to_world_delta tolerates a zero or negative zoom") {
+    View view;
+    view.viewport.set_size(100, 100);
+    view.camera->zoom = 0.0f;
+
+    // A degenerate zoom is treated as 1 rather than dividing by zero.
+    const Vec2 delta = view.viewport.drag_to_world_delta(*view.camera, Vec2{4.0f, 4.0f});
+    CHECK(delta.x == doctest::Approx(4.0f));
+    CHECK(delta.y == doctest::Approx(-4.0f));
+}

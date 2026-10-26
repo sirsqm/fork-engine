@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/core/Error.h"
+#include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
 #include "fe/reflect/Value.h"
@@ -49,6 +50,7 @@ enum class OperationKind : u8 {
     SetResource,       // set a resource-reference property through the manager
     SetScriptProperty, // write one reflected property of a node's gameplay script
     SetScriptResource, // set a resource-reference property of a node's gameplay script
+    SetTransform,      // write one component of a node's local transform
 };
 
 // The wire name of a kind ("create_node", ...). Stable; the reader rejects an
@@ -85,9 +87,20 @@ struct Operation {
     // single name for a leaf or a member path for a group), or within a script's
     // described properties. SetScriptResource uses a single name here too, since a
     // resource reference is a leaf.
+    //
+    // SetTransform: a single element naming the transform field to write
+    // ("position", "rotation" or "scale"). A transform is a fixed struct with no
+    // registry entry, so its fields are named here rather than resolved through a
+    // TypeDesc.
     std::vector<std::string> path;
     // SetProperty/SetScriptProperty: the value to write.
     reflect::Value value{};
+    // SetTransform: the new value of the addressed transform field. A transform
+    // field is a fixed three-float vector, which `reflect::Value` (a scalar
+    // variant) cannot carry; it gets its own field rather than widening `Value`,
+    // which every operation of every kind would pay for. The field to write is
+    // named by `path` (a single element, "position", "rotation" or "scale").
+    Vec3 transform_value{};
     // SetResource/SetScriptResource: the reference to resolve ("" clears the slot).
     std::string reference;
 };

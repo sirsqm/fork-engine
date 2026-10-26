@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/editor/Panel.h"
 #include "fe/editor/Viewport.h"
@@ -76,6 +77,19 @@ private:
     u32 target_width_ = 0;
     u32 target_height_ = 0;
     Viewport viewport_;
+
+    // The in-progress left-button gesture in the viewport. A press arms it; once
+    // the cursor travels past a small threshold it becomes a move (`moved_`),
+    // and a release without one is a pick. `drag_origin_` is the selected node's
+    // world position when the move began and `drag_start_world_` is the world
+    // point under the cursor at that moment; the node is placed at
+    // `drag_origin_ + (cursor_world - drag_start_world_)` each frame, so it keeps
+    // the offset it was grabbed by and the gesture accumulates no rounding.
+    bool armed_ = false;
+    bool moved_ = false;
+    Vec2 press_pos_{};
+    Vec2 drag_origin_{};
+    Vec2 drag_start_world_{};
 };
 
 } // namespace editor

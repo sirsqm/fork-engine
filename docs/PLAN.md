@@ -131,6 +131,7 @@ built editor-friendly from the start rather than adapted later.
 - [x] 2D viewport rendering into an editor panel — `Viewport` + `ViewportPanel` (off-screen render target)
 - [x] Asset browser — `AssetBrowserViewModel` (headless) + `AssetBrowserPanel`, listing the asset database's GUID-tagged assets with search and a copyable reference
 - [x] Undo/redo — `Command` + `CommandStack` + concrete commands in `fork_editor_core`; coalescing drags into one step ([ADR-0015](adr/0015-editor-undo-redo.md))
+- [x] Editing a node's transform — a Transform section in the inspector and drag-to-move in the viewport, both routed through the command stack as the `SetTransform` operation ([ADR-0089](adr/0089-editor-transform-editing.md))
 - [x] Play-in-editor (embed an `Engine`, drive frames, run the scene's `SceneSchedule`) — `PlaySession`
 - [x] Project asset root — `EditorContext::set_project_root` + `--project`, indexing the asset database so the browser and GUID references resolve
 - [x] Project settings — `ProjectSettings` (headless) + `fork.project.json`, opened with `--project`/`--project-file`; name, asset root, and startup scene, with portable relative paths ([ADR-0025](adr/0025-project-file.md))

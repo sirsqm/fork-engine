@@ -4,12 +4,15 @@
 
 #include "fe/core/Log.h"
 #include "fe/editor/EditorContext.h"
+#include "fe/editor/OperationCommand.h"
 #include "fe/editor/PlaySession.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/rhi/Device.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/Transform.h"
+#include "fe/serialization/Operation.h"
 
 #include "imgui.h"
 
@@ -27,6 +30,10 @@ constexpr rhi::ClearColor kWindowClear{0.06f, 0.06f, 0.07f, 1.0f};
 // The selection outline colour (amber), deliberately distinct from any panel
 // chrome so it is unambiguous which node is selected.
 constexpr ImU32 kSelectionColor = IM_COL32(255, 176, 32, 255);
+
+// How far the cursor must travel before a left press becomes a move rather than
+// a click. A few pixels, so a pick with a slightly unsteady hand still picks.
+constexpr f32 kDragThresholdPixels = 3.0f;
 
 // The clear colour the scene's active camera asks for, or the window clear when
 // the scene has no camera. Shared with the runtime's own policy.
@@ -147,16 +154,63 @@ void ViewportPanel::draw(EditorContext& context) {
             }
         }
 
-        // --- Selection -----------------------------------------------------
-        // A plain left click (not a drag) picks the node under the cursor.
-        if (!playing && image_hovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left) &&
-            ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            Camera2D* camera = renderer2d::Renderer2D::find_active_camera(context.scene());
-            if (camera != nullptr) {
-                const ImGuiIO& io = ImGui::GetIO();
-                const Vec2 cursor{io.MousePos.x - image_origin.x, io.MousePos.y - image_origin.y};
-                if (Node* picked = viewport_.pick(context.scene(), *camera, cursor); picked != nullptr) {
-                    context.hierarchy().select(picked);
+        // --- Selection and drag to move -------------------------------------
+        // A left press arms a gesture. It becomes a move once the cursor travels
+        // past a small threshold, so a plain click still picks a node and a click
+        // on empty space clears the selection - and a click never writes a
+        // no-op position edit into the undo history.
+        Camera2D* active_camera = renderer2d::Renderer2D::find_active_camera(context.scene());
+        if (!playing && active_camera != nullptr) {
+            const ImGuiIO& io = ImGui::GetIO();
+
+            if (image_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                armed_ = true;
+                moved_ = false;
+                press_pos_ = Vec2{io.MousePos.x, io.MousePos.y};
+            }
+
+            if (armed_) {
+                if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    // The button came up: a press that never moved is a pick.
+                    if (!moved_ && image_hovered) {
+                        const Vec2 cursor{io.MousePos.x - image_origin.x, io.MousePos.y - image_origin.y};
+                        context.hierarchy().select(viewport_.pick(context.scene(), *active_camera, cursor));
+                    }
+                    armed_ = false;
+                    // The gesture ended, so the next edit is a new undo step.
+                    context.break_undo_coalescing();
+                } else {
+                    const Vec2 now{io.MousePos.x, io.MousePos.y};
+                    const Vec2 travel{now.x - press_pos_.x, now.y - press_pos_.y};
+                    if (!moved_ && std::sqrt(travel.x * travel.x + travel.y * travel.y) > kDragThresholdPixels) {
+                        // The gesture is now a move. Capture where it started, so
+                        // the node keeps the offset it was grabbed by and the
+                        // gesture accumulates no rounding.
+                        moved_ = true;
+                        if (Node* selected = context.hierarchy().selected_node(); selected != nullptr) {
+                            const Vec3 world = transform_point(selected->world_matrix(), Vec3{});
+                            drag_origin_ = Vec2{world.x, world.y};
+                            const Vec2 cursor{press_pos_.x - image_origin.x, press_pos_.y - image_origin.y};
+                            drag_start_world_ = viewport_.screen_to_world(*active_camera, cursor);
+                        }
+                    }
+
+                    if (moved_ && context.is_editable()) {
+                        if (Node* selected = context.hierarchy().selected_node(); selected != nullptr) {
+                            const Vec2 cursor{now.x - image_origin.x, now.y - image_origin.y};
+                            const Vec2 target = viewport_.screen_to_world(*active_camera, cursor);
+                            const Vec2 moved_pos = Vec2{drag_origin_.x + (target.x - drag_start_world_.x),
+                                                        drag_origin_.y + (target.y - drag_start_world_.y)};
+
+                            const Transform& transform = selected->transform();
+                            serialization::Operation op;
+                            op.kind = serialization::OperationKind::SetTransform;
+                            op.node_id = selected->id();
+                            op.path = {"position"};
+                            op.transform_value = Vec3{moved_pos.x, moved_pos.y, transform.position.z};
+                            context.execute(std::make_unique<OperationCommand>(std::move(op)));
+                        }
+                    }
                 }
             }
         }

@@ -14,6 +14,7 @@
 #include "fe/resources/ResourceManager.h"
 #include "fe/scene/Component.h"
 #include "fe/scene/Node.h"
+#include "fe/scene/Transform.h"
 #include "fe/serialization/Operation.h"
 
 #include "imgui.h"
@@ -108,6 +109,91 @@ void end_gesture_if_finished(EditContext& edit) {
     if (edit.context != nullptr && ImGui::IsItemDeactivatedAfterEdit()) {
         edit.context->break_undo_coalescing();
     }
+}
+
+// Commits one whole transform field as a `SetTransform` operation, so the edit is
+// undoable and coalesces with the previous edit of the same field.
+void commit_transform(EditorContext& context, const Uuid& node_id, const char* field, const Vec3& value) {
+    serialization::Operation op;
+    op.kind = serialization::OperationKind::SetTransform;
+    op.node_id = node_id;
+    op.path = {field};
+    op.transform_value = value;
+    context.execute(std::make_unique<OperationCommand>(std::move(op)));
+}
+
+// One row of the transform: three drags that edit one field (position, rotation
+// or scale) as a whole, so a drag that moves two axes in a frame is one
+// operation and therefore one undo step.
+//
+// The transform is not a component and has no reflection entry, so this is the
+// one place the inspector names a transform field directly. Rotation is stored in
+// radians but shown and typed in degrees, which is what a person authors in;
+// `degrees` selects that conversion.
+void draw_transform_row(EditorContext& context, const Uuid& node_id, Transform& transform, const char* field,
+                        const char* label, f32 step, bool degrees) {
+    const Vec3* current = transform_field(transform, field);
+    if (current == nullptr) {
+        return;
+    }
+    Vec3 edited = *current;
+    if (degrees) {
+        edited = Vec3{fe::degrees(edited.x), fe::degrees(edited.y), fe::degrees(edited.z)};
+    }
+
+    ImGui::Text("%s", label);
+    const float slot_width = ImGui::GetContentRegionAvail().x / 3.0f;
+
+    float axis_value[3] = {edited.x, edited.y, edited.z};
+    const char* axis_names[3] = {"x", "y", "z"};
+    bool changed = false;
+    bool gesture_ended = false;
+    for (int i = 0; i < 3; ++i) {
+        ImGui::PushID(i);
+        if (i > 0) {
+            ImGui::SameLine();
+        }
+        ImGui::SetNextItemWidth(slot_width);
+        const std::string axis_label = std::string(axis_names[i]) + "##" + field;
+        if (ImGui::DragFloat(axis_label.c_str(), &axis_value[i], step) && std::isfinite(axis_value[i])) {
+            changed = true;
+        }
+        // Checked per axis, not once after the loop: the loop's last widget is
+        // the Z drag, so a gesture that ended on X or Y would otherwise go
+        // unnoticed and the next drag of that axis would merge into this step.
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            gesture_ended = true;
+        }
+        ImGui::PopID();
+    }
+
+    if (changed) {
+        Vec3 written{axis_value[0], axis_value[1], axis_value[2]};
+        if (degrees) {
+            written = Vec3{fe::radians(written.x), fe::radians(written.y), fe::radians(written.z)};
+        }
+        commit_transform(context, node_id, field, written);
+    }
+    if (gesture_ended) {
+        context.break_undo_coalescing();
+    }
+}
+
+// The node's transform, drawn above its components: every node has one and
+// nothing can be placed without it. This is the section that makes a node
+// movable from the editor at all.
+void draw_transform_section(EditorContext& context, Node& node) {
+    Transform& transform = node.transform();
+    const Uuid node_id = node.id();
+
+    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginDisabled(!context.is_editable());
+        draw_transform_row(context, node_id, transform, "position", "Position", 0.01f, false);
+        draw_transform_row(context, node_id, transform, "rotation", "Rotation", 0.5f, true);
+        draw_transform_row(context, node_id, transform, "scale", "Scale", 0.01f, false);
+        ImGui::EndDisabled();
+    }
+    ImGui::Separator();
 }
 
 void draw_row(const Property& property, void* component, EditContext& edit, TextFields& fields,
@@ -408,6 +494,8 @@ void InspectorPanel::draw(EditorContext& context) {
     ImGui::SameLine();
     ImGui::TextDisabled("(%s)", node->type_name());
     ImGui::Separator();
+
+    draw_transform_section(context, *node);
 
     if (node->component_count() == 0) {
         ImGui::TextDisabled("No components");

@@ -129,6 +129,8 @@ std::string_view OperationCommand::label() const noexcept {
         return "Set Script Property";
     case OperationKind::SetScriptResource:
         return "Set Script Resource";
+    case OperationKind::SetTransform:
+        return "Set Transform";
     }
     return "Edit";
 }
@@ -157,6 +159,19 @@ std::string OperationCommand::coalesce_key() const {
         key += operation_.component_id.to_string();
         key += ':';
         key += operation_.property_name;
+        return key;
+    }
+    case OperationKind::SetTransform: {
+        // Keyed by node and axis, so a drag that rewrites one axis many times
+        // merges into one undo step while two different axes never do.
+        std::string key = operation_.node_id.to_string();
+        key += ':';
+        for (usize i = 0; i < operation_.path.size(); ++i) {
+            if (i > 0) {
+                key += '.';
+            }
+            key += operation_.path[i];
+        }
         return key;
     }
     case OperationKind::SetScriptProperty: {
@@ -206,6 +221,7 @@ bool OperationCommand::merge_with(const Command& newer) {
     // applies the adopted value.
     operation_.value = other->operation_.value;
     operation_.reference = other->operation_.reference;
+    operation_.transform_value = other->operation_.transform_value;
     return true;
 }
 

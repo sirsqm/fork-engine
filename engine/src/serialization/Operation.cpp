@@ -8,10 +8,13 @@
 #include "fe/scene/Component.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/Transform.h"
+#include "fe/serialization/Json.h"
 #include "fe/serialization/ScriptTarget.h"
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -176,6 +179,8 @@ const char* to_string(OperationKind kind) noexcept {
         return "set_script_property";
     case OperationKind::SetScriptResource:
         return "set_script_resource";
+    case OperationKind::SetTransform:
+        return "set_transform";
     }
     return "rename_node";
 }
@@ -185,7 +190,7 @@ bool operation_kind_from_string(std::string_view text, OperationKind& out) noexc
         OperationKind::CreateNode,        OperationKind::DeleteNode,   OperationKind::ReparentNode,
         OperationKind::RenameNode,        OperationKind::AddComponent, OperationKind::RemoveComponent,
         OperationKind::SetProperty,       OperationKind::SetResource,  OperationKind::SetScriptProperty,
-        OperationKind::SetScriptResource,
+        OperationKind::SetScriptResource, OperationKind::SetTransform,
     };
     for (const OperationKind kind : kinds) {
         if (text == to_string(kind)) {
@@ -251,6 +256,11 @@ std::string to_json(const Operation& op) {
         j["behaviour"] = op.name;
         j["path"] = op.path;
         j["reference"] = op.reference;
+        break;
+    case OperationKind::SetTransform:
+        j["node_id"] = op.node_id.to_string();
+        j["path"] = op.path;
+        j["transform_value"] = op.transform_value;
         break;
     }
     return j.dump();
@@ -390,6 +400,19 @@ Error from_json(std::string_view text, Operation& out) {
         out.path = j.at("path").get<std::vector<std::string>>();
         out.reference = j.value("reference", std::string{});
         break;
+    case OperationKind::SetTransform:
+        if (Error error = parse_uuid(j, "node_id", out.node_id); error) {
+            return error;
+        }
+        if (!j.contains("path") || !j.at("path").is_array()) {
+            return Error("operation: set_transform requires a 'path' array");
+        }
+        out.path = j.at("path").get<std::vector<std::string>>();
+        if (!j.contains("transform_value") || !j.at("transform_value").is_array()) {
+            return Error("operation: set_transform requires a 'transform_value' array");
+        }
+        out.transform_value = j.at("transform_value").get<Vec3>();
+        break;
     }
     return Error::none();
 }
@@ -489,6 +512,25 @@ Error apply(const Operation& op, Scene& scene, ResourceManager* resources, Appli
             break;
         }
         (void)property->setter(component, op.value);
+        break;
+    }
+    case OperationKind::SetTransform: {
+        Node* node = scene.find_node(op.node_id);
+        if (node == nullptr) {
+            break;
+        }
+        // The path names the field ("position"); a path that does not resolve
+        // leaves the transform untouched. The value is rejected unless every
+        // component is finite, so a malformed operation cannot write a NaN.
+        if (op.path.size() != 1) {
+            break;
+        }
+        Vec3* field = transform_field(node->transform(), op.path[0]);
+        if (field == nullptr || !std::isfinite(op.transform_value.x) || !std::isfinite(op.transform_value.y) ||
+            !std::isfinite(op.transform_value.z)) {
+            break;
+        }
+        *field = op.transform_value;
         break;
     }
     case OperationKind::SetResource: {
@@ -617,6 +659,27 @@ Result<Operation> inverse(const Operation& op, const Scene& scene, ScriptTarget*
         inv.component_id = op.component_id;
         inv.path = op.path;
         inv.value = property->getter(component);
+        return inv;
+    }
+    case OperationKind::SetTransform: {
+        // A transform edit's inverse is the previous value of the same field,
+        // read from the document exactly as a component property's inverse is.
+        const Node* node = scene.find_node(op.node_id);
+        if (node == nullptr) {
+            return Error("operation: cannot invert a transform write on a missing node");
+        }
+        if (op.path.size() != 1) {
+            return Error("operation: cannot invert a transform write with a malformed path");
+        }
+        const Vec3* previous = transform_field(node->transform(), op.path[0]);
+        if (previous == nullptr) {
+            return Error("operation: cannot invert a transform write of an unknown field");
+        }
+        Operation inv;
+        inv.kind = OperationKind::SetTransform;
+        inv.node_id = op.node_id;
+        inv.path = op.path;
+        inv.transform_value = *previous;
         return inv;
     }
     case OperationKind::SetResource: {

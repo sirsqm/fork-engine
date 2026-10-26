@@ -96,6 +96,20 @@ void Viewport::zoom_at_cursor(Camera2D& camera, const Vec2& cursor, f32 scroll) 
     camera.zoom = new_zoom;
 }
 
+Vec2 Viewport::drag_to_world_delta(const Camera2D& camera, const Vec2& mouse_delta) const noexcept {
+    const f32 zoom = camera.zoom > 0.0f ? camera.zoom : 1.0f;
+    // Screen Y grows down, world Y grows up, so the vertical delta flips. The
+    // horizontal delta keeps its sign and is scaled by the zoom, matching
+    // `screen_to_world`.
+    return Vec2{mouse_delta.x / zoom, -mouse_delta.y / zoom};
+}
+
+Vec2 Viewport::dragged_position(const Camera2D& camera, const Vec2& origin_world,
+                                const Vec2& mouse_delta) const noexcept {
+    const Vec2 delta = drag_to_world_delta(camera, mouse_delta);
+    return Vec2{origin_world.x + delta.x, origin_world.y + delta.y};
+}
+
 bool Viewport::node_world_bounds(const Node& node, Vec2& out_min, Vec2& out_max) noexcept {
     const auto* sprite = node.get_component<Sprite2D>();
     if (sprite == nullptr) {

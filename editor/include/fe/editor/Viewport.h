@@ -51,6 +51,23 @@ public:
     // anchored rather than jumping to the centre.
     void zoom_at_cursor(Camera2D& camera, const Vec2& cursor, f32 scroll) noexcept;
 
+    // --- Moving the selection ----------------------------------------------
+    // Converts a mouse drag in screen pixels into the world-space delta that
+    // moves a node by the same amount the cursor moved. Screen Y grows down and
+    // world Y grows up, so the vertical component is negated; the horizontal
+    // component is divided by the zoom.
+    //
+    // This is the whole of drag-to-move that is not toolkit or command
+    // plumbing: it is pure, so a test can assert the mapping without a window.
+    [[nodiscard]] Vec2 drag_to_world_delta(const Camera2D& camera, const Vec2& mouse_delta) const noexcept;
+
+    // The new world position of a node dragged by `mouse_delta` screen pixels,
+    // given the world position the drag started from. Kept separate from
+    // `drag_to_world_delta` so the caller can hold the drag origin for the whole
+    // gesture and never accumulate rounding across frames.
+    [[nodiscard]] Vec2 dragged_position(const Camera2D& camera, const Vec2& origin_world,
+                                        const Vec2& mouse_delta) const noexcept;
+
     // --- Picking -----------------------------------------------------------
     // The world-space point under a screen position in the content region.
     [[nodiscard]] Vec2 screen_to_world(const Camera2D& camera, const Vec2& screen_point) const noexcept;

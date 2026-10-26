@@ -24,6 +24,7 @@
 #include "fe/scene/Sprite2D.h"
 #include "fe/serialization/Operation.h"
 
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -530,4 +531,167 @@ TEST_CASE("an operation and its command counterpart leave the same document stat
         CHECK(a->child_count() == oa->child_count());
         CHECK(b->child_count() == ob->child_count());
     }
+}
+
+// --- SetTransform -----------------------------------------------------------
+//
+// A node's transform is not a component and has no reflection entry, so it needs
+// its own operation kind. These tests prove the operation round-trips, applies,
+// inverts, and - crucially - that a drag over several frames coalesces into one
+// undo step, which is what makes drag-to-move in the viewport usable.
+
+TEST_CASE("a SetTransform operation round-trips through JSON") {
+    Operation op;
+    op.kind = OperationKind::SetTransform;
+    op.node_id = Uuid::generate();
+    op.path = {"position"};
+    op.transform_value = Vec3{1.5f, -2.5f, 3.5f};
+
+    check_round_trip(op);
+
+    // The parsed operation must carry the vector, not just the path.
+    Operation parsed;
+    REQUIRE_FALSE(serialization::from_json(serialization::to_json(op), parsed));
+    CHECK(parsed.transform_value.x == doctest::Approx(1.5f));
+    CHECK(parsed.transform_value.y == doctest::Approx(-2.5f));
+    CHECK(parsed.transform_value.z == doctest::Approx(3.5f));
+}
+
+TEST_CASE("a SetTransform operation writes one field and leaves the others") {
+    Scene scene;
+    Node* node = scene.create_node("Node");
+    node->transform().position = Vec3{1.0f, 2.0f, 3.0f};
+    node->transform().rotation = Vec3{0.1f, 0.2f, 0.3f};
+
+    Operation op;
+    op.kind = OperationKind::SetTransform;
+    op.node_id = node->id();
+    op.path = {"position"};
+    op.transform_value = Vec3{9.0f, 8.0f, 7.0f};
+    REQUIRE_FALSE(serialization::apply(op, scene));
+
+    CHECK(node->transform().position.x == doctest::Approx(9.0f));
+    CHECK(node->transform().position.y == doctest::Approx(8.0f));
+    CHECK(node->transform().position.z == doctest::Approx(7.0f));
+    // Rotation is untouched: the path names one field.
+    CHECK(node->transform().rotation.x == doctest::Approx(0.1f));
+}
+
+TEST_CASE("inverting a SetTransform operation restores the previous value") {
+    Scene scene;
+    Node* node = scene.create_node("Node");
+    node->transform().position = Vec3{1.0f, 2.0f, 3.0f};
+
+    Operation op;
+    op.kind = OperationKind::SetTransform;
+    op.node_id = node->id();
+    op.path = {"position"};
+    op.transform_value = Vec3{9.0f, 8.0f, 7.0f};
+
+    Result<Operation> inverse = serialization::inverse(op, scene);
+    REQUIRE(inverse);
+    CHECK(inverse.value().kind == OperationKind::SetTransform);
+    CHECK(inverse.value().transform_value.x == doctest::Approx(1.0f));
+    CHECK(inverse.value().transform_value.y == doctest::Approx(2.0f));
+    CHECK(inverse.value().transform_value.z == doctest::Approx(3.0f));
+
+    // Applying the inverse restores the original exactly.
+    REQUIRE_FALSE(serialization::apply(inverse.value(), scene));
+    CHECK(node->transform().position.x == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a malformed SetTransform operation is a no-op, not a NaN") {
+    Scene scene;
+    Node* node = scene.create_node("Node");
+    node->transform().position = Vec3{1.0f, 2.0f, 3.0f};
+
+    // An unknown field name.
+    Operation bad_field;
+    bad_field.kind = OperationKind::SetTransform;
+    bad_field.node_id = node->id();
+    bad_field.path = {"nonsense"};
+    bad_field.transform_value = Vec3{9.0f, 9.0f, 9.0f};
+    REQUIRE_FALSE(serialization::apply(bad_field, scene));
+    CHECK(node->transform().position.x == doctest::Approx(1.0f));
+
+    // A non-finite component.
+    Operation bad_value;
+    bad_value.kind = OperationKind::SetTransform;
+    bad_value.node_id = node->id();
+    bad_value.path = {"position"};
+    bad_value.transform_value = Vec3{std::numeric_limits<f32>::quiet_NaN(), 0.0f, 0.0f};
+    REQUIRE_FALSE(serialization::apply(bad_value, scene));
+    CHECK(node->transform().position.x == doctest::Approx(1.0f));
+
+    // A path of the wrong length.
+    Operation bad_path;
+    bad_path.kind = OperationKind::SetTransform;
+    bad_path.node_id = node->id();
+    bad_path.path = {"position", "x"};
+    bad_path.transform_value = Vec3{9.0f, 9.0f, 9.0f};
+    REQUIRE_FALSE(serialization::apply(bad_path, scene));
+    CHECK(node->transform().position.x == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a drag over several frames coalesces into one undo step") {
+    Scene scene;
+    Node* node = scene.create_node("Node");
+    node->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    CommandStack stack;
+
+    // Frame 1 of the drag.
+    Operation first;
+    first.kind = OperationKind::SetTransform;
+    first.node_id = node->id();
+    first.path = {"position"};
+    first.transform_value = Vec3{1.0f, 1.0f, 0.0f};
+    stack.execute(scene, std::make_unique<OperationCommand>(first));
+    REQUIRE(node->transform().position.x == doctest::Approx(1.0f));
+
+    // Frames 2 and 3: the same node and axis, so each coalesces with the last.
+    for (const f32 x : {2.0f, 3.0f}) {
+        Operation next;
+        next.kind = OperationKind::SetTransform;
+        next.node_id = node->id();
+        next.path = {"position"};
+        next.transform_value = Vec3{x, x, 0.0f};
+        stack.execute(scene, std::make_unique<OperationCommand>(next));
+    }
+    CHECK(node->transform().position.x == doctest::Approx(3.0f));
+
+    // The whole gesture is one step, and one undo returns to where it started.
+    CHECK(stack.undo_count() == 1);
+    CHECK(stack.undo_label() == "Set Transform");
+    REQUIRE(stack.undo(scene));
+    CHECK(node->transform().position.x == doctest::Approx(0.0f));
+    CHECK(node->transform().position.y == doctest::Approx(0.0f));
+    CHECK_FALSE(stack.can_undo());
+}
+
+TEST_CASE("two different transform fields do not coalesce into one step") {
+    Scene scene;
+    Node* node = scene.create_node("Node");
+
+    CommandStack stack;
+    Operation move;
+    move.kind = OperationKind::SetTransform;
+    move.node_id = node->id();
+    move.path = {"position"};
+    move.transform_value = Vec3{1.0f, 0.0f, 0.0f};
+    stack.execute(scene, std::make_unique<OperationCommand>(move));
+
+    // A rotation edit is a different field, so it is its own undo step even
+    // though the gesture has not been explicitly ended.
+    Operation rotate;
+    rotate.kind = OperationKind::SetTransform;
+    rotate.node_id = node->id();
+    rotate.path = {"rotation"};
+    rotate.transform_value = Vec3{0.0f, 0.0f, 1.0f};
+    stack.execute(scene, std::make_unique<OperationCommand>(rotate));
+
+    CHECK(stack.undo_count() == 2);
+    REQUIRE(stack.undo(scene));
+    CHECK(node->transform().rotation.z == doctest::Approx(0.0f));
+    CHECK(node->transform().position.x == doctest::Approx(1.0f));
 }
