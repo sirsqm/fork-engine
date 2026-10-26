@@ -30,8 +30,9 @@ path — glyph quads and tiles already prove this works. Second, the authoring
 model itself: UI should be *components in the scene*, so it is saved by the same
 serializer, undone by the same operation log, and edited by the same inspector
 as everything else. A parallel widget tree with its own lifetime and its own
-save format is a second source of truth, which is what the collaborative-editing
-work ([ADR-0019](0019-collaborative-editing-operations.md)) is built to avoid.
+save format is a second source of truth, which the durable-edit model
+([ADR-0045](0045-component-identity.md),
+[ADR-0047](0047-local-operation-model.md)) is built to avoid.
 
 There is no in-game UI today. The editor has Dear ImGui, but ImGui is an editor
 dependency the game must not link ([ADR-0007](0007-editor-ui-toolkit.md)), and
@@ -115,8 +116,9 @@ shape — which is the concrete defect the world-space labels had.
   the existing performance work covers UI by construction; a UI that shares no
   texture with the world costs one extra draw call, which the tests count.
 * Because UI is components, it inherits serialization, reflection, and undo
-  without new code, and it is positioned to join the collaborative-editing
-  operation log as an ordinary component rather than a special case.
+  without new code, and it is positioned to join the operation log
+  ([ADR-0048](0048-replicated-operation-log.md)) as an ordinary component rather
+  than a special case.
 * The solver is intentionally small. Centring, pinning, stacks, and text
   measurement cover menus and HUDs; a layout that needs wrapping or flex-grow is
   a reason to extend the solver behind the same interface, not to reach for a
@@ -140,8 +142,8 @@ shape — which is the concrete defect the world-space labels had.
 * **A separate retained UI tree with its own root, lifetime, and save format.**
   Rejected: it is a second source of truth beside the scene graph, it would need
   its own serialization and its own undo integration, and it is exactly the
-  duplication the collaborative-editing direction exists to avoid. Components in
-  the scene get all of that for free.
+  duplication the durable-edit model exists to avoid. Components in the scene get
+  all of that for free.
 * **A third draw pass with its own shader and its own batching.** Rejected: UI
   is textured and coloured quads, which is precisely what the 2D path already
   draws. A second path would duplicate the batching, the instancing, and the
