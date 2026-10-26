@@ -4,10 +4,13 @@
 
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
+#include "fe/mesh/Material.h"
 #include "fe/mesh/Vertex3D.h"
 #include "fe/resources/Resource.h"
 
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace fe {
@@ -44,6 +47,20 @@ public:
     [[nodiscard]] const Vec3& bounds_min() const noexcept { return bounds_min_; }
     [[nodiscard]] const Vec3& bounds_max() const noexcept { return bounds_max_; }
 
+    // The material the source file declared for this primitive, when it declared
+    // one. Absent for a mesh built in code (a primitive generator) and for a
+    // format with no material concept, which is why this is an `optional` rather
+    // than a default-constructed `Material`: "the file said nothing" and "the
+    // file said default" are different states, and a component must be able to
+    // tell them apart before it overwrites authored values.
+    //
+    // glTF puts the material on the primitive, so a mesh is the right home for
+    // it. The renderer prefers a component's explicit material when the
+    // component has one, and falls back to this otherwise.
+    [[nodiscard]] const std::optional<Material>& material() const noexcept { return material_; }
+    void set_material(std::optional<Material> material) noexcept { material_ = std::move(material); }
+    [[nodiscard]] bool has_material() const noexcept { return material_.has_value(); }
+
     [[nodiscard]] usize memory_usage() const noexcept override {
         return vertices_.size() * sizeof(Vertex3D) + indices_.size() * sizeof(u32);
     }
@@ -69,6 +86,7 @@ private:
     std::vector<u32> indices_;
     Vec3 bounds_min_{};
     Vec3 bounds_max_{};
+    std::optional<Material> material_;
 };
 
 } // namespace fe

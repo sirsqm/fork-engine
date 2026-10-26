@@ -5,12 +5,15 @@
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/mesh/Mesh.h"
+#include "fe/resources/Texture2DLoader.h"
 
 #include <nlohmann/json.hpp>
 
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fe {
@@ -342,11 +345,95 @@ void apply_flat_normals(std::vector<Vertex3D>& vertices, const std::vector<u32>&
     }
 }
 
+// Reads a JSON array of `count` numbers into a Vec, or returns `fallback` when
+// the key is absent or the array is the wrong length. glTF writes these as
+// [r, g, b] / [r, g, b, a] number arrays, and a malformed one is treated as
+// absent rather than failing the whole import: a colour is decoration, and
+// refusing an otherwise-valid mesh over it would make the loader useless
+// against a slightly-off exporter.
+[[nodiscard]] Vec3 read_vec3(const json& object, const char* key, const Vec3& fallback) {
+    if (!object.contains(key) || !object.at(key).is_array() || object.at(key).size() != 3) {
+        return fallback;
+    }
+    return Vec3{object.at(key).at(0).get<f32>(), object.at(key).at(1).get<f32>(), object.at(key).at(2).get<f32>()};
+}
+
+[[nodiscard]] Vec4 read_vec4(const json& object, const char* key, const Vec4& fallback) {
+    if (!object.contains(key) || !object.at(key).is_array() || object.at(key).size() != 4) {
+        return fallback;
+    }
+    return Vec4{object.at(key).at(0).get<f32>(), object.at(key).at(1).get<f32>(), object.at(key).at(2).get<f32>(),
+                object.at(key).at(3).get<f32>()};
+}
+
+// The texture key a glTF texture slot refers to, or "" when the slot is absent
+// or names a texture this loader cannot resolve. `slot` is a glTF textureInfo
+// object (`{"index": 0, "texCoord": 0}`); only `index` matters here.
+[[nodiscard]] std::string texture_key_from_slot(const json& holder, const char* key,
+                                                const std::function<std::string(usize)>& texture_uri) {
+    if (!holder.contains(key) || !holder.at(key).is_object()) {
+        return {};
+    }
+    const json& info = holder.at(key);
+    if (!info.contains("index")) {
+        return {};
+    }
+    return texture_uri(info.at("index").get<usize>());
+}
+
+// Decodes a glTF material into the engine's `Material`.
+//
+// The mapping is direct because both sides are metallic-roughness:
+//
+//   pbrMetallicRoughness.baseColorFactor  -> base_color
+//   pbrMetallicRoughness.baseColorTexture -> base_color_texture
+//   pbrMetallicRoughness.metallicFactor   -> metallic
+//   pbrMetallicRoughness.roughnessFactor  -> roughness
+//   emissiveFactor / emissiveTexture      -> emissive / emissive_texture
+//   normalTexture                         -> normal_texture
+//   doubleSided                           -> double_sided
+//
+// Anything the engine has no field for (occlusion, alphaMode, the KHR_*
+// extensions) is ignored rather than misread into a field that means something
+// else. A material index that is out of range, or a document with no materials,
+// yields "no material" so the caller keeps the component's authored look.
+[[nodiscard]] std::optional<Material> decode_material(const json& doc, const json& primitive,
+                                                      const std::function<std::string(usize)>& texture_uri) {
+    if (!primitive.contains("material") || !doc.contains("materials")) {
+        return std::nullopt;
+    }
+    const usize index = primitive.at("material").get<usize>();
+    if (index >= doc.at("materials").size()) {
+        return std::nullopt;
+    }
+    const json& source = doc.at("materials").at(index);
+
+    Material material;
+    if (source.contains("pbrMetallicRoughness") && source.at("pbrMetallicRoughness").is_object()) {
+        const json& pbr = source.at("pbrMetallicRoughness");
+        material.base_color = read_vec4(pbr, "baseColorFactor", material.base_color);
+        material.metallic = pbr.value("metallicFactor", material.metallic);
+        material.roughness = pbr.value("roughnessFactor", material.roughness);
+        material.base_color_texture = texture_key_from_slot(pbr, "baseColorTexture", texture_uri);
+    }
+    material.emissive = read_vec3(source, "emissiveFactor", material.emissive);
+    material.normal_texture = texture_key_from_slot(source, "normalTexture", texture_uri);
+    material.emissive_texture = texture_key_from_slot(source, "emissiveTexture", texture_uri);
+    material.double_sided = source.value("doubleSided", false);
+    return material;
+}
+
 // Decodes one glTF primitive into a Mesh, or returns nullptr when the primitive
 // is a kind this loader deliberately skips (a non-triangle mode).
+//
+// `texture_uri` maps a glTF texture index to a resource key ("tex:<path>"), so
+// a material's texture references resolve the same way every other component's
+// do. It is a callback because the mapping (index -> image URI -> resolved
+// path) is a property of the document, not of the primitive.
 [[nodiscard]] Result<std::shared_ptr<Mesh>> decode_primitive(const json& doc,
                                                              const std::vector<std::vector<u8>>& buffers,
-                                                             const json& primitive, std::string name) {
+                                                             const json& primitive, std::string name,
+                                                             const std::function<std::string(usize)>& texture_uri) {
     const u32 mode = primitive.value("mode", kModeTriangles);
     if (mode != kModeTriangles) {
         return Result<std::shared_ptr<Mesh>>(std::shared_ptr<Mesh>{});
@@ -429,8 +516,13 @@ void apply_flat_normals(std::vector<Vertex3D>& vertices, const std::vector<u32>&
         return Error("glTF primitive has no vertices");
     }
 
-    return Result<std::shared_ptr<Mesh>>(
-        std::make_shared<Mesh>(std::move(name), std::move(vertices), std::move(indices)));
+    auto mesh = std::make_shared<Mesh>(std::move(name), std::move(vertices), std::move(indices));
+    // The material lives on the primitive in glTF, so it rides along with the
+    // mesh rather than becoming a separate resource.
+    if (std::optional<Material> material = decode_material(doc, primitive, texture_uri); material.has_value()) {
+        mesh->set_material(std::move(material));
+    }
+    return Result<std::shared_ptr<Mesh>>(std::move(mesh));
 }
 
 // Splits a GLB container into its JSON text and (optional) binary chunk.
@@ -535,6 +627,34 @@ parse_impl(std::string_view path, std::string_view bytes,
         return Error("glTF '" + std::string(path) + "' contains no meshes");
     }
 
+    // Resolve a glTF texture index to the resource key the engine stores on a
+    // component: texture -> source -> image -> uri, then the texture loader's
+    // reference key. A data-URI image (a `.glb` commonly embeds its textures)
+    // has no file to load, so it resolves to "" and the material falls back to
+    // its factors, which is the honest outcome rather than a broken reference.
+    const auto texture_uri = [&](usize texture_index) -> std::string {
+        if (!doc.contains("textures") || texture_index >= doc.at("textures").size()) {
+            return {};
+        }
+        const json& texture = doc.at("textures").at(texture_index);
+        if (!texture.contains("source")) {
+            return {};
+        }
+        const usize source_index = texture.at("source").get<usize>();
+        if (!doc.contains("images") || source_index >= doc.at("images").size()) {
+            return {};
+        }
+        const json& image = doc.at("images").at(source_index);
+        if (!image.contains("uri")) {
+            return {}; // A bufferView-backed image; see the ADR.
+        }
+        const std::string uri = image.at("uri").get<std::string>();
+        if (uri.rfind("data:", 0) == 0) {
+            return {};
+        }
+        return Texture2DLoader::reference_key(uri);
+    };
+
     std::vector<std::shared_ptr<Resource>> meshes;
     usize skipped = 0;
     usize primitive_index = 0;
@@ -546,7 +666,7 @@ parse_impl(std::string_view path, std::string_view bytes,
             std::string name(path);
             name += "#";
             name += std::to_string(primitive_index++);
-            auto decoded = decode_primitive(doc, buffers, primitive, std::move(name));
+            auto decoded = decode_primitive(doc, buffers, primitive, std::move(name), texture_uri);
             if (!decoded) {
                 return decoded.error();
             }

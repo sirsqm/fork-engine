@@ -90,6 +90,89 @@ constexpr std::string_view kPlaceholder = "PLACEHOLDER_URI";
                     kPosIndexUri);
 }
 
+// A .gltf triangle whose primitive references material 0, a fully-populated
+// metallic-roughness material with a base-colour texture, a normal map, an
+// emissive factor/texture, and double-sided set.
+[[nodiscard]] std::string material_gltf() {
+    return fill_uri(R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "PLACEHOLDER_URI", "byteLength": 102}],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+            {"buffer": 0, "byteOffset": 36, "byteLength": 6},
+            {"buffer": 0, "byteOffset": 42, "byteLength": 36},
+            {"buffer": 0, "byteOffset": 78, "byteLength": 24}
+        ],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
+            {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC2"}
+        ],
+        "images": [
+            {"uri": "textures/albedo.png"},
+            {"uri": "textures/normal.png"},
+            {"uri": "textures/glow.png"}
+        ],
+        "textures": [{"source": 0}, {"source": 1}, {"source": 2}],
+        "materials": [{
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [0.25, 0.5, 0.75, 1.0],
+                "baseColorTexture": {"index": 0},
+                "metallicFactor": 0.8,
+                "roughnessFactor": 0.2
+            },
+            "normalTexture": {"index": 1},
+            "emissiveFactor": [0.1, 0.2, 0.3],
+            "emissiveTexture": {"index": 2},
+            "doubleSided": true
+        }],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 2, "TEXCOORD_0": 3}, "indices": 1,
+                                    "material": 0}]}]
+    })JSON",
+                    kFullUri);
+}
+
+// A .gltf triangle with a material that sets only a base colour, so every other
+// field keeps the glTF default.
+[[nodiscard]] std::string base_color_only_gltf() {
+    return fill_uri(R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "PLACEHOLDER_URI", "byteLength": 42}],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+            {"buffer": 0, "byteOffset": 36, "byteLength": 6}
+        ],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+        ],
+        "materials": [{"pbrMetallicRoughness": {"baseColorFactor": [1.0, 0.0, 0.0, 1.0]}}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}]
+    })JSON",
+                    kPosIndexUri);
+}
+
+// A .gltf triangle whose material is index 7, which no document declares. The
+// import must still succeed, just without a material.
+[[nodiscard]] std::string out_of_range_material_gltf() {
+    return fill_uri(R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "PLACEHOLDER_URI", "byteLength": 42}],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+            {"buffer": 0, "byteOffset": 36, "byteLength": 6}
+        ],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+        ],
+        "materials": [{"pbrMetallicRoughness": {"baseColorFactor": [1.0, 0.0, 0.0, 1.0]}}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 7}]}]
+    })JSON",
+                    kPosIndexUri);
+}
+
 [[nodiscard]] std::shared_ptr<Mesh> as_mesh(const std::shared_ptr<Resource>& resource) {
     return std::dynamic_pointer_cast<Mesh>(resource);
 }
@@ -342,4 +425,97 @@ TEST_CASE("a glTF asset loads through the ResourceManager by scheme and extensio
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("GltfLoader imports a primitive's metallic-roughness material") {
+    auto parsed = GltfLoader::parse("mat.gltf", material_gltf());
+    REQUIRE(parsed);
+    REQUIRE(parsed.value().size() == 1);
+
+    auto mesh = as_mesh(parsed.value().front());
+    REQUIRE(mesh);
+    REQUIRE(mesh->has_material());
+
+    const Material& material = mesh->material().value();
+    CHECK(material.base_color.x == doctest::Approx(0.25f));
+    CHECK(material.base_color.y == doctest::Approx(0.5f));
+    CHECK(material.base_color.z == doctest::Approx(0.75f));
+    CHECK(material.base_color.w == doctest::Approx(1.0f));
+    CHECK(material.metallic == doctest::Approx(0.8f));
+    CHECK(material.roughness == doctest::Approx(0.2f));
+    CHECK(material.emissive.x == doctest::Approx(0.1f));
+    CHECK(material.emissive.y == doctest::Approx(0.2f));
+    CHECK(material.emissive.z == doctest::Approx(0.3f));
+
+    // Each texture resolves through the texture loader's key, so a component
+    // storing it reloads through the ordinary resource path.
+    CHECK(material.base_color_texture == "tex:textures/albedo.png");
+    CHECK(material.normal_texture == "tex:textures/normal.png");
+    CHECK(material.emissive_texture == "tex:textures/glow.png");
+    CHECK(material.double_sided);
+    CHECK_FALSE(material.is_default());
+}
+
+TEST_CASE("a glTF material keeps the glTF defaults for the fields it omits") {
+    auto parsed = GltfLoader::parse("base.gltf", base_color_only_gltf());
+    REQUIRE(parsed);
+    auto mesh = as_mesh(parsed.value().front());
+    REQUIRE(mesh);
+    REQUIRE(mesh->has_material());
+
+    const Material& material = mesh->material().value();
+    CHECK(material.base_color.x == doctest::Approx(1.0f));
+    CHECK(material.base_color.y == doctest::Approx(0.0f));
+    // The glTF defaults, not zeros: fully rough, non-metallic, unlit-emissive.
+    CHECK(material.metallic == doctest::Approx(0.0f));
+    CHECK(material.roughness == doctest::Approx(0.6f));
+    CHECK(material.emissive == Vec3{0.0f, 0.0f, 0.0f});
+    CHECK(material.base_color_texture.empty());
+    CHECK(material.normal_texture.empty());
+    CHECK_FALSE(material.double_sided);
+}
+
+TEST_CASE("a primitive with no material carries no material") {
+    auto parsed = GltfLoader::parse("plain.gltf", triangle_gltf());
+    REQUIRE(parsed);
+    auto mesh = as_mesh(parsed.value().front());
+    REQUIRE(mesh);
+    CHECK_FALSE(mesh->has_material());
+}
+
+TEST_CASE("an out-of-range material index imports without a material") {
+    auto parsed = GltfLoader::parse("oob.gltf", out_of_range_material_gltf());
+    REQUIRE(parsed);
+    auto mesh = as_mesh(parsed.value().front());
+    REQUIRE(mesh);
+    CHECK_FALSE(mesh->has_material());
+}
+
+TEST_CASE("a glTF material texture with a data-uri image resolves to no texture") {
+    // The image is embedded, so there is no file to load. The import still
+    // succeeds and keeps the material's factors, with an empty texture key.
+    const std::string doc = R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIA", "byteLength": 42}],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+            {"buffer": 0, "byteOffset": 36, "byteLength": 6}
+        ],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+        ],
+        "images": [{"uri": "data:image/png;base64,AAAA"}],
+        "textures": [{"source": 0}],
+        "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0.5}}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}]
+    })JSON";
+
+    auto parsed = GltfLoader::parse("embed.gltf", doc);
+    REQUIRE(parsed);
+    auto mesh = as_mesh(parsed.value().front());
+    REQUIRE(mesh);
+    REQUIRE(mesh->has_material());
+    CHECK(mesh->material().value().base_color_texture.empty());
+    CHECK(mesh->material().value().metallic == doctest::Approx(0.5f));
 }
