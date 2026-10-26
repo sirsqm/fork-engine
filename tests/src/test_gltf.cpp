@@ -537,3 +537,85 @@ TEST_CASE("a glTF in a subdirectory keys its material's maps under that director
     CHECK(material.normal_texture == "tex:assets/models/textures/normal.png");
     CHECK(material.emissive_texture == "tex:assets/models/textures/glow.png");
 }
+
+TEST_CASE("GltfLoader::external_dependencies names a glTF's buffers and images") {
+    // The packer asks this to learn what a glTF needs besides itself. It is the
+    // same set the loader resolves at load time, so a pruned pack carries it.
+    const auto dependencies = GltfLoader::external_dependencies(material_gltf());
+    REQUIRE(dependencies.size() == 3);
+    CHECK(dependencies[0] == "textures/albedo.png");
+    CHECK(dependencies[1] == "textures/normal.png");
+    CHECK(dependencies[2] == "textures/glow.png");
+}
+
+TEST_CASE("GltfLoader::external_dependencies ignores a data URI and the GLB chunk") {
+    // A data URI is decoded from the document and a GLB's binary chunk is in the
+    // same file, so neither is a file to ship.
+    CHECK(GltfLoader::external_dependencies(material_gltf()).empty() == false); // sanity: the fixture does name images
+    CHECK(GltfLoader::external_dependencies(triangle_gltf()).empty());
+
+    // A GLB with an embedded buffer has no external references at all.
+    std::string glb;
+    const auto json_chunk = std::string("{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":4}]}");
+    const auto bin_chunk = std::string("\x00\x00\x00\x00", 4);
+    const auto append_u32 = [&glb](u32 value) {
+        for (int i = 0; i < 4; ++i) {
+            glb.push_back(static_cast<char>((value >> (i * 8)) & 0xFF));
+        }
+    };
+    append_u32(0x46546C67u); // "glTF"
+    append_u32(2);
+    append_u32(12 + 8 + static_cast<u32>(json_chunk.size()) + 8 + static_cast<u32>(bin_chunk.size()));
+    append_u32(static_cast<u32>(json_chunk.size()));
+    append_u32(0x4E4F534Au); // "JSON"
+    glb += json_chunk;
+    append_u32(static_cast<u32>(bin_chunk.size()));
+    append_u32(0x004E4942u); // "BIN\0"
+    glb += bin_chunk;
+
+    CHECK(GltfLoader::external_dependencies(glb).empty());
+}
+
+TEST_CASE("GltfLoader::external_dependencies is empty for bytes that are not a glTF") {
+    // A caller expands a whole scene's closure, so it asks about every asset. A
+    // file this reader cannot parse contributes nothing rather than failing.
+    CHECK(GltfLoader::external_dependencies("not a glTF").empty());
+    CHECK(GltfLoader::external_dependencies("").empty());
+    CHECK(GltfLoader::external_dependencies("{").empty());
+}
+
+TEST_CASE("GltfLoader::external_dependencies de-duplicates a shared image") {
+    const std::string doc = R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "shared.bin", "byteLength": 4}, {"uri": "shared.bin", "byteLength": 4}],
+        "images": [{"uri": "shared.png"}, {"uri": "shared.png"}]
+    })JSON";
+    const auto dependencies = GltfLoader::external_dependencies(doc);
+    REQUIRE(dependencies.size() == 2);
+    CHECK(dependencies[0] == "shared.bin");
+    CHECK(dependencies[1] == "shared.png");
+}
+
+TEST_CASE("GltfLoader::dependency_reader resolves a glTF's references against its directory") {
+    // The reader the packer is handed. It must key a dependency the same way the
+    // pack does - relative to the asset root, not to the glTF.
+    const auto reader = GltfLoader::dependency_reader();
+    const auto resolved = reader("assets/models/prop.gltf", material_gltf());
+    REQUIRE(resolved.size() == 3);
+    CHECK(resolved[0] == "assets/models/textures/albedo.png");
+    CHECK(resolved[1] == "assets/models/textures/normal.png");
+    CHECK(resolved[2] == "assets/models/textures/glow.png");
+}
+
+TEST_CASE("GltfLoader::external_dependencies survives a malformed document") {
+    // The packer asks this about every asset under the root, so a document that
+    // is not a glTF - or a glTF with a uri of the wrong type - must not throw.
+    const std::string bad = R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": 42, "byteLength": 4}, "not an object"],
+        "images": [{"uri": "ok.png"}, {"no_uri": true}]
+    })JSON";
+    const auto dependencies = GltfLoader::external_dependencies(bad);
+    REQUIRE(dependencies.size() == 1);
+    CHECK(dependencies[0] == "ok.png");
+}

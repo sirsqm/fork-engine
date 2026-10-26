@@ -3,6 +3,8 @@
 #include <doctest/doctest.h>
 
 #include "fe/core/FileSystem.h"
+#include "fe/mesh/GltfLoader.h"
+#include "fe/pack/AssetClosure.h"
 #include "fe/pack/PackFile.h"
 #include "fe/pack/PackSource.h"
 #include "fe/pack/PackWriter.h"
@@ -239,6 +241,94 @@ TEST_CASE("pruning packs only the assets the caller lists, plus the scene") {
     CHECK(hero->guid == imported.value().id);
     CHECK(built.value().find_path("unused.png") == nullptr);
     CHECK(built.value().find_path("scenes/main.fescene") != nullptr);
+}
+
+TEST_CASE("expanding an asset closure adds the files a glTF names") {
+    // The shipping bug this covers: a pruned pack kept the glTF a scene named and
+    // dropped the .bin and the images the glTF itself names, so the mesh loaded
+    // and then failed to decode and its maps never resolved.
+    TempDir dir("closure");
+    const std::string gltf = R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "prop.bin", "byteLength": 4}],
+        "images": [{"uri": "textures/albedo.png"}]
+    })JSON";
+    REQUIRE_FALSE(fs::write_text_file(dir.file("models/prop.gltf"), gltf));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("models/prop.bin"), "BIN!"));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("models/textures/albedo.png"), "PNG"));
+
+    auto expanded = pack::expand_asset_dependencies({"models/prop.gltf"}, dir.str(), GltfLoader::dependency_reader());
+    // The glTF first, then its dependencies, resolved against its own directory.
+    REQUIRE(expanded.size() == 3);
+    CHECK(expanded[0] == "models/prop.gltf");
+    CHECK(expanded[1] == "models/prop.bin");
+    CHECK(expanded[2] == "models/textures/albedo.png");
+}
+
+TEST_CASE("an asset closure leaves a self-contained asset alone") {
+    TempDir dir("closure_self");
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/hero.png"), "PNG"));
+
+    auto expanded = pack::expand_asset_dependencies({"assets/hero.png"}, dir.str(), GltfLoader::dependency_reader());
+    REQUIRE(expanded.size() == 1);
+    CHECK(expanded[0] == "assets/hero.png");
+}
+
+TEST_CASE("an asset closure skips a dependency that is not in the tree") {
+    // The scene named the glTF, so the glTF is packed; a dependency the packer
+    // cannot find is simply not added, matching how a missing asset behaves
+    // elsewhere rather than failing the whole pack.
+    TempDir dir("closure_missing");
+    const std::string gltf = R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "gone.bin", "byteLength": 4}]
+    })JSON";
+    REQUIRE_FALSE(fs::write_text_file(dir.file("models/prop.gltf"), gltf));
+
+    auto expanded = pack::expand_asset_dependencies({"models/prop.gltf"}, dir.str(), GltfLoader::dependency_reader());
+    REQUIRE(expanded.size() == 2);
+    CHECK(expanded[0] == "models/prop.gltf");
+    CHECK(expanded[1] == "models/gone.bin");
+}
+
+TEST_CASE("an asset closure follows a container named by a container") {
+    // The worklist, not a single pass: a glTF whose image is another glTF would
+    // otherwise stop one level deep.
+    TempDir dir("closure_deep");
+    const std::string outer = R"JSON({
+        "asset": {"version": "2.0"},
+        "images": [{"uri": "inner.gltf"}]
+    })JSON";
+    const std::string inner = R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "leaf.bin", "byteLength": 4}]
+    })JSON";
+    REQUIRE_FALSE(fs::write_text_file(dir.file("outer.gltf"), outer));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("inner.gltf"), inner));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("leaf.bin"), "BIN!"));
+
+    auto expanded = pack::expand_asset_dependencies({"outer.gltf"}, dir.str(), GltfLoader::dependency_reader());
+    REQUIRE(expanded.size() == 3);
+    CHECK(expanded[0] == "outer.gltf");
+    CHECK(expanded[1] == "inner.gltf");
+    CHECK(expanded[2] == "leaf.bin");
+}
+
+TEST_CASE("an asset closure does not repeat a dependency two assets share") {
+    TempDir dir("closure_shared");
+    const std::string gltf = R"JSON({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "shared.bin", "byteLength": 4}]
+    })JSON";
+    REQUIRE_FALSE(fs::write_text_file(dir.file("a.gltf"), gltf));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("b.gltf"), gltf));
+    REQUIRE_FALSE(fs::write_text_file(dir.file("shared.bin"), "BIN!"));
+
+    auto expanded = pack::expand_asset_dependencies({"a.gltf", "b.gltf"}, dir.str(), GltfLoader::dependency_reader());
+    REQUIRE(expanded.size() == 3);
+    CHECK(expanded[0] == "a.gltf");
+    CHECK(expanded[1] == "b.gltf");
+    CHECK(expanded[2] == "shared.bin");
 }
 
 TEST_CASE("the default pack options pack the whole tree, not a pruned one") {

@@ -25,6 +25,8 @@
 
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
+#include "fe/mesh/GltfLoader.h"
+#include "fe/pack/AssetClosure.h"
 #include "fe/pack/PackSource.h"
 #include "fe/pack/PackWriter.h"
 #include "fe/resources/AssetDatabase.h"
@@ -41,6 +43,7 @@
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -130,7 +133,15 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
     if (!references) {
         return references.error();
     }
-    return fe::serialization::scene::resolve_scene_asset_paths(references.value(), pack_root, assets);
+    auto paths = fe::serialization::scene::resolve_scene_asset_paths(references.value(), pack_root, assets);
+    if (!paths) {
+        return paths.error();
+    }
+    // A glTF names its own buffers and images, which the scene does not, so the
+    // closure is expanded here: without it a pruned pack ships the glTF and
+    // drops its data. See docs/adr/0088-transitive-pack-references.md.
+    return fe::pack::expand_asset_dependencies(std::move(paths.value()), pack_root,
+                                               fe::GltfLoader::dependency_reader());
 }
 
 void print_usage() {

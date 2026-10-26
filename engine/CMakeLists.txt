@@ -129,6 +129,7 @@ set(FE_ENGINE_SOURCES
     src/audio/AudioTypes.cpp
     src/audio/AudioBackend.cpp
     src/audio/MiniAudioDevice.cpp
+    src/pack/AssetClosure.cpp
     src/pack/PackFile.cpp
     src/pack/PackWriter.cpp
     src/pack/PackSource.cpp

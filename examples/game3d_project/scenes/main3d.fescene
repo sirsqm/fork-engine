@@ -869,7 +869,7 @@
             0.5
           ],
           "specular": 0.3,
-          "mesh": "obj:assets/meshes/cube.obj",
+          "mesh": "gltf:assets/meshes/crate.gltf",
           "texture": ""
         }
       ],

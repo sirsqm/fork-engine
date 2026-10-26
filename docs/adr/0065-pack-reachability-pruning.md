@@ -108,6 +108,8 @@ because the unpruned writer packs it too.
   asset (a glTF that references an external `.bin` or image) is not followed, so
   pruning can drop a file such a loader would ask for. The default (no pruning)
   is unaffected, and following references through a loader is a later refinement.
+  **Superseded by [ADR-0088](0088-transitive-pack-references.md)**, which follows
+  a container's own references through an injected per-format reader.
 
 ## Alternatives considered
 

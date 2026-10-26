@@ -8,7 +8,7 @@ gameplay on the web, and for input reaching gameplay at all in a browser build.
 
 ```
 fork.project.json      name, asset root, and startup scene
-assets/meshes/         the cube every object uses, and a sphere for the ball
+assets/meshes/         the cube and sphere every object uses, plus the imported crate
 assets/textures/       the checker texture the floor uses
 scenes/main3d.fescene  the scene: a character, a follow camera, a course, props
 ```
@@ -25,7 +25,12 @@ scenes/main3d.fescene  the scene: a character, a follow camera, a course, props
   shove the crates and the ball bounces. The ball is a sphere collider drawn as
   a sphere mesh.
 - **Spinner** — a `SpinNode3D`, showing a non-physics behaviour running alongside
-  the physics ones.
+  the physics ones. It draws the *imported* crate: `assets/meshes/crate.gltf`, a
+  multi-file glTF whose vertex buffer (`crate.bin`) and base-colour map
+  (`crate_albedo.png`) are named inside the glTF rather than by the scene. That
+  makes it the asset that proves a pruned pack follows a container's own
+  references, which is why the web acceptance test exports this project
+  (`tests/web/run_web_game.sh`, [ADR-0088](../../docs/adr/0088-transitive-pack-references.md)).
 
 The Player's body has `affected_by_gravity` off and `fixed_rotation` on: the
 controller owns the vertical axis and the facing, and the solver owns everything

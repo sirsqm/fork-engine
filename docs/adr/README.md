@@ -93,6 +93,7 @@ rather than editing it.
 | [0085](0085-editor-file-dialog-and-dirty-tracking.md) | The editor File menu, file dialog, and unsaved-changes tracking | Accepted |
 | [0086](0086-in-game-ui-layout-and-extraction.md) | In-game UI: screen-space layout through the 2D extraction seam | Accepted |
 | [0087](0087-collision-filtering-and-triggers.md) | Collision filtering (layers and masks) and trigger colliders | Accepted |
+| [0088](0088-transitive-pack-references.md) | Following an asset's own references when packing | Accepted |
 
 ## Format
 

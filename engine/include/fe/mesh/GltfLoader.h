@@ -5,6 +5,7 @@
 #include "fe/resources/Resource.h"
 #include "fe/resources/ResourceManager.h"
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -51,6 +52,25 @@ public:
     // either the JSON form or the GLB container; the magic number decides.
     [[nodiscard]] static Result<std::vector<std::shared_ptr<Resource>>> parse(std::string_view path,
                                                                               std::string_view bytes);
+
+    // The files a glTF names besides itself, as paths relative to the glTF's own
+    // directory: its external buffers (`.bin`) and its image sources. Data URIs
+    // and the GLB binary chunk are self-contained and contribute nothing. An
+    // empty list is returned for bytes that are not a glTF, so a caller can ask
+    // about any asset.
+    [[nodiscard]] static std::vector<std::string> external_dependencies(std::string_view bytes);
+
+    // A reader for `pack::expand_asset_dependencies` that understands glTF and
+    // ignores every other format: it resolves the glTF's external references
+    // against the glTF's own directory, which is how the loader resolves them at
+    // load time.
+    //
+    // Pruning keeps the assets a scene names, but a glTF's buffers and images are
+    // named *inside the glTF*, not by the scene, so without this a pruned pack
+    // would ship the glTF and drop its data - a mesh that loads and then fails to
+    // decode, or a material whose maps never resolve.
+    [[nodiscard]] static std::function<std::vector<std::string>(std::string_view, std::string_view)>
+    dependency_reader();
 };
 
 } // namespace fe

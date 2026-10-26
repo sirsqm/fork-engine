@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <functional>
 #include <optional>
@@ -710,6 +711,73 @@ std::string GltfLoader::reference_key(std::string_view file_path) {
 
 Result<std::vector<std::shared_ptr<Resource>>> GltfLoader::parse(std::string_view path, std::string_view bytes) {
     return parse_impl(path, bytes, [](std::string_view relative) { return fs::read_binary_file(relative); });
+}
+
+std::vector<std::string> GltfLoader::external_dependencies(std::string_view bytes) {
+    std::string json_text;
+    std::string bin_chunk;
+    const bool is_glb = bytes.size() >= 4 && read_u32_le(reinterpret_cast<const u8*>(bytes.data())) == kGlbMagic;
+    if (is_glb) {
+        if (Error error = parse_glb(bytes, json_text, bin_chunk); error) {
+            return {};
+        }
+    } else {
+        json_text.assign(bytes);
+    }
+
+    json doc;
+    try {
+        doc = json::parse(json_text);
+    } catch (const json::parse_error&) {
+        return {};
+    }
+
+    // Only external URIs count. A data URI is decoded from the document and the
+    // GLB binary chunk is in the same file, so neither is a file to ship.
+    std::vector<std::string> out;
+    const auto add_uri = [&out](const json& holder) {
+        if (!holder.is_object() || !holder.contains("uri") || !holder.at("uri").is_string()) {
+            return;
+        }
+        const std::string uri = holder.at("uri").get<std::string>();
+        if (uri.empty() || uri.rfind("data:", 0) == 0) {
+            return;
+        }
+        out.push_back(uri);
+    };
+
+    if (doc.contains("buffers")) {
+        for (const json& buffer : doc.at("buffers")) {
+            add_uri(buffer);
+        }
+    }
+    if (doc.contains("images")) {
+        for (const json& image : doc.at("images")) {
+            add_uri(image);
+        }
+    }
+
+    // De-duplicate while preserving order, so a texture shared by two materials
+    // is listed once.
+    std::vector<std::string> unique;
+    unique.reserve(out.size());
+    for (std::string& uri : out) {
+        if (std::find(unique.begin(), unique.end(), uri) == unique.end()) {
+            unique.push_back(std::move(uri));
+        }
+    }
+    return unique;
+}
+
+std::function<std::vector<std::string>(std::string_view, std::string_view)> GltfLoader::dependency_reader() {
+    return [](std::string_view path, std::string_view bytes) {
+        const std::string base = fs::parent_path(path);
+        std::vector<std::string> resolved;
+        for (std::string& uri : external_dependencies(bytes)) {
+            resolved.push_back(fs::normalize(fs::join(base, uri)));
+        }
+        return resolved;
+    };
 }
 
 Result<std::vector<std::shared_ptr<Resource>>> GltfLoader::load_all(std::string_view path) {

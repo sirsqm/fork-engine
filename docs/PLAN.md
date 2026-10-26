@@ -405,8 +405,11 @@ pillars above, [ADR-0018](adr/0018-multi-platform-shipping.md).
       script's property strings, resolved against the asset database) and only
       those paths are packed ([ADR-0065](adr/0065-pack-reachability-pruning.md)).
       Pruning is now the default for both tools; `--no-prune` restores
-      whole-tree packing. Following a packed asset's own references (a glTF's
-      external buffers) remains
+      whole-tree packing. A packed asset's own references are followed too: a
+      container's internal references (a glTF's external `.bin` and images) are
+      expanded through a per-format reader the caller supplies, so a pruned pack
+      of a scene that draws a `.gltf` carries the glTF's data
+      ([ADR-0088](adr/0088-transitive-pack-references.md))
 - [x] The export path: `fork_player` mounts a pack and runs the game loop, and
       `fork_export` assembles a runnable build (the player, a fresh pack, and a
       manifest) from a project ([ADR-0064](adr/0064-export-runtime-and-player.md)).
