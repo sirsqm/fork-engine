@@ -107,9 +107,7 @@ RHI; a per-frame arena for transient data; and a benchmark harness in CI that
 fails on regression.
 
 **Where it stands.** Sequenced as **[M9](#m9--performance-a-product-feature)**,
-which carries the per-item status. Measurement, extraction, the job system,
-parallel extraction/culling, the frame arena, and 2D instancing are done and
-guarded by CI; the render graph and 3D instancing are open.
+which carries the per-item status. Nothing is restated here.
 
 **Verification.** The benchmark is the gate, not a dev tool: CI records the
 numbers and fails on a large regression. The sanitizer jobs (ASan/UBSan, and TSan
@@ -162,9 +160,8 @@ as transparently as from disk; export templates (a prebuilt runtime per target
 plus a build step that turns a project into a runnable game, with no compiler in
 the runtime); and renderer backends as targets demand them.
 
-**Where it stands.** Sequenced as **[M8](#m8--ship-anywhere-cross-platform-targets)**.
-Web is done end to end (the queue's Phase 1), desktop install rules are done, and
-the packaging and export path is done; per-OS artifacts and mobile remain.
+**Where it stands.** Sequenced as **[M8](#m8--ship-anywhere-cross-platform-targets)**,
+which carries the per-item status. Nothing is restated here.
 
 **Verification.** Every target is proven by running the *same* game: the breakout
 slice is the portability test, and the web smoke test (headless Chromium) is the
@@ -264,8 +261,8 @@ drive.
 ### Near-term priorities
 
 The order the next work is actually taken in, chosen so that a small number of
-things get *finished* rather than many get started. This is the roadmap's front
-line; the milestones below hold the detail.
+things get *finished* rather than many get started. This is the front line;
+the milestones below hold the detail.
 
 1. **Make the slice a game worth shipping** — the breakout slice becomes a game
    a stranger can play: a title, a score, lives, levels, persistence, and
@@ -385,7 +382,7 @@ contributors, because people contribute around something finished.
       `slice-persistence`, `slice-settings`).
 
 *Why here:* before more engine breadth. One shipped game teaches more about what
-is missing than ten roadmap items, and it is the precondition for a community.
+is missing than ten plan items, and it is the precondition for a community.
 
 ### M3 — Reflection and a real asset pipeline
 
@@ -483,9 +480,9 @@ is open.*
 
 ### M8 — Ship anywhere (cross-platform targets)
 
-The goal is that a game built in Fork Engine reaches every platform its players
-use, not merely that the editor runs on several OSes. Plan and trade-offs: the
-[pillars](#the-three-pillars) and [ADR-0018](adr/0018-multi-platform-shipping.md).
+The goal and trade-offs are [Pillar 2](#pillar-2--games-ship-anywhere); this
+milestone sequences them. Plan and ADR:
+[ADR-0018](adr/0018-multi-platform-shipping.md).
 
 **Where this stands:** web is done end to end (the queue's Phase 1), desktop
 install rules are done, and the packaging and export path is done. What remains
@@ -510,8 +507,8 @@ open.*
 
 ### M9 — Performance (a product feature)
 
-The engine holds a stable, low frame time on real scenes, and the team can prove
-it and protect it. Plan and trade-offs: the [pillars](#the-three-pillars) and
+The goal and trade-offs are [Pillar 1](#pillar-1--performance-is-a-product-feature);
+this milestone sequences them. Plan and ADR:
 [ADR-0017](adr/0017-performance-strategy.md).
 
 **Where this stands:** measurement, extraction, the job system, parallel
@@ -540,13 +537,11 @@ open.*
 **Networked collaborative editing.** Several people editing one project live over
 a shared server was once planned as M10. It is not planned any more: it needs a
 hosted authoritative service, and that running cost is not one the project will
-carry. The local steps that landed on the way — stable component identity
-([ADR-0045](adr/0045-component-identity.md)), the serializable operation model
-([ADR-0047](adr/0047-local-operation-model.md)), and the ordered log
-([ADR-0048](adr/0048-replicated-operation-log.md)) — stay: they are shipped,
-tested, and they make undo/redo more robust on their own. The transport and
-session-server work that only existed to serve the network is likewise not
-pursued further. See [ADR-0019](adr/0019-collaborative-editing.md) (Deprecated).
+carry. The local steps that landed on the way stay — they are listed under
+[Pillar 3](#pillar-3--edits-are-durable-and-shareable), which records their
+status — and the transport and session-server work that only existed to serve the
+network is likewise not pursued further. See
+[ADR-0019](adr/0019-collaborative-editing.md) (Deprecated).
 
 **Console targets.** Architecture-ready; no code lands without SDK access.
 
@@ -1055,11 +1050,9 @@ with a test covering load and reload.
 
 - Keep the build reproducible and warning-clean.
 - Keep the tests green; every fix gets a test that would have caught it.
-- Run the suite under AddressSanitizer and UndefinedBehaviorSanitizer while the
-  codebase is small enough to keep them cheaply green (`-DFE_ENABLE_ASAN=ON`);
-  a dedicated CI job does this ([ADR-0035](adr/0035-ci-quality-gates.md)).
-- Keep the benchmark a regression gate, not just a dev tool: CI records the
-  numbers and fails on a large regression (see `benchmarks/` and
-  [ADR-0033](adr/0033-performance-regression-gate.md)).
+- Keep the quality gates from [Pillar 1](#pillar-1--performance-is-a-product-feature)
+  green rather than merely present: the sanitizer job
+  ([ADR-0035](adr/0035-ci-quality-gates.md)) and the benchmark regression gate
+  (see `benchmarks/` and [ADR-0033](adr/0033-performance-regression-gate.md)).
 - Keep the architecture documentation and ADRs current.
 - Review dependency licenses for compatibility with MIT.

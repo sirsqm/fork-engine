@@ -30,7 +30,7 @@ The project is young and honest about it. The repository currently contains the
 engine core through its first several milestones: a buildable library, working
 2D and 3D renderers, a scene/resource/serialization/reflection core, 2D and 3D
 physics, audio, an editor foundation, and a runnable example, all covered by
-tests. Everything else is planned in those three documents.
+tests. Everything else is planned in [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Status
 
@@ -55,10 +55,10 @@ tests. Everything else is planned in those three documents.
 | Project file (settings, asset root, startup scene) | Working |
 | Runtime frame loop + sandbox example | Working |
 | A complete example game (breakout, the M2.5 vertical slice) | Working (see [ADR-0036](docs/adr/0036-breakout-vertical-slice.md)) |
-| Scripting (C++ native modules first, language-agnostic seam) | Not started (see roadmap) |
-| Build/export | Not started (see roadmap) |
+| Scripting (C++ native modules first, language-agnostic seam) | Not started (see [the plan](docs/PLAN.md)) |
+| Build/export | Not started (see [the plan](docs/PLAN.md)) |
 | Performance tooling (profiler, benchmark, CI regression gate) | Working (see [ADR-0033](docs/adr/0033-performance-regression-gate.md)) |
-| Extra platforms | Planned (see roadmap) |
+| Extra platforms | Planned (see [the plan](docs/PLAN.md)) |
 
 Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
 
@@ -149,7 +149,7 @@ cmake/            dependency policy, build settings, warning interface
 third_party/      vendored sources (glad, stb) with their own licenses
 assets/           sample assets used by the example
 tools/            small development scripts
-docs/             architecture, strategy, roadmap, and ADRs
+docs/             the architecture and plan documents, and the ADRs
 ```
 
 ## Building and testing

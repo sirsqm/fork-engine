@@ -10,7 +10,7 @@ feature so we can agree on the design first.
 
 Development happens in the open: work lands on `main` through reviewable pull
 requests, architectural decisions are recorded as ADRs in `docs/adr/`, and the
-roadmap's [near-term priorities](docs/PLAN.md#near-term-priorities) say what
+plan's [near-term priorities](docs/PLAN.md#near-term-priorities) say what
 is being worked on next. The maintainer decides direction, ADRs record the
 reasoning, and anyone can propose a change.
 
@@ -24,13 +24,13 @@ reasoning, and anyone can propose a change.
   welcome.
 - **Add tests.** Coverage of existing behaviour is always useful.
 - **Build a game in the engine.** The single most useful contribution right now
-  is a small, complete game built end to end (roadmap M2.5) — it proves the
+  is a small, complete game built end to end (M2.5 in [the plan](docs/PLAN.md)) — it proves the
   systems work together and exposes the gaps that matter.
 
 Three capabilities shape where the project is going — performance, shipping to
 every platform players use, and a durable, shareable edit model — and are planned
 in [`docs/PLAN.md`](docs/PLAN.md). Work that advances any of them is especially
-welcome; check its shipping queue first so we do not duplicate effort.
+welcome; check the plan's shipping queue first so we do not duplicate effort.
 
 ## Getting started
 
