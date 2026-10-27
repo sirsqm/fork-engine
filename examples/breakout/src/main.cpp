@@ -25,8 +25,9 @@
 //
 // Controls (interactive):
 //   Left/Right or A/D   move the paddle
-//   Space / Enter       launch the ball
-//   R                   restart after a win or a loss
+//   Space / Enter       start the game, launch the ball, continue after game over
+//   P                   pause and resume
+//   R                   restart the current game
 //   Escape              quit
 
 #include "breakout_scene.h"
@@ -131,6 +132,14 @@ protected:
         static_cast<void>(breakout::install_breakout_systems(schedule(), state_, headless_, bindings));
         adopt_audio_system();
         attach_sound();
+
+        // Open on the title, unless this is a headless autoplay run, which drives
+        // a live game with no player and no menu (the menu would wait forever for
+        // a press that never comes). This is the one place the title flow is a
+        // choice, which is why it lives in the application and not the rules.
+        if (!headless_) {
+            state_.show_title();
+        }
 
         FE_LOG_INFO("breakout: field %dx%d, %d bricks, %d lives",
                     static_cast<int>(breakout::config::kFieldHalfWidth * 2.0f),

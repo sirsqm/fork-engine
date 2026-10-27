@@ -26,6 +26,13 @@ constexpr fe::f32 kAtRestSpeedSquared = 0.25f * 0.25f;
 } // namespace
 
 void PaddleControlSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
+    // Only a live game moves the paddle. On the title and the game-over screen
+    // the field is idle, and a paused game is frozen, so a press cannot steer a
+    // board that is not being played.
+    if (state_ != nullptr && !state_->is_playing()) {
+        return;
+    }
+
     fe::Node* paddle = scene.find_node_by_name(names::kPaddle);
     if (paddle == nullptr) {
         return;
@@ -70,7 +77,10 @@ void PaddleControlSystem::update(const fe::FrameContext& context, fe::Scene& sce
 }
 
 void BallLaunchSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
-    if (state_ != nullptr && state_->is_over()) {
+    // The ball is only launched in a live game: on the title, the game-over
+    // screen, and while paused it stays at rest where the last miss or the last
+    // rebuild left it.
+    if (state_ != nullptr && !state_->is_playing()) {
         return;
     }
 
@@ -119,7 +129,7 @@ void BallLaunchSystem::update(const fe::FrameContext& context, fe::Scene& scene)
 }
 
 void BallContactSystem::update(const fe::FrameContext& /*context*/, fe::Scene& scene) {
-    if (physics_ == nullptr || state_ == nullptr || state_->is_over()) {
+    if (physics_ == nullptr || state_ == nullptr || !state_->is_playing()) {
         return;
     }
 
@@ -184,6 +194,11 @@ void BallContactSystem::update(const fe::FrameContext& /*context*/, fe::Scene& s
             static_cast<void>(scene.remove_root(brick));
         }
     }
+    // Breaking the last brick wins. The presentation follows the rules here, in
+    // the same frame, so the game-over screen is up before the next frame draws.
+    if (!broken.empty()) {
+        state_->sync_screen();
+    }
 
     // Aimed paddle bounce: where the ball struck the paddle decides its new
     // direction, and its speed is restored to the launch speed so a long rally
@@ -221,6 +236,11 @@ void GameStateSystem::update(const fe::FrameContext& context, fe::Scene& scene) 
 
     if (const fe::InputState* input = context.input; input != nullptr) {
         if (input->was_key_pressed(fe::Key::R)) {
+            // R restarts the game wherever the player is: the rules reset and the
+            // screen returns to play, and the field rebuild is requested so the
+            // bricks the last game broke come back. start_game() clears the
+            // request flag as part of its reset, so the request goes after it.
+            state_->start_game();
             state_->request_restart();
         }
     }
@@ -231,8 +251,15 @@ void GameStateSystem::update(const fe::FrameContext& context, fe::Scene& scene) 
     }
     auto* body = ball->get_component<fe::physics2d::RigidBody2D>();
 
-    if (!state_->is_over() && ball->transform().position.y < config::kFieldBottomY) {
+    // A missed ball is only a miss while the game is being played: on the title,
+    // the game-over screen, and while paused the ball is not live, so it cannot
+    // cost a life.
+    if (state_->is_playing() && ball->transform().position.y < config::kFieldBottomY) {
         state_->ball_missed();
+        // The presentation follows the rules: losing the last life ends the game,
+        // so the screen becomes the game-over screen now rather than a frame
+        // later.
+        state_->sync_screen();
         if (state_->is_over()) {
             FE_LOG_INFO("breakout: no lives left (result=%s)", state_->result_name());
         } else {
@@ -241,9 +268,9 @@ void GameStateSystem::update(const fe::FrameContext& context, fe::Scene& scene) 
         }
     }
 
-    if (state_->is_over() && body != nullptr) {
-        // Freeze the ball so a finished game is visually still rather than
-        // continuing to fall forever behind the end state.
+    if (!state_->is_playing() && body != nullptr) {
+        // Freeze the ball whenever the game is not live, so a paused or finished
+        // game is visually still rather than continuing to fall behind the menu.
         body->velocity = fe::Vec2{};
         body->angular_velocity = 0.0f;
     }
@@ -268,28 +295,146 @@ void HudSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
         return;
     }
 
+    // The counters. They are only drawn while playing (MenuSystem hides the HUD
+    // canvas on the other screens), but their text is kept current every frame so
+    // they read correctly the instant play resumes.
     if (fe::Node* node = scene.find_node_by_name(names::kScoreLabel); node != nullptr) {
         if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
             element->text = "SCORE " + std::to_string(state_->score());
         }
     }
-
     if (fe::Node* node = scene.find_node_by_name(names::kLivesLabel); node != nullptr) {
         if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
-            // The result replaces the lives once the game ends, so the end state
-            // is legible in the browser without reading the console. It is moved
-            // to the middle of the *screen* -- not the field -- so it reads as a
-            // message over the whole window, which is what a UI canvas is for.
-            if (state_->is_over()) {
-                element->text = state_->won() ? "YOU WIN" : "GAME OVER";
-                element->anchor = fe::ui::UiAnchor::MiddleCenter;
-                element->offset = fe::Vec2{};
-                element->text_align = fe::ui::UiAlign::Center;
-            } else {
-                element->text = "LIVES " + std::to_string(state_->lives());
-            }
+            element->text = "LIVES " + std::to_string(state_->lives());
         }
     }
+
+    // The game-over screen's message. It is the one place the result is shown, so
+    // the end state is legible in the browser without reading the console; the
+    // label is authored "GAME OVER" and this system corrects it to "YOU WIN" on a
+    // win, so a win reads differently from a loss.
+    if (fe::Node* node = scene.find_node_by_name(names::kGameOverLabel); node != nullptr) {
+        if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
+            element->text = state_->won() ? "YOU WIN" : config::kGameOverText;
+        }
+    }
+}
+
+void MenuSystem::apply_visibility(fe::Scene& scene, BreakoutState::Screen screen) {
+    // One canvas per screen, each shown exactly on its own screen. The HUD
+    // counters stay visible only while playing, so the title and the end message
+    // are not competing with a score from a game that is not running.
+    const auto set_canvas = [&scene](std::string_view name, bool visible) {
+        if (fe::Node* node = scene.find_node_by_name(name); node != nullptr) {
+            if (auto* canvas = node->get_component<fe::ui::UiCanvas>(); canvas != nullptr) {
+                canvas->visible = visible;
+            }
+        }
+    };
+    set_canvas(names::kTitleCanvas, screen == BreakoutState::Screen::Title);
+    set_canvas(names::kPauseCanvas, screen == BreakoutState::Screen::Paused);
+    set_canvas(names::kGameOverCanvas, screen == BreakoutState::Screen::GameOver);
+    set_canvas(names::kHudCanvas, screen == BreakoutState::Screen::Playing);
+}
+
+void MenuSystem::save_ball_velocity(fe::Scene& scene) noexcept {
+    fe::Node* ball = scene.find_node_by_name(names::kBall);
+    if (ball == nullptr) {
+        return;
+    }
+    if (const auto* body = ball->get_component<fe::physics2d::RigidBody2D>(); body != nullptr) {
+        paused_ball_velocity_ = body->velocity;
+        paused_ball_angular_velocity_ = body->angular_velocity;
+    }
+}
+
+void MenuSystem::restore_ball_velocity(fe::Scene& scene) const noexcept {
+    fe::Node* ball = scene.find_node_by_name(names::kBall);
+    if (ball == nullptr) {
+        return;
+    }
+    if (auto* body = ball->get_component<fe::physics2d::RigidBody2D>(); body != nullptr) {
+        body->velocity = paused_ball_velocity_;
+        body->angular_velocity = paused_ball_angular_velocity_;
+        body->wake();
+    }
+}
+
+void MenuSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
+    if (state_ == nullptr) {
+        return;
+    }
+
+    // The presentation follows the rules: if something ended the game since the
+    // last frame -- the ball was missed, the last brick was broken, a test drove
+    // the rules directly -- the screen is the game-over screen now. Reconciling
+    // here, before deciding anything, means the menu always acts on the screen
+    // the rules imply rather than a stale one.
+    state_->sync_screen();
+
+    // Whether the player asked to "go" this frame: the confirm action, a UI
+    // button click, or -- with no action map -- the Space/Enter fallback. One
+    // flag, so a click, a tap and a key all advance a menu identically.
+    bool confirm = false;
+    if (context.actions != nullptr && confirm_ != fe::ActionMap::kNone) {
+        confirm = context.actions->was_pressed(confirm_);
+    } else if (const fe::InputState* input = context.input; input != nullptr) {
+        confirm = input->was_key_pressed(fe::Key::Space) || input->was_key_pressed(fe::Key::Enter);
+    }
+
+    // A menu button is a hit-tested target: the title's "press to play" and the
+    // game-over screen's "press to continue" carry a UiElement, and a click on
+    // one is the same as the confirm press. Read from the interaction state
+    // UiInputSystem wrote earlier this frame, so the click lands where the button
+    // draws.
+    const auto label_clicked = [&scene](std::string_view name) {
+        const fe::Node* node = scene.find_node_by_name(name);
+        if (node == nullptr) {
+            return false;
+        }
+        const auto* element = node->get_component<fe::ui::UiElement>();
+        return element != nullptr && element->interaction.clicked;
+    };
+    confirm = confirm || label_clicked(names::kTitleLabel) || label_clicked(names::kGameOverLabel) ||
+              label_clicked(names::kPauseLabel);
+
+    bool pause_toggle = false;
+    if (context.actions != nullptr && pause_ != fe::ActionMap::kNone) {
+        pause_toggle = context.actions->was_pressed(pause_);
+    } else if (const fe::InputState* input = context.input; input != nullptr) {
+        pause_toggle = input->was_key_pressed(fe::Key::P);
+    }
+
+    switch (state_->screen()) {
+    case BreakoutState::Screen::Title:
+        if (confirm) {
+            state_->start_game();
+        }
+        break;
+    case BreakoutState::Screen::Playing:
+        if (pause_toggle) {
+            // Save the ball's motion before the game freezes it, so resuming
+            // continues the rally rather than leaving the ball dead.
+            save_ball_velocity(scene);
+            state_->pause();
+        }
+        break;
+    case BreakoutState::Screen::Paused:
+        if (pause_toggle || confirm) {
+            state_->resume();
+            restore_ball_velocity(scene);
+        }
+        break;
+    case BreakoutState::Screen::GameOver:
+        if (confirm) {
+            state_->return_to_title();
+        }
+        break;
+    }
+
+    // Show the canvas for whatever screen we ended on. Done after the transition
+    // so the frame that changes the screen also draws the right menu.
+    apply_visibility(scene, state_->screen());
 }
 
 } // namespace breakout

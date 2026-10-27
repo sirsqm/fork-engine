@@ -236,18 +236,21 @@ TEST_CASE("the game systems are installed in order") {
 
     auto* physics = breakout::install_breakout_systems(schedule, state, /*autoplay=*/false);
     CHECK(physics != nullptr);
-    REQUIRE(schedule.system_count() == 7);
+    REQUIRE(schedule.system_count() == 8);
     // The UI input system runs first: it writes each element's interaction state
-    // from this frame's pointer before any gameplay system reads it, so a menu
-    // system added later sees the same frame's clicks.
+    // from this frame's pointer before any gameplay system reads it, so the menu
+    // system sees the same frame's clicks.
     CHECK(std::string(schedule.system_at(0)->name()) == "ui/input");
-    CHECK(std::string(schedule.system_at(1)->name()) == "PaddleControlSystem");
-    CHECK(std::string(schedule.system_at(2)->name()) == "BallLaunchSystem");
-    CHECK(std::string(schedule.system_at(3)->name()) == "Physics2DSystem");
-    CHECK(std::string(schedule.system_at(4)->name()) == "BallContactSystem");
-    CHECK(std::string(schedule.system_at(5)->name()) == "GameStateSystem");
+    // The menu runs next: it decides the screen, and the gameplay systems below
+    // read that decision this same frame.
+    CHECK(std::string(schedule.system_at(1)->name()) == "MenuSystem");
+    CHECK(std::string(schedule.system_at(2)->name()) == "PaddleControlSystem");
+    CHECK(std::string(schedule.system_at(3)->name()) == "BallLaunchSystem");
+    CHECK(std::string(schedule.system_at(4)->name()) == "Physics2DSystem");
+    CHECK(std::string(schedule.system_at(5)->name()) == "BallContactSystem");
+    CHECK(std::string(schedule.system_at(6)->name()) == "GameStateSystem");
     // The HUD runs last so it reads the state every system above it produced.
-    CHECK(std::string(schedule.system_at(6)->name()) == "HudSystem");
+    CHECK(std::string(schedule.system_at(7)->name()) == "HudSystem");
 }
 
 TEST_CASE("the field is gravity-free") {
@@ -349,23 +352,339 @@ TEST_CASE("the HUD replaces the lives with the result once the game ends") {
     breakout::BreakoutState state;
     static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
 
-    Node* lives_node = scene.find_node_by_name(breakout::names::kLivesLabel);
-    REQUIRE(lives_node != nullptr);
-    auto* lives_element = lives_node->get_component<ui::UiElement>();
-    REQUIRE(lives_element != nullptr);
+    Node* game_over_node = scene.find_node_by_name(breakout::names::kGameOverLabel);
+    REQUIRE(game_over_node != nullptr);
+    auto* game_over_element = game_over_node->get_component<ui::UiElement>();
+    REQUIRE(game_over_element != nullptr);
 
-    // Lose every life. The end-of-game message replaces the counter and is
-    // centred on the *screen* -- not the field -- so it reads as a message over
-    // the whole window, which is what a UI canvas is for.
+    // Lose every life. The end-of-game message lives on the game-over screen's
+    // label -- centred on the *screen*, not the field -- so it reads as a message
+    // over the whole window, which is what a UI canvas is for. It is authored
+    // "GAME OVER" and reads "YOU WIN" on a win, so a loss and a win differ.
     for (int i = 0; i < breakout::config::kStartingLives; ++i) {
         state.ball_missed();
     }
     REQUIRE(state.is_over());
     schedule.update(step(1.0f / 60.0f), scene);
 
-    CHECK(lives_element->text == "GAME OVER");
-    CHECK(lives_element->anchor == ui::UiAnchor::MiddleCenter);
-    CHECK(lives_element->text_align == ui::UiAlign::Center);
+    CHECK(game_over_element->text == "GAME OVER");
+    CHECK(game_over_element->anchor == ui::UiAnchor::MiddleCenter);
+    CHECK(game_over_element->text_align == ui::UiAlign::Center);
+
+    // The lives counter is hidden with the HUD on the game-over screen, but its
+    // text stays current so it reads correctly the instant play resumes.
+    Node* lives_node = scene.find_node_by_name(breakout::names::kLivesLabel);
+    REQUIRE(lives_node != nullptr);
+    auto* lives_element = lives_node->get_component<ui::UiElement>();
+    REQUIRE(lives_element != nullptr);
+    CHECK(lives_element->text == "LIVES 0");
+}
+
+TEST_CASE("the game-over screen says YOU WIN after a win") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state(1, 3);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    Node* game_over_node = scene.find_node_by_name(breakout::names::kGameOverLabel);
+    REQUIRE(game_over_node != nullptr);
+    auto* game_over_element = game_over_node->get_component<ui::UiElement>();
+    REQUIRE(game_over_element != nullptr);
+
+    state.brick_hit(); // the last brick: a win
+    REQUIRE(state.won());
+    schedule.update(step(1.0f / 60.0f), scene);
+
+    CHECK(game_over_element->text == "YOU WIN");
+}
+
+// ---------------------------------------------------------------------------
+// Screens: the title -> play -> game over -> title flow
+// (docs/SHIPPING_QUEUE.md, `slice-title-and-menus`).
+//
+// The rules half is BreakoutState on its own, with no engine; the shipped half
+// drives the real scene and the real schedule, which is what proves the flow the
+// game actually runs rather than a re-implementation of it.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// One frame of the shipped schedule with the given input snapshot, in the order
+// Application::step_frame() drives it: advance the input edges, evaluate the
+// actions, then run the systems. The caller reads the scene and the state.
+void run_screen_frame(SceneSchedule& schedule, Scene& scene, InputState& input, ActionMap& actions) {
+    input.begin_frame();
+    actions.update(input, Vec2{1280.0f, 720.0f});
+    FrameContext context = step(1.0f / 60.0f);
+    context.input = &input;
+    context.actions = &actions;
+    context.viewport = Vec2{1280.0f, 720.0f};
+    schedule.update(context, scene);
+}
+
+[[nodiscard]] bool canvas_visible(const Scene& scene, std::string_view name) {
+    const Node* node = scene.find_node_by_name(name);
+    if (node == nullptr) {
+        return false;
+    }
+    const auto* canvas = node->get_component<ui::UiCanvas>();
+    return canvas != nullptr && canvas->visible;
+}
+
+} // namespace
+
+TEST_CASE("a fresh game is on the playing screen") {
+    // The rules object has no opinion about presentation: a headless autoplay
+    // run and every unit test drive a live game with no menu. The application is
+    // what opens on the title, with show_title().
+    breakout::BreakoutState state;
+    CHECK(state.screen() == breakout::BreakoutState::Screen::Playing);
+    CHECK(state.is_playing());
+    CHECK(std::string(state.screen_name()) == "playing");
+}
+
+TEST_CASE("the title -> play -> game over -> title flow") {
+    // The acceptance test for `slice-title-and-menus`, at the rules level: the
+    // whole flow is one object with no scene and no engine.
+    breakout::BreakoutState state(2, 1);
+
+    // Title: a fresh board, no game running.
+    state.show_title();
+    CHECK(state.is_title());
+    CHECK(std::string(state.screen_name()) == "title");
+    CHECK_FALSE(state.is_over());
+
+    // Play: the title's "press to play" edge resets the board and starts the
+    // clock.
+    state.start_game();
+    CHECK(state.is_playing());
+    CHECK(state.lives() == 1);
+    CHECK(state.bricks_remaining() == 2);
+
+    // Game over: the last life lost ends the game, and the screen follows the
+    // rules once sync_screen() runs.
+    state.ball_missed();
+    REQUIRE(state.is_over());
+    state.sync_screen();
+    CHECK(state.screen() == breakout::BreakoutState::Screen::GameOver);
+    CHECK(std::string(state.screen_name()) == "gameover");
+
+    // Back to the title: the game-over screen's "press to continue" edge resets
+    // the board and rebuilds it (the request is how the owner of the scene knows
+    // the board it left is not fresh).
+    state.return_to_title();
+    CHECK(state.is_title());
+    CHECK(state.restart_requested());
+    CHECK(state.lives() == 1);
+    CHECK(state.bricks_remaining() == 2);
+}
+
+TEST_CASE("pause freezes a live game and resume returns to play") {
+    breakout::BreakoutState state;
+    REQUIRE(state.is_playing());
+
+    state.pause();
+    CHECK(state.is_paused());
+    CHECK(std::string(state.screen_name()) == "paused");
+    CHECK_FALSE(state.is_over());
+
+    state.resume();
+    CHECK(state.is_playing());
+}
+
+TEST_CASE("pause and resume are no-ops on the wrong screen") {
+    breakout::BreakoutState state(breakout::config::kBrickCount, 1);
+
+    // Pausing the title does nothing: there is no clock to stop.
+    state.show_title();
+    state.pause();
+    CHECK(state.is_title());
+
+    // Resuming a game that is already playing does nothing.
+    state.start_game();
+    state.resume();
+    CHECK(state.is_playing());
+
+    // Pausing a finished game does nothing: the game-over screen is not a pause.
+    state.ball_missed();
+    state.sync_screen();
+    REQUIRE(state.is_over());
+    state.pause();
+    CHECK(state.screen() == breakout::BreakoutState::Screen::GameOver);
+}
+
+TEST_CASE("sync_screen never reopens a title or a pause") {
+    // sync_screen() reconciles the presentation with the rules; while the game is
+    // still in progress it must leave the screen exactly where it is, so a title
+    // or a pause is not silently un-done.
+    breakout::BreakoutState state;
+    state.show_title();
+    state.sync_screen();
+    CHECK(state.is_title());
+
+    state.start_game();
+    state.pause();
+    state.sync_screen();
+    CHECK(state.is_paused());
+}
+
+TEST_CASE("the field builder makes the three menu canvases, hidden") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+
+    // Each menu canvas exists with its label, and is hidden until MenuSystem
+    // shows it, so a fresh scene draws only the field.
+    const std::pair<std::string_view, std::string_view> menus[] = {
+        {breakout::names::kTitleCanvas, breakout::names::kTitleLabel},
+        {breakout::names::kPauseCanvas, breakout::names::kPauseLabel},
+        {breakout::names::kGameOverCanvas, breakout::names::kGameOverLabel},
+    };
+    for (const auto& [canvas_name, label_name] : menus) {
+        Node* canvas_node = scene.find_node_by_name(canvas_name);
+        REQUIRE(canvas_node != nullptr);
+        auto* canvas = canvas_node->get_component<ui::UiCanvas>();
+        REQUIRE(canvas != nullptr);
+        CHECK_FALSE(canvas->visible);
+        // Above the HUD, so a menu covers the field and the counters.
+        CHECK(canvas->layer > 10);
+
+        Node* label_node = scene.find_node_by_name(label_name);
+        REQUIRE(label_node != nullptr);
+        auto* label = label_node->get_component<ui::UiElement>();
+        REQUIRE(label != nullptr);
+        CHECK_FALSE(label->text.empty());
+        CHECK(label->anchor == ui::UiAnchor::MiddleCenter);
+    }
+}
+
+TEST_CASE("the menu drives the shipped schedule through the whole flow") {
+    // The integration acceptance test: the real scene and the real schedule run
+    // title -> play -> game over -> title, and the canvases shown track the
+    // screen. Nothing here re-implements the flow; it drives the shipped systems.
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+
+    ActionMap actions;
+    const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+    InputState input;
+
+    // The application opens on the title. One frame with no input settles the
+    // canvases: the title is up, the HUD is down.
+    state.show_title();
+    run_screen_frame(schedule, scene, input, actions);
+    CHECK(state.is_title());
+    CHECK(canvas_visible(scene, breakout::names::kTitleCanvas));
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kHudCanvas));
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kGameOverCanvas));
+
+    // Press "go" (Space, the confirm action): the game starts and the title gives
+    // way to the HUD.
+    input.on_key(Key::Space, true);
+    run_screen_frame(schedule, scene, input, actions);
+    CHECK(state.is_playing());
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kTitleCanvas));
+    CHECK(canvas_visible(scene, breakout::names::kHudCanvas));
+
+    // Lose every life: the screen becomes the game-over screen and its canvas is
+    // shown instead of the HUD.
+    input.on_key(Key::Space, false);
+    run_screen_frame(schedule, scene, input, actions); // release the key
+    for (int i = 0; i < breakout::config::kStartingLives; ++i) {
+        state.ball_missed();
+    }
+    REQUIRE(state.is_over());
+    run_screen_frame(schedule, scene, input, actions);
+    CHECK(state.screen() == breakout::BreakoutState::Screen::GameOver);
+    CHECK(canvas_visible(scene, breakout::names::kGameOverCanvas));
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kHudCanvas));
+
+    // Press "go" again: back to the title, with a fresh board.
+    input.on_key(Key::Space, true);
+    run_screen_frame(schedule, scene, input, actions);
+    CHECK(state.is_title());
+    CHECK(canvas_visible(scene, breakout::names::kTitleCanvas));
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kGameOverCanvas));
+    CHECK(state.lives() == breakout::config::kStartingLives);
+}
+
+TEST_CASE("the pause key freezes and unfreezes a live game") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+
+    ActionMap actions;
+    const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+    InputState input;
+    state.start_game();
+
+    // P pauses: the pause canvas is shown, the HUD hidden, and the field freezes.
+    input.on_key(Key::P, true);
+    run_screen_frame(schedule, scene, input, actions);
+    CHECK(state.is_paused());
+    CHECK(canvas_visible(scene, breakout::names::kPauseCanvas));
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kHudCanvas));
+
+    // The ball is frozen: the node does not move while the game is paused.
+    Node* ball = scene.find_node_by_name(breakout::names::kBall);
+    REQUIRE(ball != nullptr);
+    const Vec3 paused_position = ball->transform().position;
+    input.on_key(Key::P, false);
+    for (int i = 0; i < 5; ++i) {
+        run_screen_frame(schedule, scene, input, actions);
+    }
+    CHECK(state.is_paused());
+    CHECK(ball->transform().position.x == doctest::Approx(paused_position.x));
+    CHECK(ball->transform().position.y == doctest::Approx(paused_position.y));
+
+    // P again resumes: back to play, the HUD returns.
+    input.on_key(Key::P, true);
+    run_screen_frame(schedule, scene, input, actions);
+    CHECK(state.is_playing());
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kPauseCanvas));
+    CHECK(canvas_visible(scene, breakout::names::kHudCanvas));
+}
+
+TEST_CASE("the paddle and the ball are idle on the title screen") {
+    // The title is not just a drawing over a live game: the gameplay systems are
+    // frozen, so a press cannot steer a board that is not being played.
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+
+    ActionMap actions;
+    const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+    InputState input;
+    state.show_title();
+
+    Node* paddle = scene.find_node_by_name(breakout::names::kPaddle);
+    Node* ball = scene.find_node_by_name(breakout::names::kBall);
+    REQUIRE(paddle != nullptr);
+    REQUIRE(ball != nullptr);
+    const f32 paddle_x = paddle->transform().position.x;
+    const f32 ball_y = ball->transform().position.y;
+
+    // Hold "move left" across several frames: the paddle does not respond on the
+    // title, and the game stays on the title. (The launch/confirm key is not
+    // pressed here -- it is what *leaves* the title -- so the field is genuinely
+    // idle rather than a frame away from starting.)
+    input.on_key(Key::Left, true);
+    for (int i = 0; i < 10; ++i) {
+        run_screen_frame(schedule, scene, input, actions);
+    }
+    CHECK(state.is_title());
+    CHECK(paddle->transform().position.x == doctest::Approx(paddle_x));
+    CHECK(ball->transform().position.y == doctest::Approx(ball_y));
 }
 
 TEST_CASE("a paddle hit off-centre aims the ball away from the paddle's centre") {

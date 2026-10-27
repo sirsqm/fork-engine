@@ -66,8 +66,10 @@ cmake --build build --parallel
 ./build/bin/fork_breakout
 ```
 
-Controls: Left/Right or A/D move the paddle, Space/Enter launches, R restarts,
-Escape quits.
+Controls: Left/Right or A/D move the paddle, Space/Enter starts a game and
+launches the ball, P pauses and resumes, R restarts, Escape quits. The game opens
+on a title screen; the same keys (or a tap in the middle of the screen) leave it
+and continue after a game over.
 
 Headless (no window, autoplay drives the ball, exits on win/lose or after N
 frames):

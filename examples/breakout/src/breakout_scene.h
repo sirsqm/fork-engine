@@ -54,10 +54,15 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets = {});
 // strip, which is what a two-thumbed player expects: hold left or right to
 // steer, tap the middle to serve. They are normalised, so they survive a resize
 // and a change of orientation.
+//
+// `confirm` is the "advance the menu" press and reuses the launch action, so one
+// button starts the game, serves the ball, and returns from the game-over screen.
+// `pause` toggles the pause screen.
 struct BreakoutActions {
     fe::ActionMap::Id move_left = fe::ActionMap::kNone;
     fe::ActionMap::Id move_right = fe::ActionMap::kNone;
     fe::ActionMap::Id launch = fe::ActionMap::kNone;
+    fe::ActionMap::Id pause = fe::ActionMap::kNone;
 };
 
 // Declares breakout's actions on `actions` and installs their default bindings.

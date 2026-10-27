@@ -70,6 +70,39 @@ fe::Node* add_hud_label(fe::Node* canvas, std::string_view name, fe::ui::UiAncho
     return node;
 }
 
+// A full-screen menu canvas with a centred label, hidden until its screen is
+// current. One per screen (title, pause, game over); MenuSystem toggles the
+// canvas's `visible` flag to show exactly one at a time, so a screen change is
+// one bool, not a rebuild.
+//
+// The label is the whole menu for now: a line of text a click anywhere on (the
+// label is hit-tested, and MenuSystem treats a click on it as "go"). A richer
+// menu is a flow container of buttons inside this same canvas, which the
+// authoring model already supports.
+fe::Node* add_menu_canvas(fe::Scene& scene, std::string_view canvas_name, std::string_view label_name,
+                          const std::shared_ptr<fe::Resource>& font, const char* text) {
+    fe::Node* canvas_node = scene.create_node(std::string(canvas_name));
+    auto* canvas = canvas_node->add_component<fe::ui::UiCanvas>();
+    canvas->design_width = cfg::kViewHalfWidth * 2.0f;
+    canvas->design_height = cfg::kViewHalfHeight * 2.0f;
+    canvas->font = font;
+    canvas->text_size = cfg::kMenuTextSize;
+    // Above the HUD (layer 10), so a menu covers the field and the counters.
+    canvas->layer = 20;
+    // Hidden until MenuSystem shows it; the field is drawn behind either way.
+    canvas->visible = false;
+
+    fe::Node* label = canvas_node->create_child<fe::Node>(std::string(label_name));
+    auto* element = label->add_component<fe::ui::UiElement>();
+    element->width = fe::ui::UiSize::content();
+    element->height = fe::ui::UiSize::content();
+    element->anchor = fe::ui::UiAnchor::MiddleCenter;
+    element->text_align = fe::ui::UiAlign::Center;
+    element->text_vertical = fe::ui::UiAlign::Center;
+    element->text = text;
+    return canvas_node;
+}
+
 } // namespace
 
 void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
@@ -186,6 +219,16 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
                   fe::ui::UiAlign::Start);
     add_hud_label(hud, names::kLivesLabel, fe::ui::UiAnchor::TopRight, fe::Vec2{-cfg::kHudMargin, cfg::kHudMargin},
                   fe::ui::UiAlign::End);
+
+    // The menu screens (docs/SHIPPING_QUEUE.md, `slice-title-and-menus`): a title,
+    // a pause, and a game-over canvas, each hidden until MenuSystem shows it.
+    // They are built here so the authored scene file and the code-built field
+    // stay identical, exactly as the field's own nodes are. The game-over canvas
+    // reads "GAME OVER" for a loss; the won case is overwritten by HudSystem,
+    // which is why the label text is authored rather than left empty.
+    add_menu_canvas(scene, names::kTitleCanvas, names::kTitleLabel, assets.font, cfg::kTitleText);
+    add_menu_canvas(scene, names::kPauseCanvas, names::kPauseLabel, assets.font, cfg::kPauseText);
+    add_menu_canvas(scene, names::kGameOverCanvas, names::kGameOverLabel, assets.font, cfg::kGameOverText);
 }
 
 fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule, BreakoutState& state,
@@ -198,6 +241,7 @@ BreakoutActions declare_breakout_actions(fe::ActionMap& actions) {
     bindings.move_left = actions.add("MoveLeft");
     bindings.move_right = actions.add("MoveRight");
     bindings.launch = actions.add("Launch");
+    bindings.pause = actions.add("Pause");
 
     // Keyboard: the arrows and WASD for steering, Space and Enter to serve. Both
     // spellings are bound so a player who reaches for either is not surprised.
@@ -207,6 +251,9 @@ BreakoutActions declare_breakout_actions(fe::ActionMap& actions) {
     actions.bind_key(bindings.move_right, fe::Key::D);
     actions.bind_key(bindings.launch, fe::Key::Space);
     actions.bind_key(bindings.launch, fe::Key::Enter);
+    // P pauses and resumes. It is a menu action, not a gameplay one, so it has no
+    // touch region: the pause canvas is advanced by the same confirm press.
+    actions.bind_key(bindings.pause, fe::Key::P);
 
     // Touch: the outer thirds steer and the middle third serves, so a phone can
     // play the same game with two thumbs. These are the bindings that make the
@@ -215,7 +262,9 @@ BreakoutActions declare_breakout_actions(fe::ActionMap& actions) {
     actions.bind_touch_region(bindings.move_left, 0.0f, 0.0f, 0.34f, 1.0f);
     actions.bind_touch_region(bindings.move_right, 0.66f, 0.0f, 1.0f, 1.0f);
     // The launch strip is the middle third, the whole height: a tap anywhere in
-    // the middle serves, which is the most forgiving target for a thumb.
+    // the middle serves, which is the most forgiving target for a thumb. The same
+    // strip starts a game and returns from the game-over screen, because the
+    // menu's confirm action is this same action.
     actions.bind_touch_region(bindings.launch, 0.34f, 0.0f, 0.66f, 1.0f);
 
     return bindings;
@@ -230,8 +279,19 @@ fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& sche
     // rather than new plumbing.
     static_cast<void>(schedule.add_system<fe::ui::UiInputSystem>());
 
+    // The menu system runs before the gameplay systems: it is what decides the
+    // screen, and the gameplay systems read that decision this same frame (they
+    // freeze themselves when the game is not playing). Running it first means a
+    // press that starts a game lets the very next system see a live game, rather
+    // than a frame of lag.
+    auto* menu = schedule.add_system<MenuSystem>();
+    menu->set_state(&state);
+    menu->set_confirm_action(bindings.launch);
+    menu->set_pause_action(bindings.pause);
+
     auto* paddle_system = schedule.add_system<PaddleControlSystem>();
     paddle_system->set_autoplay(autoplay);
+    paddle_system->set_state(&state);
     paddle_system->set_move_actions(bindings.move_left, bindings.move_right);
 
     auto* launch_system = schedule.add_system<BallLaunchSystem>();

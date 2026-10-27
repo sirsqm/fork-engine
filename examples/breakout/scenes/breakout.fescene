@@ -13,7 +13,7 @@
             0.11999999731779099,
             1.0
           ],
-          "id": "527242cb-5e3f-4d9f-808a-65362c51a7b3",
+          "id": "c524b916-2afc-4762-9efe-fba2a92ba88d",
           "primary": true,
           "reference_height": 1020.0,
           "reference_width": 1596.0,
@@ -21,7 +21,7 @@
           "zoom": 1.0
         }
       ],
-      "id": "afbfdeda-506d-4ed6-8b0c-1e8c6b75d5e3",
+      "id": "c0906244-0c8c-49b5-b1ee-0dda95469e18",
       "name": "Camera",
       "transform": {
         "position": [
@@ -51,7 +51,10 @@
             15.0,
             510.0
           ],
-          "id": "0592ae30-df9a-4f60-8233-dbc1b70f5731",
+          "id": "db68cbd6-742f-4351-ba97-1a23d86f964f",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
           "offset": [
             0.0,
             0.0
@@ -68,7 +71,7 @@
             0.699999988079071,
             1.0
           ],
-          "id": "ca9ed3ec-73f4-4bac-b100-d7fa0159d98f",
+          "id": "0cf4030a-7874-4031-b159-9eb75405f857",
           "layer": 0,
           "size": [
             30.0,
@@ -84,7 +87,7 @@
           ]
         }
       ],
-      "id": "eb62bd41-659c-41de-9a65-c45bcac75e30",
+      "id": "867ae6f9-bd46-4415-9f92-157b12df457e",
       "name": "WallLeft",
       "transform": {
         "position": [
@@ -114,7 +117,10 @@
             15.0,
             510.0
           ],
-          "id": "29651c51-8020-4e9f-8f3e-002a72390206",
+          "id": "8a3b2d5a-b959-400b-95ca-90511e0df5d6",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
           "offset": [
             0.0,
             0.0
@@ -131,7 +137,7 @@
             0.699999988079071,
             1.0
           ],
-          "id": "70cdd65d-1057-4124-9c86-3fd08dfd8043",
+          "id": "925dec8b-ab20-4398-8fbe-b13bdaba28c6",
           "layer": 0,
           "size": [
             30.0,
@@ -147,7 +153,7 @@
           ]
         }
       ],
-      "id": "501ced5f-ac18-4f57-87ac-98f2db7e1fb4",
+      "id": "bab6935d-8938-4deb-b036-57f5eaa1e882",
       "name": "WallRight",
       "transform": {
         "position": [
@@ -177,7 +183,10 @@
             798.0,
             15.0
           ],
-          "id": "85e52d98-2ddb-435d-815d-cb565f1bb44e",
+          "id": "82c4c4ef-58c1-4a10-9315-fa0797ef392d",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
           "offset": [
             0.0,
             0.0
@@ -194,7 +203,7 @@
             0.699999988079071,
             1.0
           ],
-          "id": "b9132539-e6f7-44a7-a7f1-deb337a13a86",
+          "id": "b7cebd61-df33-4745-b3e5-a67e3e635ceb",
           "layer": 0,
           "size": [
             1596.0,
@@ -210,7 +219,7 @@
           ]
         }
       ],
-      "id": "df0bf011-510b-4499-83a3-7d5deadfd795",
+      "id": "0189e20e-8ed6-489e-84ad-0ef8e7867026",
       "name": "WallTop",
       "transform": {
         "position": [
@@ -240,7 +249,10 @@
             90.0,
             14.0
           ],
-          "id": "c7ee5d94-c814-4494-bbdb-3f08506b08f5",
+          "id": "c7678f05-82c1-42a5-bfc4-985297d1c220",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
           "offset": [
             0.0,
             0.0
@@ -256,7 +268,7 @@
           "angular_velocity": 0.0,
           "can_sleep": true,
           "fixed_rotation": false,
-          "id": "459fa6fe-3a77-4cf2-8a3b-dad7dc464138",
+          "id": "16feee54-4210-4d08-bc08-f05ed520e1da",
           "inertia": 0.0,
           "kinematic": true,
           "linear_damping": 0.0,
@@ -278,7 +290,7 @@
             1.0,
             1.0
           ],
-          "id": "ed06dd78-5832-4fcd-9013-606cc09d4493",
+          "id": "04eb5353-55c8-4fec-b882-be1fd3786dec",
           "layer": 1,
           "size": [
             180.0,
@@ -294,7 +306,7 @@
           ]
         }
       ],
-      "id": "e566af01-29fc-47d9-86e6-793bd3fc20e1",
+      "id": "558fba33-71f9-4144-bca2-36201cad4608",
       "name": "Paddle",
       "transform": {
         "position": [
@@ -324,7 +336,10 @@
             0.5,
             0.5
           ],
-          "id": "76aa5fab-efb6-4f82-9167-3be56e267294",
+          "id": "ac9b43ae-5992-4043-a7c0-cc7befb5da8c",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
           "offset": [
             0.0,
             0.0
@@ -340,7 +355,7 @@
           "angular_velocity": 0.0,
           "can_sleep": false,
           "fixed_rotation": true,
-          "id": "7cdc2598-71b5-46c7-a112-c8fdeac59501",
+          "id": "5fa139fa-d10f-41e0-974c-ec8807484a38",
           "inertia": 0.0,
           "kinematic": false,
           "linear_damping": 0.0,
@@ -362,7 +377,7 @@
             1.0,
             1.0
           ],
-          "id": "90e8170e-e15e-49ca-a60f-48edc3474dab",
+          "id": "c4eff73b-2b2c-4752-aa17-9c4fdbbce084",
           "layer": 2,
           "size": [
             26.0,
@@ -378,7 +393,7 @@
           ]
         }
       ],
-      "id": "355120dd-2076-4a28-947d-171165cef990",
+      "id": "5a39f8fb-8e09-4b95-b0b3-1660bb4d0d93",
       "name": "Ball",
       "transform": {
         "position": [
@@ -410,7 +425,10 @@
                 44.0,
                 16.0
               ],
-              "id": "b900f8af-5c6a-41fb-9af5-50322072a8aa",
+              "id": "900b67d0-800d-419a-aa41-c80cc7e90136",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -427,7 +445,7 @@
                 1.0,
                 1.0
               ],
-              "id": "bc6f35a2-4a73-4a4c-9bab-b3b6093aa675",
+              "id": "ba34c5a1-3dff-4632-8c24-78b340d997b0",
               "layer": 0,
               "size": [
                 88.0,
@@ -443,7 +461,7 @@
               ]
             }
           ],
-          "id": "26c7f840-8f6e-4571-a69f-8414005119de",
+          "id": "7ed3d875-498d-40ac-a0f0-475dfa5ced81",
           "name": "Brick",
           "transform": {
             "position": [
@@ -473,7 +491,10 @@
                 44.0,
                 16.0
               ],
-              "id": "1a3c8c44-0726-4edf-9baf-3db38f51557b",
+              "id": "3920a73f-11c6-47ae-91db-15d56544e1a6",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -490,7 +511,7 @@
                 1.0,
                 1.0
               ],
-              "id": "c804ab12-7c77-4a1e-b891-e8c822788b22",
+              "id": "fac1b422-d337-4896-8ea6-9c8be8d847b4",
               "layer": 0,
               "size": [
                 88.0,
@@ -506,7 +527,7 @@
               ]
             }
           ],
-          "id": "2a77b951-5c52-490a-9fc0-c7abfa6d429c",
+          "id": "b013de79-8829-4257-833e-0165ed3be473",
           "name": "Brick",
           "transform": {
             "position": [
@@ -536,7 +557,10 @@
                 44.0,
                 16.0
               ],
-              "id": "49c164c9-a21b-4e2f-ad7f-47d31a5a0970",
+              "id": "5e9aa0d0-ff4c-4fec-a3ac-b713ef9a4716",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -553,7 +577,7 @@
                 1.0,
                 1.0
               ],
-              "id": "91ef9270-f728-4dbb-af61-397f81847bb6",
+              "id": "27957ef3-b2f0-489a-9f90-a50dc488755c",
               "layer": 0,
               "size": [
                 88.0,
@@ -569,7 +593,7 @@
               ]
             }
           ],
-          "id": "a508a58e-8d72-492a-a099-0ee9f3f8307a",
+          "id": "7fc82a33-c657-4f9e-b061-ac5a403247f2",
           "name": "Brick",
           "transform": {
             "position": [
@@ -599,7 +623,10 @@
                 44.0,
                 16.0
               ],
-              "id": "96a9ece1-9dd7-46aa-9cd1-1494c45f9517",
+              "id": "be708e78-8f4c-4c66-b57b-b57b5bc81ef5",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -616,7 +643,7 @@
                 1.0,
                 1.0
               ],
-              "id": "64c4ff25-82f3-423b-be00-ab848bca697f",
+              "id": "08c8a255-7802-44e0-b1aa-db4682b0dfc7",
               "layer": 0,
               "size": [
                 88.0,
@@ -632,7 +659,7 @@
               ]
             }
           ],
-          "id": "fa79b4c5-0b8f-485e-90a0-85755050006a",
+          "id": "8cedc702-d37e-4246-9648-b877e9259eec",
           "name": "Brick",
           "transform": {
             "position": [
@@ -662,7 +689,10 @@
                 44.0,
                 16.0
               ],
-              "id": "31a86a34-d3c2-432b-9b7d-ae8187e8ca1a",
+              "id": "be80c804-e1ee-46fb-9d25-2384ef7159a2",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -679,7 +709,7 @@
                 1.0,
                 1.0
               ],
-              "id": "49f8b22a-d69f-4fe3-8a01-0c28b6401502",
+              "id": "573f9f52-e942-4936-8856-64dcdd18bfe2",
               "layer": 0,
               "size": [
                 88.0,
@@ -695,7 +725,7 @@
               ]
             }
           ],
-          "id": "90bfaf00-90ad-41f6-bb71-dbeacc570302",
+          "id": "d5a2480c-dd46-40fb-9aa0-6ef529ae1569",
           "name": "Brick",
           "transform": {
             "position": [
@@ -725,7 +755,10 @@
                 44.0,
                 16.0
               ],
-              "id": "d12857d6-7fa5-4ef2-8619-d2b2d65957a3",
+              "id": "e524ba73-e901-4bbd-a52b-e2d63bdde3b2",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -742,7 +775,7 @@
                 1.0,
                 1.0
               ],
-              "id": "cae06434-8eb6-4081-b4dd-41a8732dfccb",
+              "id": "08b8e7f4-d1d8-48a1-9680-2d373266a383",
               "layer": 0,
               "size": [
                 88.0,
@@ -758,7 +791,7 @@
               ]
             }
           ],
-          "id": "eb313de3-d438-4b76-846e-4c430ee244a5",
+          "id": "8190674f-a1f1-400a-a911-f9f5689a2bb3",
           "name": "Brick",
           "transform": {
             "position": [
@@ -788,7 +821,10 @@
                 44.0,
                 16.0
               ],
-              "id": "a8bfa4ea-b694-4b82-9eba-e9daeac7f0c3",
+              "id": "3adb6b4a-c9c4-4a06-aca5-fbdbe15e7713",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -805,7 +841,7 @@
                 1.0,
                 1.0
               ],
-              "id": "8b3458f9-88c0-44b1-a404-4c8ed92475d1",
+              "id": "ed28cc42-d8c6-418b-9a90-abf557a72e51",
               "layer": 0,
               "size": [
                 88.0,
@@ -821,7 +857,7 @@
               ]
             }
           ],
-          "id": "18f458fb-f3f1-42bc-936a-b98a376a2320",
+          "id": "c44645a7-5eec-4a1d-9ba4-1245d8568c96",
           "name": "Brick",
           "transform": {
             "position": [
@@ -851,7 +887,10 @@
                 44.0,
                 16.0
               ],
-              "id": "5a6620ae-fe47-4a36-b2fd-1c86f4020427",
+              "id": "6dc5675c-e7d2-4f6a-9d1c-f62558aabbe4",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -868,7 +907,7 @@
                 1.0,
                 1.0
               ],
-              "id": "0ef17433-faaf-432d-859d-ffdd4b90180b",
+              "id": "b93f8b5c-148d-4a97-9cb8-4e09bcf1467b",
               "layer": 0,
               "size": [
                 88.0,
@@ -884,7 +923,7 @@
               ]
             }
           ],
-          "id": "2fe72045-cb6a-4bf8-99b0-3f7f381b0931",
+          "id": "6292daa2-76cd-4254-98c1-c5274fe75bbb",
           "name": "Brick",
           "transform": {
             "position": [
@@ -914,7 +953,10 @@
                 44.0,
                 16.0
               ],
-              "id": "0bb82561-2df8-4d5a-89ed-61341ae1b18b",
+              "id": "5b5b34bc-ae7a-403f-9afe-74c401a3fa11",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -931,7 +973,7 @@
                 1.0,
                 1.0
               ],
-              "id": "55bf92b6-6e4f-40da-9bdc-fc73c0385647",
+              "id": "4b1c6173-de86-4cfc-8f7e-1ca13bda4ece",
               "layer": 0,
               "size": [
                 88.0,
@@ -947,7 +989,7 @@
               ]
             }
           ],
-          "id": "cb8a6b32-d487-4bd9-a26c-af6c2ba6acc8",
+          "id": "785d5253-2957-4a64-ae5f-80514371bf76",
           "name": "Brick",
           "transform": {
             "position": [
@@ -977,7 +1019,10 @@
                 44.0,
                 16.0
               ],
-              "id": "54422342-444e-4063-a5c7-2e83aa5f0942",
+              "id": "6a0875c2-b1b9-4346-8487-6799174fa5dc",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -994,7 +1039,7 @@
                 1.0,
                 1.0
               ],
-              "id": "ee6583ce-a370-4dcd-9251-76055acdbb02",
+              "id": "2b4092f0-43d8-4740-88bf-6a1328c21840",
               "layer": 0,
               "size": [
                 88.0,
@@ -1010,7 +1055,7 @@
               ]
             }
           ],
-          "id": "b122636f-df93-417d-b983-69105c2afdc0",
+          "id": "0601bb14-6189-48e3-aeb2-6b23802320f7",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1040,7 +1085,10 @@
                 44.0,
                 16.0
               ],
-              "id": "6c620181-6c9d-4813-9c07-a78c6cd5da36",
+              "id": "33b0b4b4-f778-4004-8e02-168e6aa32a11",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1057,7 +1105,7 @@
                 1.0,
                 1.0
               ],
-              "id": "b87e7a2f-f0ab-4f6f-aafa-3643b75e9b44",
+              "id": "516e7524-ccad-45bb-adaf-880e67ec93b6",
               "layer": 0,
               "size": [
                 88.0,
@@ -1073,7 +1121,7 @@
               ]
             }
           ],
-          "id": "349c0420-e661-4e86-a5cd-222de78c9ffc",
+          "id": "9fa84f21-8752-424c-830d-574f175eb723",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1103,7 +1151,10 @@
                 44.0,
                 16.0
               ],
-              "id": "7506c53a-5f7e-4a6e-8ef2-2d0b56d88972",
+              "id": "d0d69068-9521-4534-8d9f-5e1d34817940",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1120,7 +1171,7 @@
                 1.0,
                 1.0
               ],
-              "id": "3a9c91e9-a166-4124-9b91-c92aeac741f3",
+              "id": "5af46469-7fee-482b-b788-f7d0608c8cd4",
               "layer": 0,
               "size": [
                 88.0,
@@ -1136,7 +1187,7 @@
               ]
             }
           ],
-          "id": "ad0e0d53-59d4-4497-af9a-be620bc5d6d1",
+          "id": "1703fc7a-b2ac-4b6f-be00-c8bb9aabd60b",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1166,7 +1217,10 @@
                 44.0,
                 16.0
               ],
-              "id": "5aed3f9b-054e-4613-aa30-3a1827f0304c",
+              "id": "0c50524a-d657-44d0-af92-0f7d0d92b83a",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1183,7 +1237,7 @@
                 1.0,
                 1.0
               ],
-              "id": "4aa05566-8cf8-4918-beb4-62d8a6a98b91",
+              "id": "a4b472fa-225f-49a0-88de-f29a472f1066",
               "layer": 0,
               "size": [
                 88.0,
@@ -1199,7 +1253,7 @@
               ]
             }
           ],
-          "id": "72145924-9578-4bf1-b872-05180bda6466",
+          "id": "efacbe4c-5955-4705-9a2f-bcd926f4753b",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1229,7 +1283,10 @@
                 44.0,
                 16.0
               ],
-              "id": "2417aa48-f18a-45e2-aba8-b60df84f44af",
+              "id": "246c0d47-4097-4b60-ba61-0b2fabebe710",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1246,7 +1303,7 @@
                 1.0,
                 1.0
               ],
-              "id": "18eb1ef4-2911-42ca-bdbc-c4f39260f5ac",
+              "id": "89226142-e3a6-49dc-9125-e50646471181",
               "layer": 0,
               "size": [
                 88.0,
@@ -1262,7 +1319,7 @@
               ]
             }
           ],
-          "id": "cb3c2ea0-2dd3-4de5-8555-c48ca30c09d8",
+          "id": "16ee9420-c4e7-4f00-9368-6bd5d46be008",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1292,7 +1349,10 @@
                 44.0,
                 16.0
               ],
-              "id": "2a4a30ee-cb88-4a74-82d0-a894aee3069e",
+              "id": "7c57084a-7501-4beb-9007-72d930af3c0b",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1309,7 +1369,7 @@
                 1.0,
                 1.0
               ],
-              "id": "983cf960-c000-4b87-8381-aa13cc8b5490",
+              "id": "e7087b5e-0f8c-469d-8c32-9fbed6bcf35a",
               "layer": 0,
               "size": [
                 88.0,
@@ -1325,7 +1385,7 @@
               ]
             }
           ],
-          "id": "61cbda4f-27bf-42f9-96ae-13b6f2d03e5b",
+          "id": "2469fa5d-9486-43e5-926d-e35d92d162c9",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1355,7 +1415,10 @@
                 44.0,
                 16.0
               ],
-              "id": "bbb9e11b-ec2b-4a12-82d4-1eb7422bea93",
+              "id": "703c9eb4-345a-42f5-89de-21ce3b506e96",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1372,7 +1435,7 @@
                 1.0,
                 1.0
               ],
-              "id": "715a25ca-c3d7-4c72-87ac-368d14367a7f",
+              "id": "abe939ca-7acd-4f5c-8b13-f747ba0d314d",
               "layer": 0,
               "size": [
                 88.0,
@@ -1388,7 +1451,7 @@
               ]
             }
           ],
-          "id": "3d6908bd-7b9d-4cd8-9fb8-9b2096a609d4",
+          "id": "ce47b538-5220-4b75-99f7-2cb244c906b2",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1418,7 +1481,10 @@
                 44.0,
                 16.0
               ],
-              "id": "316b4304-21a4-4ff6-bb30-644f1e84db68",
+              "id": "7e44307b-7e8c-42a3-949a-1b118cd4532b",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1435,7 +1501,7 @@
                 1.0,
                 1.0
               ],
-              "id": "ec713763-c865-4dde-970d-3fae68725c23",
+              "id": "abed07b4-a122-4f2e-a3db-6868fcb81ad6",
               "layer": 0,
               "size": [
                 88.0,
@@ -1451,7 +1517,7 @@
               ]
             }
           ],
-          "id": "976254d8-6184-496f-be89-e5a6a05a114a",
+          "id": "f62d0fd7-3758-4536-9eac-17208e364f1b",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1481,7 +1547,10 @@
                 44.0,
                 16.0
               ],
-              "id": "130946bc-0f45-48cc-96d9-5a523485dbaa",
+              "id": "3eb6fb0c-5605-40f2-b80d-f16bfa5461ac",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1498,7 +1567,7 @@
                 1.0,
                 1.0
               ],
-              "id": "55c47ad0-f067-4319-8f23-38b1b688b250",
+              "id": "b482c173-c211-43b3-90b3-4f6123588f62",
               "layer": 0,
               "size": [
                 88.0,
@@ -1514,7 +1583,7 @@
               ]
             }
           ],
-          "id": "fd8e8937-c0dc-4ed8-b389-69c1555c8581",
+          "id": "b4e37ac9-b3f0-4dd3-af69-3d190ef806ad",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1544,7 +1613,10 @@
                 44.0,
                 16.0
               ],
-              "id": "07a3fe52-692c-42d9-a057-a56a87da1a86",
+              "id": "127c1bda-d5dd-4539-ae78-2d0480d0e64d",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1561,7 +1633,7 @@
                 1.0,
                 1.0
               ],
-              "id": "88b5702d-8fd9-498f-bec5-7f376f992961",
+              "id": "d107dc68-28f5-4c4e-8b0d-8d5a5b7b317e",
               "layer": 0,
               "size": [
                 88.0,
@@ -1577,7 +1649,7 @@
               ]
             }
           ],
-          "id": "1b0d7057-820e-4616-9069-12f99ba8f731",
+          "id": "6bca3e18-714a-443d-add8-d9999f1bae69",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1607,7 +1679,10 @@
                 44.0,
                 16.0
               ],
-              "id": "b52430bb-36fb-4920-bb72-f1eaebe654c0",
+              "id": "faf3215b-0392-4a4d-aae4-b2e01ca8dd62",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1624,7 +1699,7 @@
                 1.0,
                 1.0
               ],
-              "id": "4640ee6d-1115-4492-970a-6317a58deb05",
+              "id": "e9b528a3-92ee-4ff2-9f27-0e2c7053ec37",
               "layer": 0,
               "size": [
                 88.0,
@@ -1640,7 +1715,7 @@
               ]
             }
           ],
-          "id": "9089aa2f-0cb9-47b5-82e8-2ffc712c0aac",
+          "id": "6ec8ebc9-3481-446c-b976-961f2d9c8b1f",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1670,7 +1745,10 @@
                 44.0,
                 16.0
               ],
-              "id": "ab1b7b73-4591-4281-b25e-4669914080ee",
+              "id": "dc536a26-07f9-46f1-b781-1f1e779c8175",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1687,7 +1765,7 @@
                 1.0,
                 1.0
               ],
-              "id": "16394bd5-ca0c-4fe8-a303-103389346fda",
+              "id": "2ce2996e-425b-4caa-97dd-f949dc52d3f5",
               "layer": 0,
               "size": [
                 88.0,
@@ -1703,7 +1781,7 @@
               ]
             }
           ],
-          "id": "46f9e1be-45a4-4274-9fe1-6a300be9e315",
+          "id": "b31241d3-f053-4b8b-905d-5410effc415b",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1733,7 +1811,10 @@
                 44.0,
                 16.0
               ],
-              "id": "1be0357d-ee7c-4c36-b2e3-179fba429af4",
+              "id": "8b317929-1bd0-4c79-823a-7368a4bc1fa8",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1750,7 +1831,7 @@
                 1.0,
                 1.0
               ],
-              "id": "504f9ddd-022a-44ed-b5c6-2ece6e59eb39",
+              "id": "5f99d559-2080-4da4-9dc3-5efd814bdd50",
               "layer": 0,
               "size": [
                 88.0,
@@ -1766,7 +1847,7 @@
               ]
             }
           ],
-          "id": "146cec65-39da-46db-994f-86a36cb8ca42",
+          "id": "5360b1ae-2310-4cd5-9826-f7bbb96c4f07",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1796,7 +1877,10 @@
                 44.0,
                 16.0
               ],
-              "id": "a1b294e0-94a1-42e3-8421-29e2f06e0f06",
+              "id": "43e18fcd-66d6-49a1-8932-dacc62dd5cdf",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1813,7 +1897,7 @@
                 1.0,
                 1.0
               ],
-              "id": "06a76e9e-68a5-4544-aacd-e18e5094469d",
+              "id": "0b4f8eb6-15b9-4a35-98c3-fcc60d6daf7b",
               "layer": 0,
               "size": [
                 88.0,
@@ -1829,7 +1913,7 @@
               ]
             }
           ],
-          "id": "8ddf3d3c-c788-4893-a174-452ea88e69ec",
+          "id": "b45aef67-eed1-44ee-9d86-61c2d202b663",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1859,7 +1943,10 @@
                 44.0,
                 16.0
               ],
-              "id": "8cb7a4a2-516c-45ea-a60a-806d2a4b4d6f",
+              "id": "259d1709-a9c1-44e0-af15-d432c8eef415",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1876,7 +1963,7 @@
                 1.0,
                 1.0
               ],
-              "id": "9b71030f-d27d-470b-b1f4-f42e3c5e8d6d",
+              "id": "b74af6d9-0a29-4bb5-982b-9f357634ed3e",
               "layer": 0,
               "size": [
                 88.0,
@@ -1892,7 +1979,7 @@
               ]
             }
           ],
-          "id": "a5bf887e-40dd-4f3b-91f8-c3f03b362378",
+          "id": "2233cae9-db1c-487c-8af0-64a8efae9aea",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1922,7 +2009,10 @@
                 44.0,
                 16.0
               ],
-              "id": "cc12f409-35cf-4983-afe7-a01d059f2a43",
+              "id": "055adb97-d497-4dfa-9848-4207427905e2",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -1939,7 +2029,7 @@
                 1.0,
                 1.0
               ],
-              "id": "a9c304e7-e546-4964-864a-b6a80cf40bbc",
+              "id": "15c6e754-af79-4e29-acab-b8c26638f527",
               "layer": 0,
               "size": [
                 88.0,
@@ -1955,7 +2045,7 @@
               ]
             }
           ],
-          "id": "af72b0ca-90ae-4dc4-8f38-e60b5f08c460",
+          "id": "42db6760-59b2-4fb7-b479-9727f75c7b59",
           "name": "Brick",
           "transform": {
             "position": [
@@ -1985,7 +2075,10 @@
                 44.0,
                 16.0
               ],
-              "id": "f03e74d4-4cd3-441e-8152-40405b45aed5",
+              "id": "20ac9c18-314d-42aa-bfeb-09b718449b7f",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2002,7 +2095,7 @@
                 1.0,
                 1.0
               ],
-              "id": "63051388-63df-4abc-afd2-656799bd55ee",
+              "id": "e094701c-40f8-4852-a0c4-4c110be18728",
               "layer": 0,
               "size": [
                 88.0,
@@ -2018,7 +2111,7 @@
               ]
             }
           ],
-          "id": "255721fe-76c7-4aa6-87eb-63f688ae0a43",
+          "id": "ef13427c-ac70-48be-b4ae-f8ba414909e6",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2048,7 +2141,10 @@
                 44.0,
                 16.0
               ],
-              "id": "87f98475-b8f6-421c-b7f1-a5c2a9c31931",
+              "id": "1b2a3449-ef84-4b02-9df4-0e777b526045",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2065,7 +2161,7 @@
                 1.0,
                 1.0
               ],
-              "id": "310e1577-231a-43fb-95ab-42b794dc7665",
+              "id": "750d635e-31b8-4637-b918-94fdb5ef07e5",
               "layer": 0,
               "size": [
                 88.0,
@@ -2081,7 +2177,7 @@
               ]
             }
           ],
-          "id": "9ef14d9e-a710-4a17-9458-99e60930f1be",
+          "id": "982a154b-410e-4bc8-9be6-ad6573fceb47",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2111,7 +2207,10 @@
                 44.0,
                 16.0
               ],
-              "id": "2d3ba333-5f7a-480b-8404-8989f029f5d7",
+              "id": "81754d70-6329-4e4c-b16e-bd10940fc26a",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2128,7 +2227,7 @@
                 1.0,
                 1.0
               ],
-              "id": "e2f1349a-753a-4064-ac80-746a54f75594",
+              "id": "e85425c9-ccf8-4021-aef7-2eb17adda444",
               "layer": 0,
               "size": [
                 88.0,
@@ -2144,7 +2243,7 @@
               ]
             }
           ],
-          "id": "eeed1015-6bb1-4c15-a174-6479ea616873",
+          "id": "fb7eb7a5-f3f5-43d6-bb7a-e2fbb1d141e9",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2174,7 +2273,10 @@
                 44.0,
                 16.0
               ],
-              "id": "f0d0f7d0-dd8f-4ed9-81df-537057b741fb",
+              "id": "41d69a29-0574-4fa8-8b26-727681a3f423",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2191,7 +2293,7 @@
                 1.0,
                 1.0
               ],
-              "id": "e5e2e310-8feb-4df0-855c-e5a9ce0ac7f6",
+              "id": "e441323f-2ca9-4ce8-a32b-27a67b757d84",
               "layer": 0,
               "size": [
                 88.0,
@@ -2207,7 +2309,7 @@
               ]
             }
           ],
-          "id": "429429c4-fd4d-41dd-bf26-d6e4a8ab8bd7",
+          "id": "6e746f87-4f0a-47c3-bfb2-bc6efc777401",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2237,7 +2339,10 @@
                 44.0,
                 16.0
               ],
-              "id": "176d8cf6-39f4-41be-b017-18b037c45fdd",
+              "id": "c97d4b8c-2476-4f8b-ba0c-2c3d5ed2f600",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2254,7 +2359,7 @@
                 1.0,
                 1.0
               ],
-              "id": "5d5d815e-5b9b-4dc9-b734-aace3f6eae22",
+              "id": "91923b1d-4d51-411e-8fd9-d41fcb566204",
               "layer": 0,
               "size": [
                 88.0,
@@ -2270,7 +2375,7 @@
               ]
             }
           ],
-          "id": "79846062-391c-41f7-afd5-d2927c5cc21e",
+          "id": "0c0b7182-82d7-4eec-bc21-82eb673506fa",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2300,7 +2405,10 @@
                 44.0,
                 16.0
               ],
-              "id": "763c3a34-3dd0-490a-bf2c-6c8633826d0b",
+              "id": "add15409-3b98-4379-b320-0b900adda06f",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2317,7 +2425,7 @@
                 1.0,
                 1.0
               ],
-              "id": "fd77a6c5-706a-49d0-b97a-8d5979131acf",
+              "id": "ee2bb1a7-109a-4361-8c7c-457503fa1eff",
               "layer": 0,
               "size": [
                 88.0,
@@ -2333,7 +2441,7 @@
               ]
             }
           ],
-          "id": "e9da95e3-a279-43a6-a09d-b76b1b142a62",
+          "id": "6f8b6119-3c92-4a99-a423-a21a9021606a",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2363,7 +2471,10 @@
                 44.0,
                 16.0
               ],
-              "id": "7ecd6ce8-2c46-4bc7-a989-645f98cff817",
+              "id": "1d85e71e-9054-47bc-8812-6e8fd59fc75d",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2380,7 +2491,7 @@
                 1.0,
                 1.0
               ],
-              "id": "6ddf1c70-e0fe-4381-8e32-28e81715eab5",
+              "id": "015ceed3-6fd8-4717-abba-6085a440d259",
               "layer": 0,
               "size": [
                 88.0,
@@ -2396,7 +2507,7 @@
               ]
             }
           ],
-          "id": "0e83b238-68a1-4bb7-99c1-2abe11ee884d",
+          "id": "69a5af18-f3f2-423b-98f4-c9ebf54b1e3d",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2426,7 +2537,10 @@
                 44.0,
                 16.0
               ],
-              "id": "ee044cdf-3602-499e-b587-919b1eef5976",
+              "id": "6afd427a-22b4-41ed-9e0a-a85a11886593",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2443,7 +2557,7 @@
                 1.0,
                 1.0
               ],
-              "id": "928b7122-32b4-4f2d-899b-953ab50daa4f",
+              "id": "a5d99de8-939f-461a-9d66-81979247db67",
               "layer": 0,
               "size": [
                 88.0,
@@ -2459,7 +2573,7 @@
               ]
             }
           ],
-          "id": "018b9235-f1c0-4eba-b1e5-64936a316e6f",
+          "id": "72d251d1-8c1a-4468-990d-1352d1611a14",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2489,7 +2603,10 @@
                 44.0,
                 16.0
               ],
-              "id": "fae6759b-c116-48dd-81cf-724f0e5fcc02",
+              "id": "c7aa5949-9c16-467e-9d5f-51fd415326eb",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2506,7 +2623,7 @@
                 1.0,
                 1.0
               ],
-              "id": "f50cd924-9f96-434f-be31-237df9e38e60",
+              "id": "d574e176-80a0-480a-8cbe-d42d2c72355e",
               "layer": 0,
               "size": [
                 88.0,
@@ -2522,7 +2639,7 @@
               ]
             }
           ],
-          "id": "16054e12-98ac-4a45-b109-148087f8e894",
+          "id": "0e56343d-8c84-4dc6-b7d0-36f621af3a30",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2552,7 +2669,10 @@
                 44.0,
                 16.0
               ],
-              "id": "d39f5521-bfff-49df-8eae-ffca1138ad26",
+              "id": "d6258ea5-65d8-4071-9178-b6a1d4c7562a",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2569,7 +2689,7 @@
                 1.0,
                 1.0
               ],
-              "id": "e76d618e-80c0-43ec-a7c7-99fa4bc4b0d4",
+              "id": "0795987f-f5fe-495b-ae65-f53754ee04b8",
               "layer": 0,
               "size": [
                 88.0,
@@ -2585,7 +2705,7 @@
               ]
             }
           ],
-          "id": "c0214946-339e-4552-80fc-d39de7b34b47",
+          "id": "7d67d93d-fe0b-47eb-a5ff-435abb0680b4",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2615,7 +2735,10 @@
                 44.0,
                 16.0
               ],
-              "id": "c79d645b-f9ab-4ba9-a513-e58c599793ab",
+              "id": "f9f4426e-3b41-4b7a-abd3-a9db533f0547",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2632,7 +2755,7 @@
                 1.0,
                 1.0
               ],
-              "id": "5f7114bd-1adc-4d82-9807-71c6bafa3a31",
+              "id": "adf96412-bb3f-4bad-800e-a1af40a59a83",
               "layer": 0,
               "size": [
                 88.0,
@@ -2648,7 +2771,7 @@
               ]
             }
           ],
-          "id": "f8751dcd-d80b-430c-9791-25b84a539127",
+          "id": "d3fa2b8a-a38e-4079-b412-841fb57f1049",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2678,7 +2801,10 @@
                 44.0,
                 16.0
               ],
-              "id": "38935a7d-cc7a-4419-b538-e975c40e53c6",
+              "id": "b04296d9-b3af-46b7-96fb-02a64c750b09",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2695,7 +2821,7 @@
                 1.0,
                 1.0
               ],
-              "id": "e9efdec6-7e62-4846-8cc5-e5ada09bd530",
+              "id": "bdf7671b-d2cb-404f-8b8b-0da5ddaade9b",
               "layer": 0,
               "size": [
                 88.0,
@@ -2711,7 +2837,7 @@
               ]
             }
           ],
-          "id": "3fa3c737-c3b8-4f7b-b062-04c7b95e3ef2",
+          "id": "1f82ddf8-d86d-470a-a9b7-2ea3a240ad09",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2741,7 +2867,10 @@
                 44.0,
                 16.0
               ],
-              "id": "e5f6f5e7-47c0-4acd-89c5-4588f730c4d7",
+              "id": "b8098d35-d659-4851-a002-c13906a0fa32",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2758,7 +2887,7 @@
                 1.0,
                 1.0
               ],
-              "id": "d7db3aa9-e407-4f64-b9c8-5d6c7ee1dd70",
+              "id": "45cadc34-f8fd-4092-b5bf-207f7eb077a2",
               "layer": 0,
               "size": [
                 88.0,
@@ -2774,7 +2903,7 @@
               ]
             }
           ],
-          "id": "0eab7697-78c4-4dc8-9509-20a8ccb55df0",
+          "id": "001a5ec9-b378-4d06-836b-3107e5005313",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2804,7 +2933,10 @@
                 44.0,
                 16.0
               ],
-              "id": "f5ac7cfc-cd67-4b12-a9e6-71b3bbba03fc",
+              "id": "99ea6811-9ca6-4f3e-8907-c4281a1e4679",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2821,7 +2953,7 @@
                 1.0,
                 1.0
               ],
-              "id": "92c53f97-7276-4ea4-a5ce-49c57b97125f",
+              "id": "e15e2de0-79dc-4597-b274-29bbe027494d",
               "layer": 0,
               "size": [
                 88.0,
@@ -2837,7 +2969,7 @@
               ]
             }
           ],
-          "id": "ddfcc530-bcdd-4a09-b0b1-b480c1415459",
+          "id": "5298ec96-15e8-4f8b-b238-2cb1977cb8ea",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2867,7 +2999,10 @@
                 44.0,
                 16.0
               ],
-              "id": "26200089-fb3c-403c-b52b-54c4b32e9c94",
+              "id": "d1d65547-d248-443a-bf07-660deb41aa85",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2884,7 +3019,7 @@
                 1.0,
                 1.0
               ],
-              "id": "44bea229-492f-4f28-826e-f16b4614d899",
+              "id": "6684847a-e4d7-41a5-9830-ba66bb7f48d6",
               "layer": 0,
               "size": [
                 88.0,
@@ -2900,7 +3035,7 @@
               ]
             }
           ],
-          "id": "ce544ae0-4596-4429-9244-348afc67acce",
+          "id": "ff6042a0-43fc-4a8a-84b2-b2362474720c",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2930,7 +3065,10 @@
                 44.0,
                 16.0
               ],
-              "id": "9fc3435e-0fd3-4d67-9b52-b135d30e5163",
+              "id": "7aa6a23b-24a5-4f6b-b3e2-88386fb5963d",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -2947,7 +3085,7 @@
                 1.0,
                 1.0
               ],
-              "id": "811febb3-b7ea-40d1-8c7c-42c7f47883ba",
+              "id": "1b7e3232-ab99-4c61-a238-e021c14e408e",
               "layer": 0,
               "size": [
                 88.0,
@@ -2963,7 +3101,7 @@
               ]
             }
           ],
-          "id": "607f7439-2dc1-4c1b-b26b-515953f1a11f",
+          "id": "5e75b90c-8121-4010-8ec6-5b345fc156ff",
           "name": "Brick",
           "transform": {
             "position": [
@@ -2993,7 +3131,10 @@
                 44.0,
                 16.0
               ],
-              "id": "fd9ba96e-9a5e-46cc-9ff2-99f8dd38b8b3",
+              "id": "7f9421dc-921c-4684-be4e-13e05808b8b2",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3010,7 +3151,7 @@
                 1.0,
                 1.0
               ],
-              "id": "4650a062-7f0c-4f1d-8c7b-b67505db7d58",
+              "id": "00ea5b1e-1b14-4a8d-8bae-9d9aa97fd2cd",
               "layer": 0,
               "size": [
                 88.0,
@@ -3026,7 +3167,7 @@
               ]
             }
           ],
-          "id": "2c3c7f9e-dec5-475b-9eab-39c1d9fc4c3b",
+          "id": "eaf5f257-f336-4d78-b35a-7020f8ed7a35",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3056,7 +3197,10 @@
                 44.0,
                 16.0
               ],
-              "id": "ee781ff8-ee81-4eed-a87c-c0c91cb9d4cf",
+              "id": "f265d7a1-fda5-4b10-a626-779da3eab12d",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3073,7 +3217,7 @@
                 1.0,
                 1.0
               ],
-              "id": "57376bbb-769e-4fbf-8822-8038e8a0fd0f",
+              "id": "4849eb8e-ae2d-4428-81e3-ce1332bd8bf8",
               "layer": 0,
               "size": [
                 88.0,
@@ -3089,7 +3233,7 @@
               ]
             }
           ],
-          "id": "ab98e4b3-b718-4d6b-8b3a-6c3a3eba7d91",
+          "id": "00f7a555-6ee5-4d89-9408-f557acfb4d0d",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3119,7 +3263,10 @@
                 44.0,
                 16.0
               ],
-              "id": "89a3b128-60b7-494d-b8ca-3dede4915793",
+              "id": "a33fa548-1f22-4ced-a045-dfe176f76f15",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3136,7 +3283,7 @@
                 1.0,
                 1.0
               ],
-              "id": "b090485b-e74c-4112-b924-50b304512149",
+              "id": "acd887d1-fe57-4eca-a4a4-8034fb35db07",
               "layer": 0,
               "size": [
                 88.0,
@@ -3152,7 +3299,7 @@
               ]
             }
           ],
-          "id": "7889978a-de0e-4bd4-9f0f-7a9d6830392b",
+          "id": "706128a6-dc2e-45e3-91a2-a5fbf33d99e2",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3182,7 +3329,10 @@
                 44.0,
                 16.0
               ],
-              "id": "16c585b4-bcf6-48ec-b336-93da9d9ba712",
+              "id": "57d2c6ab-c739-42ab-b2af-a519f04061be",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3199,7 +3349,7 @@
                 1.0,
                 1.0
               ],
-              "id": "0c84bef7-58a5-4e07-9c9e-fc2567c6c99d",
+              "id": "88cf4f9d-4892-4a2d-95a4-a4ab79c93037",
               "layer": 0,
               "size": [
                 88.0,
@@ -3215,7 +3365,7 @@
               ]
             }
           ],
-          "id": "4abf3404-6774-4b2d-b67c-d7f51fb9e8bb",
+          "id": "e0553134-1ab2-48de-be9b-eb55bbea0f03",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3245,7 +3395,10 @@
                 44.0,
                 16.0
               ],
-              "id": "f524215c-a872-4fce-b3f7-4b9958264743",
+              "id": "1e509522-f670-442e-86d3-eab1847eba0d",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3262,7 +3415,7 @@
                 1.0,
                 1.0
               ],
-              "id": "9b0cdfe4-b84b-455f-8fa7-604d79bdd5f8",
+              "id": "3b6452a4-0db9-469b-a053-f780396821e2",
               "layer": 0,
               "size": [
                 88.0,
@@ -3278,7 +3431,7 @@
               ]
             }
           ],
-          "id": "6db4a970-6488-44d2-ba48-c07770ab72d8",
+          "id": "837daf38-75d1-4d94-80cc-2c8aa8ffae0e",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3308,7 +3461,10 @@
                 44.0,
                 16.0
               ],
-              "id": "407fbfa8-4409-4c4c-ba60-e6528f5d4b8f",
+              "id": "27985d0c-dd0c-45dd-aae9-5099dca869db",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3325,7 +3481,7 @@
                 1.0,
                 1.0
               ],
-              "id": "462cc932-e165-487f-9db3-9d2b97be8932",
+              "id": "7e62d6a6-fe60-4b36-9664-14ecc49c426d",
               "layer": 0,
               "size": [
                 88.0,
@@ -3341,7 +3497,7 @@
               ]
             }
           ],
-          "id": "4bcadad5-9d8a-4241-8bdb-708e0a227781",
+          "id": "6a90c6d5-b933-4257-b3b8-2fe5af44b176",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3371,7 +3527,10 @@
                 44.0,
                 16.0
               ],
-              "id": "96074617-2262-4949-956b-366f8edf189f",
+              "id": "366248b5-97a9-4955-be30-a27653681b4d",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3388,7 +3547,7 @@
                 1.0,
                 1.0
               ],
-              "id": "90162fef-eb50-446f-ab7a-5bdca6c4847b",
+              "id": "25e0e5d0-98d7-4a64-a5a3-321848e22300",
               "layer": 0,
               "size": [
                 88.0,
@@ -3404,7 +3563,7 @@
               ]
             }
           ],
-          "id": "a99404e6-389b-439b-a3f8-310c3623b965",
+          "id": "38bf5d14-619f-4ecc-aba5-5066b2986b6a",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3434,7 +3593,10 @@
                 44.0,
                 16.0
               ],
-              "id": "8ca6d4b7-3bf0-4886-af57-78d997a83ba7",
+              "id": "d03a4d6b-6bda-4846-b44b-c1161d884fc9",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3451,7 +3613,7 @@
                 1.0,
                 1.0
               ],
-              "id": "085bf452-92ed-4c10-a23c-ff6a0e0c9973",
+              "id": "74909915-13db-4887-a50c-e0d406dbf559",
               "layer": 0,
               "size": [
                 88.0,
@@ -3467,7 +3629,7 @@
               ]
             }
           ],
-          "id": "f2cb169e-94c6-43c1-9d71-89b24a0ea19a",
+          "id": "4bf74e0a-0e12-4d23-8cd7-32e630f79f72",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3497,7 +3659,10 @@
                 44.0,
                 16.0
               ],
-              "id": "2e84e094-c907-487f-b7c7-c6697a3dc036",
+              "id": "d22371de-060c-4ddf-abc6-71e30416ebd9",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3514,7 +3679,7 @@
                 1.0,
                 1.0
               ],
-              "id": "9f3ddafe-7b0f-458c-a15e-cdf69d3f435b",
+              "id": "87a176c7-9398-4ef6-b696-5af6ff19ef51",
               "layer": 0,
               "size": [
                 88.0,
@@ -3530,7 +3695,7 @@
               ]
             }
           ],
-          "id": "4acbb684-cea1-49cb-8ee1-f2a1a060513e",
+          "id": "5f87195c-dd6c-4793-a613-cd9a59cb12f6",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3560,7 +3725,10 @@
                 44.0,
                 16.0
               ],
-              "id": "3b809ccd-2b28-4485-873b-3de0de3302d3",
+              "id": "2c000fdb-f81c-4311-a563-6a2eeb0b2763",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3577,7 +3745,7 @@
                 1.0,
                 1.0
               ],
-              "id": "a3f3994e-d16e-4080-bdbe-8d5579da84f6",
+              "id": "e0f4ff54-ab62-4d01-9a76-1d8f6fd6b9cc",
               "layer": 0,
               "size": [
                 88.0,
@@ -3593,7 +3761,7 @@
               ]
             }
           ],
-          "id": "f25bcc2a-19c8-4e0b-ab05-3b1644e0d576",
+          "id": "76f3beeb-af86-4eef-8116-c20060618862",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3623,7 +3791,10 @@
                 44.0,
                 16.0
               ],
-              "id": "7d69bf6b-7bd8-4467-b2b0-93bc52d6d723",
+              "id": "fd4b2ff1-b170-4f00-8e94-c8031aa6dcad",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3640,7 +3811,7 @@
                 1.0,
                 1.0
               ],
-              "id": "7cc9a593-297c-4085-9df8-abb5a21215d1",
+              "id": "ab426e84-29c3-483c-b243-cbe2f0b1487a",
               "layer": 0,
               "size": [
                 88.0,
@@ -3656,7 +3827,7 @@
               ]
             }
           ],
-          "id": "cd5282f5-efff-4059-821d-b7039abf406f",
+          "id": "4bc19836-7d65-4991-99e5-fdc5b23fa50c",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3686,7 +3857,10 @@
                 44.0,
                 16.0
               ],
-              "id": "8b8d78d7-2b78-4401-957b-b393a40cc74b",
+              "id": "e537870b-a274-49df-ac67-7fc9a917d3c7",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3703,7 +3877,7 @@
                 1.0,
                 1.0
               ],
-              "id": "b6d7ce18-5692-4f1e-b820-8454ce249592",
+              "id": "9d49b7c2-f5b6-44c1-a7fa-3bcec0ab5c64",
               "layer": 0,
               "size": [
                 88.0,
@@ -3719,7 +3893,7 @@
               ]
             }
           ],
-          "id": "9ec085ae-593e-460b-aac7-76838bfa968e",
+          "id": "8a0d4f12-c468-4aba-8b2e-fe8bc4f31594",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3749,7 +3923,10 @@
                 44.0,
                 16.0
               ],
-              "id": "c7387ec3-15c8-4ad2-a545-aacc520dcef8",
+              "id": "c454af53-84b7-475d-88fe-689f5ae018e9",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3766,7 +3943,7 @@
                 1.0,
                 1.0
               ],
-              "id": "fbde3516-384b-4a77-90ac-d1cffa99552e",
+              "id": "63671537-1f4e-4865-bfc9-1137bd675521",
               "layer": 0,
               "size": [
                 88.0,
@@ -3782,7 +3959,7 @@
               ]
             }
           ],
-          "id": "9a00e4b7-8ea7-4bf1-908f-f07ba3ce74f4",
+          "id": "3526ec64-0e7f-49d8-8c78-5720ef3a099d",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3812,7 +3989,10 @@
                 44.0,
                 16.0
               ],
-              "id": "0f624ef4-18c1-4aaa-bc95-74bf89feab24",
+              "id": "52455a78-7ff6-4713-a8ab-9e3d14a5c68e",
+              "is_trigger": false,
+              "layer": 1,
+              "mask": 4294967295,
               "offset": [
                 0.0,
                 0.0
@@ -3829,7 +4009,7 @@
                 1.0,
                 1.0
               ],
-              "id": "417f54f4-3576-477a-8b63-265112ea1a42",
+              "id": "47298bf4-b918-49fe-a832-4995e4266907",
               "layer": 0,
               "size": [
                 88.0,
@@ -3845,7 +4025,7 @@
               ]
             }
           ],
-          "id": "d0bea305-e99d-4763-97f8-89d8bb87ed06",
+          "id": "fec8bb99-0618-413c-9d0a-9b080a9b1839",
           "name": "Brick",
           "transform": {
             "position": [
@@ -3868,7 +4048,7 @@
         }
       ],
       "components": [],
-      "id": "cf20de82-2f75-4f1a-8f91-405168a2df4c",
+      "id": "176a87d7-43d3-433c-974c-97608066d69f",
       "name": "Bricks",
       "transform": {
         "position": [
@@ -3896,7 +4076,7 @@
           "bus_name": "",
           "clip": "",
           "gain": 0.699999988079071,
-          "id": "3fce4539-23f9-472f-89b8-2af981d890a6",
+          "id": "e5780b0a-f28c-4ed0-8d48-af2d6dc28ae3",
           "loop": false,
           "max_distance": 20.0,
           "min_distance": 1.0,
@@ -3907,7 +4087,7 @@
           "type": "AudioSource"
         }
       ],
-      "id": "6cb100bb-4232-412f-930c-b0a490f660ae",
+      "id": "ff3a0020-bf70-4631-82fb-bcfff4265a45",
       "name": "BrickAudio",
       "transform": {
         "position": [
@@ -3947,7 +4127,7 @@
               "gap": 0.0,
               "height_mode": 2,
               "height_value": 0.0,
-              "id": "a9c22d35-c918-44b8-b95a-da542dd30bcf",
+              "id": "e033e89e-0d81-4193-9c8e-01c7dc590aea",
               "interactable": true,
               "justify": 0,
               "layer": 0,
@@ -3996,7 +4176,7 @@
               "width_value": 0.0
             }
           ],
-          "id": "233f7531-bb14-4c76-af44-5027abc010aa",
+          "id": "673d433e-8bd2-47e6-a783-0e923d477e22",
           "name": "ScoreLabel",
           "transform": {
             "position": [
@@ -4034,7 +4214,7 @@
               "gap": 0.0,
               "height_mode": 2,
               "height_value": 0.0,
-              "id": "4e8c6773-075f-495f-93ae-6b29c27ed066",
+              "id": "f9782eff-ef53-4149-8aa3-5413ae3c7e3c",
               "interactable": true,
               "justify": 0,
               "layer": 0,
@@ -4083,7 +4263,7 @@
               "width_value": 0.0
             }
           ],
-          "id": "d1b763ec-40a8-4ff0-974a-1d75b0bd3d1e",
+          "id": "2dce7dd3-1dcb-4062-8a36-0b6053963a9b",
           "name": "LivesLabel",
           "transform": {
             "position": [
@@ -4110,7 +4290,7 @@
           "design_height": 1020.0,
           "design_width": 1596.0,
           "font": "font:examples/breakout/assets/fonts/hud.fefont",
-          "id": "edb84e9a-5a8e-4689-b71c-229e7b106e6b",
+          "id": "76c65110-4cf7-46b2-9090-c972c7481519",
           "layer": 10,
           "padding": [
             0.0,
@@ -4124,8 +4304,398 @@
           "visible": true
         }
       ],
-      "id": "ba305349-67fb-40ad-b7a0-3aac169d7fe9",
+      "id": "b345905d-2950-40f0-a15b-73a3ac698f2d",
       "name": "HudCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 4,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "0e6ed56c-44da-4966-888d-73daacd29a16",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "text": "BREAKOUT",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "3eb3b8e7-a393-4215-b6c2-cab946522649",
+          "name": "TitleLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 1020.0,
+          "design_width": 1596.0,
+          "font": "font:examples/breakout/assets/fonts/hud.fefont",
+          "id": "46d8ec1b-6b12-43b1-a953-6212cc1c92ff",
+          "layer": 20,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 72.0,
+          "type": "UiCanvas",
+          "visible": false
+        }
+      ],
+      "id": "15d53b0c-c235-44f9-93df-f6e54bbfc99a",
+      "name": "TitleCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 4,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "f92bcdc0-7d43-4aef-8b99-4cc794b98406",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "text": "PAUSED",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "d865106e-7ac3-4f1a-a4b7-dd6ec482302a",
+          "name": "PauseLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 1020.0,
+          "design_width": 1596.0,
+          "font": "font:examples/breakout/assets/fonts/hud.fefont",
+          "id": "6b6e6966-0ea2-4ab4-9037-cf0abca2e605",
+          "layer": 20,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 72.0,
+          "type": "UiCanvas",
+          "visible": false
+        }
+      ],
+      "id": "c1f854f9-8eea-4287-9cc6-d38e9326a7ff",
+      "name": "PauseCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 4,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "a396059d-1bd2-44e7-9852-fc63c90d6435",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "text": "GAME OVER",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "445665f5-84ea-4f78-98b9-47223f7b5346",
+          "name": "GameOverLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 1020.0,
+          "design_width": 1596.0,
+          "font": "font:examples/breakout/assets/fonts/hud.fefont",
+          "id": "2a9c5774-401a-4ce6-bc35-945b97c01b39",
+          "layer": 20,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 72.0,
+          "type": "UiCanvas",
+          "visible": false
+        }
+      ],
+      "id": "2c873fa2-cda4-4bde-bb2c-47bd35ba0a06",
+      "name": "GameOverCanvas",
       "transform": {
         "position": [
           0.0,

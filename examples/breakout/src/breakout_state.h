@@ -85,6 +85,15 @@ inline constexpr fe::f32 kHudTopY = kFieldHalfHeight - kHudMargin;
 inline constexpr fe::f32 kHudLeftX = -kFieldHalfWidth + kHudMargin;
 inline constexpr fe::f32 kHudRightX = kFieldHalfWidth - kHudMargin;
 
+// The menu text (title, pause, game over). Larger than the HUD counters, because
+// a menu line is the only thing on its screen and should read at a glance.
+inline constexpr fe::f32 kMenuTextSize = 72.0f;
+
+// The menu strings, authored in one place next to the layout they belong to.
+inline constexpr const char* kTitleText = "BREAKOUT";
+inline constexpr const char* kPauseText = "PAUSED";
+inline constexpr const char* kGameOverText = "GAME OVER";
+
 } // namespace config
 
 // The score, the lives, and the win/lose transition.
@@ -94,12 +103,36 @@ inline constexpr fe::f32 kHudRightX = kFieldHalfWidth - kHudMargin;
 // transition is guarded: a brick hit after the game is over, or a second miss on
 // the last life, cannot corrupt the score or flip a finished result. Those
 // guards are what the unit tests pin down.
+//
+// It also owns the *screen* the game is on (docs/SHIPPING_QUEUE.md,
+// `slice-title-and-menus`), which is the phase the presentation is in rather
+// than the outcome: a game opens on a title, runs while playing, can be paused,
+// and ends on a game-over screen that leads back to the title. Keeping the
+// screen here rather than in the systems means the flow title -> play -> game
+// over -> title is one testable object with no scene and no engine, exactly as
+// the rules are.
+//
+// A freshly constructed state is *playing*: the rules object has no opinion
+// about presentation, and a headless autoplay run (and every unit test) drives a
+// live game with no menu. The application is what puts a fresh game on the title
+// with show_title(), which is the one place the flow is a choice.
 class BreakoutState {
 public:
     enum class Result {
         Playing,
         Won,
         Lost,
+    };
+
+    // Which screen the game is showing. This is the presentation phase, distinct
+    // from Result: the game is over (Result != Playing) exactly when the screen
+    // is GameOver, but a game that is on the Title or Paused is still "playing"
+    // in the rules sense until it is won or lost.
+    enum class Screen {
+        Title,    // the game has not started; the field sits idle behind the title
+        Playing,  // the ball is live and the paddle responds
+        Paused,   // the player stopped the clock; the field is frozen
+        GameOver, // the game ended; the result is shown and a press returns to title
     };
 
     explicit BreakoutState(int brick_count = config::kBrickCount, int lives = config::kStartingLives) noexcept;
@@ -114,9 +147,46 @@ public:
     [[nodiscard]] bool is_over() const noexcept { return result_ != Result::Playing; }
     [[nodiscard]] bool won() const noexcept { return result_ == Result::Won; }
 
+    // The screen the game is on, and the questions a system asks about it. A
+    // gameplay system runs only while `is_playing()`; the menu system drives the
+    // transitions between the rest.
+    [[nodiscard]] Screen screen() const noexcept { return screen_; }
+    [[nodiscard]] bool is_title() const noexcept { return screen_ == Screen::Title; }
+    [[nodiscard]] bool is_playing() const noexcept { return screen_ == Screen::Playing; }
+    [[nodiscard]] bool is_paused() const noexcept { return screen_ == Screen::Paused; }
+
     // A short, stable label for the result, used in the machine-checkable log
     // line ("result=win"). Stable so a CI grep can rely on it.
     [[nodiscard]] const char* result_name() const noexcept;
+
+    // A short, stable label for the screen ("title", "playing", "paused",
+    // "gameover"), for the same machine-checkable log line.
+    [[nodiscard]] const char* screen_name() const noexcept;
+
+    // Starts a fresh game from the title (or the game-over screen): the field is
+    // reset and the screen becomes Playing. This is the "press to play" edge.
+    void start_game() noexcept;
+
+    // Returns to the title from any screen, resetting the field so the title
+    // shows a fresh board. The flow's last step: game over -> title.
+    void return_to_title() noexcept;
+
+    // Puts the game on the title *without* requesting a rebuild, for the one
+    // caller that already has a fresh board: the application before its first
+    // frame. A menu transition uses return_to_title() instead, which rebuilds.
+    void show_title() noexcept;
+
+    // Pauses and resumes a live game. Both are no-ops unless the game is on the
+    // screen they act on, so a stray press cannot pause the title or resume a
+    // finished game.
+    void pause() noexcept;
+    void resume() noexcept;
+
+    // Reconciles the screen with the rules after a transition that ends the game
+    // (a brick hit that wins, a missed ball that loses). A system calls it after
+    // touching the rules so the presentation follows them; the screen becomes
+    // GameOver exactly when the result stops being Playing.
+    void sync_screen() noexcept;
 
     // --- Transitions -------------------------------------------------------
     // Records that one brick broke: one fewer brick, `kPointsPerBrick` more
@@ -157,6 +227,7 @@ private:
     int starting_lives_ = 0;
     int paddle_hits_ = 0;
     Result result_ = Result::Playing;
+    Screen screen_ = Screen::Playing;
     bool restart_requested_ = false;
 };
 
