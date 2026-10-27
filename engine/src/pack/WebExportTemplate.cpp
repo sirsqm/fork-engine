@@ -52,7 +52,9 @@ std::string web_index_html(const ExportManifest& manifest) {
     // which is what a full-bleed game wants; `user-scalable=no` stops a
     // double-tap from zooming the page out from under the game; `touch-action:
     // none` on the canvas stops the browser from claiming a drag as a scroll or a
-    // pinch before the game sees it.
+    // pinch before the game sees it. The safe-area insets are read back from CSS
+    // and handed to the runtime, so interactive regions stay off the notch
+    // (`mobile-safe-area`).
     std::string html;
     html += "<!DOCTYPE html>\n";
     html += "<html lang=\"en\">\n";
@@ -120,12 +122,53 @@ std::string web_shell_js() {
     js += "  console.error('fork_shell: ' + message);\n";
     js += "}\n";
     js += "\n";
+    // The safe-area insets, read from the environment variables the page's
+    // `viewport-fit=cover` makes meaningful. A notch, a rounded corner and a home
+    // indicator each shrink the usable area, and an interactive region that
+    // ignores them sits under the system UI where a thumb cannot reach it.
+    // Reading them here keeps the DOM knowledge in the shell; the runtime only
+    // ever sees four numbers (docs/SHIPPING_QUEUE.md, `mobile-safe-area`).
+    //
+    // The values are returned as normalised fractions of the viewport, the same
+    // units a touch region is written in, because `env()` reports CSS pixels and
+    // the runtime's regions are fractions. Converting here keeps the one unit
+    // conversion at the boundary that measures it, so a region and an inset can
+    // be compared without either knowing the window size.
+    //
+    // `getComputedStyle` on a probe element is how a CSS `env()` value is read
+    // from script: there is no direct API, and `env()` is only resolvable in a
+    // declaration, so the value is read back out of a resolved custom property.
+    // A browser that does not support `env()` (or a desktop one, where the
+    // insets are all zero) yields 0 for every edge, which is the correct answer
+    // there and needs no branch.
+    js += "function safeAreaInsets() {\n";
+    js += "  const probe = document.createElement('div');\n";
+    js += "  probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;' +\n";
+    js += "    'padding-top:env(safe-area-inset-top,0px);padding-right:env(safe-area-inset-right,0px);' +\n";
+    js += "    'padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);';\n";
+    js += "  document.body.appendChild(probe);\n";
+    js += "  const style = getComputedStyle(probe);\n";
+    js += "  const read = (name) => parseFloat(style.getPropertyValue(name)) || 0;\n";
+    js += "  const w = window.innerWidth || 1;\n";
+    js += "  const h = window.innerHeight || 1;\n";
+    js += "  const insets = {\n";
+    js += "    top: read('padding-top') / h,\n";
+    js += "    right: read('padding-right') / w,\n";
+    js += "    bottom: read('padding-bottom') / h,\n";
+    js += "    left: read('padding-left') / w,\n";
+    js += "  };\n";
+    js += "  probe.remove();\n";
+    js += "  return insets;\n";
+    js += "}\n";
+    js += "\n";
     // The page's own layout measurement, written into the hidden `#layout`
     // element so an automated check can read it out of a DOM dump. It proves the
-    // canvas fills the window: a phone-sized window must not letterbox or scroll.
+    // canvas fills the window (a phone-sized window must not letterbox or
+    // scroll) and records the insets the runtime was given, which is the one
+    // thing a headless browser cannot otherwise observe about the shell.
     // `fullbleed` is the canvas covering the window's whole CSS box; the
     // tolerance absorbs a sub-pixel layout rounding, not a real gap.
-    js += "function reportLayout() {\n";
+    js += "function reportLayout(insets) {\n";
     js += "  const canvas = document.getElementById(CANVAS_ID);\n";
     js += "  const rect = canvas.getBoundingClientRect();\n";
     js += "  const w = window.innerWidth;\n";
@@ -134,7 +177,8 @@ std::string web_shell_js() {
     js += "  const element = document.getElementById('layout');\n";
     js += "  if (element) {\n";
     js += "    element.textContent = 'FE_SHELL_LAYOUT canvas=' + Math.round(rect.width) + 'x' +\n";
-    js += "      Math.round(rect.height) + ' window=' + w + 'x' + h + ' fullbleed=' + (fullbleed ? 1 : 0);\n";
+    js += "      Math.round(rect.height) + ' window=' + w + 'x' + h + ' fullbleed=' + (fullbleed ? 1 : 0) +\n";
+    js += "      ' safearea=' + insets.top + ',' + insets.right + ',' + insets.bottom + ',' + insets.left;\n";
     js += "  }\n";
     js += "}\n";
     js += "\n";
@@ -172,7 +216,18 @@ std::string web_shell_js() {
     js += "  if (manifest.bindings) {\n";
     js += "    runtimeArguments.push('--bindings', manifest.bindings);\n";
     js += "  }\n";
-    js += "  reportLayout();\n";
+    // The safe-area insets, measured above from CSS env() and handed to the
+    // runtime as normalised fractions, so a declared touch region is offset off a
+    // notch or a home indicator (docs/SHIPPING_QUEUE.md, `mobile-safe-area`). Passed only
+    // when the page actually reserves something, so a desktop page's argv is what
+    // it was before insets existed.
+    js += "  const insets = safeAreaInsets();\n";
+    js += "  const insets_sum = insets.top + insets.right + insets.bottom + insets.left;\n";
+    js += "  if (insets_sum > 0) {\n";
+    js += "    runtimeArguments.push('--safe-area', insets.top + ',' + insets.right + ',' +\n";
+    js += "      insets.bottom + ',' + insets.left);\n";
+    js += "  }\n";
+    js += "  reportLayout(insets);\n";
     js += "  const frames = new URLSearchParams(location.search).get('frames');\n";
     js += "  if (frames && /^[0-9]+$/.test(frames)) {\n";
     js += "    runtimeArguments.push('--frames', frames);\n";

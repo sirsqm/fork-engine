@@ -185,6 +185,72 @@ TEST_CASE("a degenerate viewport does not trigger touch regions") {
     CHECK_FALSE(actions.is_down(jump));
 }
 
+TEST_CASE("safe-area insets keep a region off the OS-reserved bands") {
+    // The acceptance test for `mobile-safe-area`: a region declared as the left
+    // third of the usable area stays reachable on a phone whose notch and home
+    // indicator reserve a band, and a touch in that band fires nothing.
+    ActionMap actions;
+    const auto move_left = actions.add("MoveLeft");
+    actions.bind_touch_region(move_left, 0.0f, 0.0f, 1.0f / 3.0f, 1.0f);
+
+    // A 5% band on every edge, as the web shell reports from env().
+    actions.set_safe_area_insets(0.05f, 0.05f, 0.05f, 0.05f);
+    CHECK(actions.safe_area_top() == doctest::Approx(0.05f));
+    CHECK(actions.safe_area_left() == doctest::Approx(0.05f));
+
+    SUBCASE("a touch in the top reserved band fires nothing") {
+        // y = 0.02 is inside the top band, so it is not in the usable area and
+        // no region can match it.
+        InputState input;
+        input.on_touch(TouchPhase::Began, 1, 0.15f * kViewport.x, 0.02f * kViewport.y);
+        actions.update(input, kViewport);
+        CHECK_FALSE(actions.is_down(move_left));
+    }
+
+    SUBCASE("the usable area's own left third still fires") {
+        // x = 0.2 of the window is 0.15 into the 0.9-wide usable area, which is
+        // inside the left third of it.
+        InputState input;
+        input.on_touch(TouchPhase::Began, 1, 0.20f * kViewport.x, 0.5f * kViewport.y);
+        actions.update(input, kViewport);
+        CHECK(actions.is_down(move_left));
+    }
+
+    SUBCASE("all-zero insets are the identity mapping") {
+        actions.set_safe_area_insets(0.0f, 0.0f, 0.0f, 0.0f);
+        // x = 0.2 is inside the left third of the whole viewport, which is where
+        // it was before any inset existed.
+        InputState input;
+        input.on_touch(TouchPhase::Began, 1, 0.2f * kViewport.x, 0.5f * kViewport.y);
+        actions.update(input, kViewport);
+        CHECK(actions.is_down(move_left));
+    }
+}
+
+TEST_CASE("safe-area insets are clamped so the usable area is never empty") {
+    // A shell that reported insets summing to the whole viewport must not make
+    // the usable area zero-sized, which would divide by zero and could report a
+    // spurious action.
+    ActionMap actions;
+    const auto jump = actions.add("Jump");
+    actions.bind_touch_region(jump, 0.0f, 0.0f, 1.0f, 1.0f);
+
+    // Nonsense that sums past the viewport on both axes, plus a negative.
+    actions.set_safe_area_insets(2.0f, 2.0f, 2.0f, -1.0f);
+    CHECK(actions.safe_area_top() >= 0.0f);
+    CHECK(actions.safe_area_top() <= 1.0f);
+    CHECK(actions.safe_area_left() >= 0.0f);
+    CHECK(actions.safe_area_top() + actions.safe_area_bottom() <= 1.0f);
+    CHECK(actions.safe_area_left() + actions.safe_area_right() <= 1.0f);
+
+    InputState input;
+    input.on_touch(TouchPhase::Began, 1, 0.5f * kViewport.x, 0.5f * kViewport.y);
+    actions.update(input, kViewport);
+    // The middle of the screen is inside a full-viewport region whatever the
+    // clamping did.
+    CHECK(actions.is_down(jump));
+}
+
 TEST_CASE("an unknown action handle fails safe") {
     ActionMap actions;
     const auto known = actions.add("Known");

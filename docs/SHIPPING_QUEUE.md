@@ -299,10 +299,22 @@ Chromium cannot grant fullscreen to a synthetic event.
 ### `mobile-safe-area`
 
 Notches and home indicators cover a full-bleed canvas. Keep interactive regions
-inside the safe area.
+inside the safe area. Shipped as a normalised seam on `ActionMap`:
+`set_safe_area_insets` takes four fractions of the viewport, and the insets
+*shrink the space a region is measured in* rather than being subtracted from
+each region, so one declared layout stays valid on a notched and an unnotched
+phone alike. The shell reads CSS `env(safe-area-inset-*)`, converts the pixels
+to fractions at the boundary that measured them, and passes them as the
+`--safe-area` flag; the player forwards them
+([ADR-0093](adr/0093-safe-area-insets-seam.md)).
 
 **Done when** the shell reads the safe-area insets and a test proves a declared
-region is offset by them.
+region is offset by them. Both hold: unit tests drive a touch into a reserved
+band (fires nothing) and into the usable area's own edge (fires), and a nonsense
+report is asserted to fall back to the identity mapping; the web game check
+prints the value the runtime was given. The insets are always zero in a desktop
+headless browser, so the behaviour is proved by the unit tests and the plumbing
+by the browser.
 
 ### `android-window-backend`
 

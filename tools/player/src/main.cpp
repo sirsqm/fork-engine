@@ -108,6 +108,15 @@ struct Options {
     // that declares its own regions aims it where only its document covers.
     fe::f32 probe_touch_x = 0.1f;
     fe::f32 probe_touch_y = 0.6f;
+    // The OS-reserved bands of the screen, as normalised fractions of the
+    // viewport, in top,right,bottom,left order. The web shell measures them from
+    // CSS `env(safe-area-inset-*)` and passes them here, because only the page
+    // can read them and only the engine can apply them to touch regions
+    // (docs/SHIPPING_QUEUE.md, `mobile-safe-area`). All zero on every other target.
+    fe::f32 safe_top = 0.0f;
+    fe::f32 safe_right = 0.0f;
+    fe::f32 safe_bottom = 0.0f;
+    fe::f32 safe_left = 0.0f;
     // A fixed simulation step in seconds, or 0 to step by the measured frame
     // time. The input probe pins it, so the distance it measures is a property of
     // the input and the behaviour rather than of how fast the browser happened to
@@ -213,6 +222,20 @@ protected:
             bindings.value().apply(actions());
             FE_LOG_INFO("fork_player: applied %llu declared action(s) from '%s'",
                         static_cast<unsigned long long>(bindings.value().actions.size()), options_.bindings.c_str());
+        }
+
+        // The OS-reserved screen bands, measured by the web shell and handed
+        // down as normalised fractions. Applied after the bindings so they
+        // constrain every declared region, the game's own and the built-ins'
+        // alike. Zero on every other target, which is the identity mapping
+        // (docs/SHIPPING_QUEUE.md, `mobile-safe-area`).
+        actions().set_safe_area_insets(options_.safe_top, options_.safe_right, options_.safe_bottom,
+                                       options_.safe_left);
+        if (options_.safe_top > 0.0f || options_.safe_right > 0.0f || options_.safe_bottom > 0.0f ||
+            options_.safe_left > 0.0f) {
+            FE_LOG_INFO("fork_player: safe-area insets t=%.3f r=%.3f b=%.3f l=%.3f",
+                        static_cast<double>(options_.safe_top), static_cast<double>(options_.safe_right),
+                        static_cast<double>(options_.safe_bottom), static_cast<double>(options_.safe_left));
         }
 
         // The gameplay modules named on the command line. Each registers the
@@ -597,6 +620,9 @@ void print_usage() {
               "  --probe-touch-at X,Y  (web) where the synthetic touch lands, normalised\n"
               "                  (default 0.1,0.6, inside the built-in walk pad)\n"
               "  --probe-node N  the node the input probe watches (default: Camera)\n"
+              "  --safe-area T,R,B,L  (web) OS-reserved screen bands as normalised\n"
+              "                  fractions, so touch regions stay off a notch or a home\n"
+              "                  indicator; the shell reads them from env(safe-area-inset-*)\n"
               "  --headless N    run N frames with no window\n"
               "  --render        run the render path against the null RHI device\n"
               "  --verbose       log at debug level\n"
@@ -646,6 +672,42 @@ void print_usage() {
             out.probe_touch_y = static_cast<fe::f32>(std::strtod(value.substr(comma + 1).c_str(), nullptr));
         } else if (arg == "--probe-node" && has_value) {
             out.probe_node = argv[++i];
+        } else if (arg == "--safe-area" && has_value) {
+            // "t,r,b,l" as normalised fractions. The web shell measures these
+            // from CSS env() and passes them through, so a phone's notch and home
+            // indicator push interactive regions inward instead of sitting under
+            // the system UI. Malformed input is refused rather than guessed: a
+            // silently ignored inset would put a control where a thumb cannot
+            // reach it, which is the bug this option exists to prevent.
+            const std::string value = argv[++i];
+            fe::f32 parsed[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            int field = 0;
+            bool ok = true;
+            std::size_t start = 0;
+            while (field < 4) {
+                const std::size_t comma = value.find(',', start);
+                const std::string piece =
+                    comma == std::string::npos ? value.substr(start) : value.substr(start, comma - start);
+                char* end = nullptr;
+                parsed[field] = static_cast<fe::f32>(std::strtod(piece.c_str(), &end));
+                if (piece.empty() || end == piece.c_str() || *end != '\0') {
+                    ok = false;
+                    break;
+                }
+                ++field;
+                if (comma == std::string::npos) {
+                    break;
+                }
+                start = comma + 1;
+            }
+            if (!ok || field != 4) {
+                std::fprintf(stderr, "fork_player: --safe-area wants 'top,right,bottom,left' in 0..1\n");
+                return false;
+            }
+            out.safe_top = parsed[0];
+            out.safe_right = parsed[1];
+            out.safe_bottom = parsed[2];
+            out.safe_left = parsed[3];
         } else if (arg == "--fixed-step" && has_value) {
             out.fixed_step = static_cast<fe::f32>(std::strtod(argv[++i], nullptr));
         } else if (arg == "--headless" && has_value) {

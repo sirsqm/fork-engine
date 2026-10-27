@@ -66,6 +66,30 @@ public:
 
     // --- Per-frame evaluation ----------------------------------------------
 
+    // Keeps interactive touch regions off the parts of the screen the OS owns: a
+    // notch, a rounded corner, a home indicator. The four values are normalised
+    // fractions of the viewport (0..1) reserved on each edge, so they are the
+    // same units the regions are written in and survive a resize the way a region
+    // does. They are measured from CSS `env(safe-area-inset-*)` by the web shell,
+    // which is the only layer that can read them, and handed down as numbers
+    // (docs/SHIPPING_QUEUE.md, `mobile-safe-area`).
+    //
+    // The insets *shrink the space a region is measured in* rather than being
+    // subtracted from each region: a region written `[0, 0, 0.34, 1.0]` means "the
+    // left third of the usable area", which is what an author means and what
+    // keeps a layout valid on a notched and an unnotched phone alike. A touch in
+    // the reserved band is outside every region, so a stray palm on the home
+    // indicator fires nothing.
+    //
+    // All-zero (the default, and what every non-mobile backend reports) is the
+    // identity mapping, so a desktop build is unaffected.
+    void set_safe_area_insets(f32 top, f32 right, f32 bottom, f32 left);
+
+    [[nodiscard]] f32 safe_area_top() const noexcept { return safe_top_; }
+    [[nodiscard]] f32 safe_area_right() const noexcept { return safe_right_; }
+    [[nodiscard]] f32 safe_area_bottom() const noexcept { return safe_bottom_; }
+    [[nodiscard]] f32 safe_area_left() const noexcept { return safe_left_; }
+
     // Recomputes every action from `input`'s snapshot. `viewport` is the drawing
     // size in the same pixels as InputState's positions and is what a touch
     // position is normalised against. Call once per frame, after
@@ -104,6 +128,13 @@ private:
     std::vector<KeyBinding> keys_;
     std::vector<ButtonBinding> buttons_;
     std::vector<TouchRegion> touch_regions_;
+
+    // Normalised fractions of the viewport reserved on each edge for the OS's own
+    // chrome. Zero on every backend that is not a phone.
+    f32 safe_top_ = 0.0f;
+    f32 safe_right_ = 0.0f;
+    f32 safe_bottom_ = 0.0f;
+    f32 safe_left_ = 0.0f;
 
     // Indexed by Id - 1. Empty until the first update().
     std::vector<bool> down_;

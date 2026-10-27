@@ -3,6 +3,7 @@
 #include "fe/platform/InputActions.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace fe {
 namespace {
@@ -74,6 +75,30 @@ void ActionMap::clear_touch_regions(Id action) {
     std::erase_if(touch_regions_, [action](const TouchRegion& region) { return region.action == action; });
 }
 
+void ActionMap::set_safe_area_insets(f32 top, f32 right, f32 bottom, f32 left) {
+    // Each inset is clamped to [0, 1]. A pair that would reserve the whole axis
+    // is then treated as no inset at all: a report that leaves nothing usable is
+    // far more likely a broken measurement than a real 100%-reserved screen, and
+    // the two failure modes are not equal - ignoring it keeps the game playable,
+    // while honouring it makes the whole axis dead. Falling back to zero also
+    // keeps the usable area strictly positive, so the normalised division in
+    // update() can never be by zero.
+    const auto resolve_axis = [](f32 a, f32 b) -> std::pair<f32, f32> {
+        const f32 first = std::clamp(a, 0.0f, 1.0f);
+        const f32 second = std::clamp(b, 0.0f, 1.0f);
+        if (first + second >= 1.0f) {
+            return {0.0f, 0.0f};
+        }
+        return {first, second};
+    };
+    const auto [clamped_top, clamped_bottom] = resolve_axis(top, bottom);
+    const auto [clamped_left, clamped_right] = resolve_axis(left, right);
+    safe_top_ = clamped_top;
+    safe_bottom_ = clamped_bottom;
+    safe_left_ = clamped_left;
+    safe_right_ = clamped_right;
+}
+
 void ActionMap::update(const InputState& input, Vec2 viewport) {
     const usize count = names_.size();
     // Preserve the previous frame's `down` so the edges can be derived; the
@@ -100,7 +125,15 @@ void ActionMap::update(const InputState& input, Vec2 viewport) {
     // the same contact overlapping two regions is the game's choice to make).
     // Positions are normalised against the viewport, with a non-positive
     // dimension treated as unknown so a zero-sized canvas cannot divide by zero.
-    if (viewport.x > 0.0f && viewport.y > 0.0f) {
+    //
+    // The point is then remapped out of the OS-reserved bands and into the
+    // usable area, which is the space regions are written in. The mapping is
+    // affine and per-axis: a point in the left inset maps to the usable area's
+    // left edge, and a point outside the usable area (in the inset itself) maps
+    // outside 0..1, so it matches no region - which is the point of an inset.
+    const f32 usable_width = 1.0f - safe_left_ - safe_right_;
+    const f32 usable_height = 1.0f - safe_top_ - safe_bottom_;
+    if (viewport.x > 0.0f && viewport.y > 0.0f && usable_width > 0.0f && usable_height > 0.0f) {
         const usize contacts = input.touch_count();
         for (usize i = 0; i < contacts; ++i) {
             const u32 id = input.touch_id_at(i);
@@ -108,8 +141,8 @@ void ActionMap::update(const InputState& input, Vec2 viewport) {
                 continue;
             }
             const Vec2 position = input.touch_position(id);
-            const f32 nx = position.x / viewport.x;
-            const f32 ny = position.y / viewport.y;
+            const f32 nx = (position.x / viewport.x - safe_left_) / usable_width;
+            const f32 ny = (position.y / viewport.y - safe_top_) / usable_height;
             for (const TouchRegion& region : touch_regions_) {
                 if (inside_region(nx, ny, region.x0, region.y0, region.x1, region.y1)) {
                     down_[region.action - 1] = true;

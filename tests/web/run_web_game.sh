@@ -297,7 +297,8 @@ PY
   # The phone check: the shell's canvas must fill a phone-sized window exactly, or
   # the game is letterboxed or scrollable on the device this phase targets. The
   # shell reports its own measurement into the hidden `#layout` element, which the
-  # dump carries (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`).
+  # dump carries; the insets it recorded are printed so a run shows what the
+  # runtime was told (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`).
   local layout_note=""
   if [[ -n "${window_size}" ]]; then
     local layout_line

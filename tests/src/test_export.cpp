@@ -282,10 +282,19 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
     CHECK(html.find("touch-action: none") != std::string::npos);
 
     // The shell reports its own layout so the headless check can prove the canvas
-    // fills a phone-sized window rather than trusting the stylesheet alone.
+    // fills a phone-sized window, and reads the safe-area insets from CSS.
     const std::string js = web_shell_js();
     CHECK(js.find("FE_SHELL_LAYOUT") != std::string::npos);
-
+    CHECK(js.find("env(safe-area-inset-top") != std::string::npos);
+    // The insets reach the runtime as the direct-form flag, and the flag exists on
+    // the player. A shell that measured them and never passed them would be the
+    // same silent failure as the bindings drop this queue started from.
+    CHECK(js.find("'--safe-area'") != std::string::npos);
+    // `env()` reports CSS pixels but a touch region is a fraction of the
+    // viewport, so the shell must divide before it passes them down. A raw pixel
+    // value would be read as a fraction and could clamp the whole axis away.
+    CHECK(js.find("/ h") != std::string::npos);
+    CHECK(js.find("/ w") != std::string::npos);
     // A phone game wants the whole screen, so the shell asks for fullscreen from
     // the first touch and swallows a refusal: a browser that declines leaves the
     // game playable, so a rejection must not surface as an error.
