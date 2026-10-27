@@ -29,14 +29,15 @@ papered over in the game.
 The code is split three ways on purpose.
 
 - **`breakout_state.h/.cpp` — the rules.** Pure C++ with no engine dependency:
-  score, lives, bricks, win/lose. Because it has no dependency it is unit-tested
-  directly, and the numbers are asserted by hand.
+  score, lives, bricks, level, win/lose. Because it has no dependency it is
+  unit-tested directly, and the numbers are asserted by hand.
 - **`breakout_scene.h/.cpp` — the field and the wiring.** Builds the canonical
   layout and installs the systems. This is the single source of truth: the
   serialized scene file is a dump of exactly this, so the file path, the
   code-built fallback, and the tests cannot drift apart.
 - **`main.cpp` — the application shell.** Loads or builds the scene, opens the
-  audio device, drives the loop, and logs a machine-checkable result.
+  audio device, drives the loop, rebuilds the field when the rules ask (a
+  restart or a level clear), and logs a machine-checkable result.
 
 The systems, in order (`ADR-0008`):
 
@@ -70,6 +71,11 @@ Controls: Left/Right or A/D move the paddle, Space/Enter starts a game and
 launches the ball, P pauses and resumes, R restarts, Escape quits. The game opens
 on a title screen; the same keys (or a tap in the middle of the screen) leave it
 and continue after a game over.
+
+Clear a board and the level advances: the bricks come back and the ball is
+launched a little faster, so each level is harder than the last. There are three
+levels; clearing the third wins. The HUD shows the level between the score and
+the lives.
 
 Headless (no window, autoplay drives the ball, exits on win/lose or after N
 frames):

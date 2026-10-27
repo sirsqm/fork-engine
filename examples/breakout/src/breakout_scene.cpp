@@ -219,6 +219,10 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
                   fe::ui::UiAlign::Start);
     add_hud_label(hud, names::kLivesLabel, fe::ui::UiAnchor::TopRight, fe::Vec2{-cfg::kHudMargin, cfg::kHudMargin},
                   fe::ui::UiAlign::End);
+    // The level sits between them, so the three readouts never overlap and a
+    // cleared board is visible the moment it happens.
+    add_hud_label(hud, names::kLevelLabel, fe::ui::UiAnchor::TopCenter, fe::Vec2{0.0f, cfg::kHudMargin},
+                  fe::ui::UiAlign::Center);
 
     // The menu screens (docs/SHIPPING_QUEUE.md, `slice-title-and-menus`): a title,
     // a pause, and a game-over canvas, each hidden until MenuSystem shows it.

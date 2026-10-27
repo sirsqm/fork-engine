@@ -122,8 +122,12 @@ void BallLaunchSystem::update(const fe::FrameContext& context, fe::Scene& scene)
         return;
     }
 
-    body->velocity = fe::Vec2{std::sin(config::kLaunchAngle) * config::kLaunchSpeed,
-                              std::cos(config::kLaunchAngle) * config::kLaunchSpeed};
+    // The level's speed, so a launch after a clear serves a faster ball. The rules
+    // own the number; the fallback covers a schedule built with no state, which
+    // keeps playing at the authored speed.
+    const fe::f32 launch_speed = state_ != nullptr ? state_->launch_speed() : config::kLaunchSpeed;
+    body->velocity =
+        fe::Vec2{std::sin(config::kLaunchAngle) * launch_speed, std::cos(config::kLaunchAngle) * launch_speed};
     body->angular_velocity = 0.0f;
     body->wake();
 }
@@ -210,7 +214,10 @@ void BallContactSystem::update(const fe::FrameContext& /*context*/, fe::Scene& s
             (ball->transform().position.x - paddle->transform().position.x) / config::kPaddleHalfWidth;
         const fe::f32 clamped = std::clamp(offset, -1.0f, 1.0f);
         const fe::f32 angle = clamped * config::kMaxBounceAngle;
-        ball_body->velocity = fe::Vec2{std::sin(angle) * config::kLaunchSpeed, std::cos(angle) * config::kLaunchSpeed};
+        // Renormalised to the level's speed, not the authored one, so the aim
+        // cannot quietly undo the difficulty the level raised.
+        const fe::f32 speed = state_->launch_speed();
+        ball_body->velocity = fe::Vec2{std::sin(angle) * speed, std::cos(angle) * speed};
         ball_body->wake();
     }
 }
@@ -306,6 +313,11 @@ void HudSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
     if (fe::Node* node = scene.find_node_by_name(names::kLivesLabel); node != nullptr) {
         if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
             element->text = "LIVES " + std::to_string(state_->lives());
+        }
+    }
+    if (fe::Node* node = scene.find_node_by_name(names::kLevelLabel); node != nullptr) {
+        if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
+            element->text = "LEVEL " + std::to_string(state_->level()) + "/" + std::to_string(state_->level_count());
         }
     }
 

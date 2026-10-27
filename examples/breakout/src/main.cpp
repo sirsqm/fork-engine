@@ -168,6 +168,16 @@ protected:
             FE_LOG_INFO("breakout: restarted");
         }
 
+        // A cleared board advances the level: the rules have already kept the
+        // score and the lives and raised the ball's speed, so only the bricks the
+        // last level broke need to come back. Rebuilding the field is what brings
+        // them back; un-breaking them in place would be a second code path for the
+        // same "fresh board".
+        if (state_.consume_level_change()) {
+            rebuild();
+            FE_LOG_INFO("breakout: level %d of %d", state_.level(), state_.level_count());
+        }
+
         if (headless_ && state_.is_over()) {
             request_exit();
         }
@@ -236,14 +246,13 @@ private:
         source->clip = clip.value();
     }
 
-    // Rebuilds the field for a restart: clear the scene, build it again, reset
-    // the rules. Rebuilding keeps one code path for "a fresh field", shared with
-    // startup, rather than trying to un-break bricks.
+    // Rebuilds the field: clear the scene, build it again. It does not touch the
+    // rules, because each caller has already made the state transition it wants
+    // (a restart resets, a level advance keeps the score and the lives).
     void rebuild() {
         scene().clear();
         breakout::build_breakout_scene(scene(), load_assets(engine().resources()));
         attach_sound();
-        state_.reset();
     }
 
     breakout::BreakoutState state_{};

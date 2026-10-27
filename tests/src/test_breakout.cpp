@@ -89,23 +89,150 @@ TEST_CASE("breaking a brick scores and decrements the count") {
     CHECK(state.result() == breakout::BreakoutState::Result::Playing);
 }
 
-TEST_CASE("breaking the last brick wins") {
-    breakout::BreakoutState state(2, 3);
+TEST_CASE("breaking the last brick on the last level wins") {
+    // A one-level game: clearing the only board is the win, so the level
+    // progression does not hide the end state behind another board.
+    breakout::BreakoutState state(2, 3, /*level_count=*/1);
     state.brick_hit();
     CHECK_FALSE(state.is_over());
     state.brick_hit();
     CHECK(state.bricks_remaining() == 0);
-    CHECK(state.score() == 2 * breakout::config::kPointsPerBrick);
+    CHECK(state.score() == 2 * breakout::config::kPointsPerBrick + breakout::config::kLevelClearBonus);
     CHECK(state.won());
     CHECK(std::string(state.result_name()) == "win");
 }
 
 TEST_CASE("a brick broken after the win does not score") {
-    breakout::BreakoutState state(1, 3);
+    breakout::BreakoutState state(1, 3, /*level_count=*/1);
     state.brick_hit(); // wins
     state.brick_hit(); // ignored
     CHECK(state.bricks_remaining() == 0);
-    CHECK(state.score() == breakout::config::kPointsPerBrick);
+    CHECK(state.score() == breakout::config::kPointsPerBrick + breakout::config::kLevelClearBonus);
+}
+
+// ---------------------------------------------------------------------------
+// Levels: clearing a board advances and makes the ball faster
+// (docs/SHIPPING_QUEUE.md, `slice-scoring-and-progression`).
+// ---------------------------------------------------------------------------
+
+TEST_CASE("clearing a board advances the level and speeds the ball up") {
+    // The acceptance test for `slice-scoring-and-progression`: a clear must both
+    // advance the level and raise the difficulty, and both must be observable
+    // through the rules with no scene and no engine.
+    breakout::BreakoutState state(2, 3);
+    const fe::f32 level_one_speed = state.launch_speed();
+    CHECK(state.level() == 1);
+
+    state.brick_hit(); // one brick left
+    CHECK(state.level() == 1);
+    CHECK_FALSE(state.level_change_requested());
+
+    state.brick_hit(); // the board is clear: advance, do not win
+    CHECK_FALSE(state.is_over());
+    CHECK(state.level() == 2);
+    CHECK(state.bricks_remaining() == state.bricks_total());
+    CHECK(state.level_change_requested());
+    CHECK(state.consume_level_change());
+    CHECK_FALSE(state.level_change_requested());
+
+    // The difficulty rose: the ball is launched faster on the new level.
+    CHECK(state.launch_speed() > level_one_speed);
+}
+
+TEST_CASE("clearing the last board wins instead of advancing") {
+    breakout::BreakoutState state(1, 3, /*level_count=*/1);
+    state.brick_hit();
+    CHECK(state.is_over());
+    CHECK(state.won());
+    CHECK(state.level() == 1); // no level past the last one
+    CHECK_FALSE(state.level_change_requested());
+}
+
+TEST_CASE("the difficulty rises with the level and stays under the ceiling") {
+    // The lever is the ball's launch speed. It must rise with the level and never
+    // exceed the clamp, or a fast ball could step past a brick.
+    breakout::BreakoutState state(breakout::config::kBrickCount, 3, /*level_count=*/8);
+    fe::f32 previous = state.launch_speed();
+    CHECK(previous == breakout::config::kLaunchSpeed); // level 1 is the authored speed
+    for (int level = 2; level <= state.level_count(); ++level) {
+        for (int i = 0; i < state.bricks_total(); ++i) {
+            state.brick_hit();
+        }
+        state.consume_level_change();
+        CHECK(state.level() == level);
+        const fe::f32 speed = state.launch_speed();
+        CHECK(speed >= previous);
+        CHECK(speed <= breakout::config::kMaxBallSpeed);
+        previous = speed;
+    }
+    // Eight levels of the gain would pass the ceiling; the clamp holds it.
+    CHECK(state.launch_speed() == breakout::config::kMaxBallSpeed);
+}
+
+TEST_CASE("a restart clears the level back to the first") {
+    breakout::BreakoutState state(2, 3);
+    state.brick_hit();
+    state.brick_hit(); // clears the board, advances to level 2
+    state.consume_level_change();
+    REQUIRE(state.level() == 2);
+
+    state.start_game(); // R / a fresh game
+    CHECK(state.level() == 1);
+    CHECK(state.bricks_remaining() == state.bricks_total());
+}
+
+TEST_CASE("the HUD shows the level") {
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state(2, 3);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    Node* level_node = scene.find_node_by_name(breakout::names::kLevelLabel);
+    REQUIRE(level_node != nullptr);
+    auto* level_element = level_node->get_component<ui::UiElement>();
+    REQUIRE(level_element != nullptr);
+
+    schedule.update(step(1.0f / 60.0f), scene);
+    CHECK(level_element->text == "LEVEL 1/3");
+
+    state.brick_hit();
+    state.brick_hit(); // clears the board, advances
+    state.consume_level_change();
+    schedule.update(step(1.0f / 60.0f), scene);
+    CHECK(level_element->text == "LEVEL 2/3");
+}
+
+TEST_CASE("the rebuild handshake brings the bricks back for the next level") {
+    // The rules advance the level and request a rebuild; the application owns the
+    // scene and does it. This drives both halves in the order main.cpp does, so
+    // the handshake that ships is the one under test: clear the board, run a
+    // frame, and the field is back with the score and the lives kept.
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state; // the real board: kBrickCount bricks
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    for (int i = 0; i < breakout::config::kBrickCount; ++i) {
+        state.brick_hit(); // clears the board
+    }
+    schedule.update(step(1.0f / 60.0f), scene); // systems see the clear
+    REQUIRE(state.level_change_requested());
+    REQUIRE(state.level() == 2);
+    const int score_after_clear = state.score();
+
+    // What the application does when it consumes the request.
+    if (state.consume_level_change()) {
+        scene.clear();
+        breakout::build_breakout_scene(scene);
+    }
+
+    CHECK(count_bricks(scene) == breakout::config::kBrickCount);
+    CHECK(state.bricks_remaining() == breakout::config::kBrickCount);
+    CHECK(state.score() == score_after_clear); // the score carries over
+    CHECK(state.lives() == 3);
+    CHECK(state.launch_speed() > breakout::config::kLaunchSpeed); // and the ball is faster
 }
 
 TEST_CASE("missing the ball costs a life and the last one ends the game") {
@@ -384,7 +511,7 @@ TEST_CASE("the game-over screen says YOU WIN after a win") {
     Scene scene;
     breakout::build_breakout_scene(scene);
     SceneSchedule schedule;
-    breakout::BreakoutState state(1, 3);
+    breakout::BreakoutState state(1, 3, /*level_count=*/1);
     static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
 
     Node* game_over_node = scene.find_node_by_name(breakout::names::kGameOverLabel);

@@ -4283,6 +4283,93 @@
             ]
           },
           "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 1,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "b45442cf-bbe8-41dc-859a-6d859004b022",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                24.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "text": "",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "503d446b-ddda-45c0-bee5-f2ff01b9173a",
+          "name": "LevelLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
         }
       ],
       "components": [

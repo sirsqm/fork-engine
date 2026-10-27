@@ -61,6 +61,21 @@ inline constexpr fe::f32 kLaunchAngle = 0.38f; // radians off vertical
 inline constexpr fe::f32 kMinBallSpeed = 0.6f * kLaunchSpeed;
 inline constexpr fe::f32 kMaxBallSpeed = 1.4f * kLaunchSpeed;
 
+// Levels (`slice-scoring-and-progression`). The board is cleared once per level
+// and the difficulty rises with the level, so there is a reason to keep playing
+// after the first clear. The lever is the ball's speed: a faster ball leaves the
+// player less time to react, which is the difficulty a breakout player feels,
+// and it needs no new scene data — the layout is the same board at a higher
+// pace.
+//
+// The gain is a multiplier per level and the result is clamped to
+// `kMaxBallSpeed`, so the ball can never outrun the solver (a ball that moves
+// more than its own radius per step would tunnel through a brick). With the
+// shipped values the top level lands under the clamp.
+inline constexpr int kLevelCount = 3;
+inline constexpr fe::f32 kLevelSpeedGain = 0.15f; // +15% ball speed per level
+inline constexpr int kLevelClearBonus = 100;      // score for clearing a board
+
 // How far off vertical the ball can be sent by the paddle. A hit on the paddle's
 // centre sends the ball straight up; a hit on an edge sends it at this angle.
 // Without this the ball only ever mirrors its incoming angle off a flat paddle,
@@ -135,7 +150,8 @@ public:
         GameOver, // the game ended; the result is shown and a press returns to title
     };
 
-    explicit BreakoutState(int brick_count = config::kBrickCount, int lives = config::kStartingLives) noexcept;
+    explicit BreakoutState(int brick_count = config::kBrickCount, int lives = config::kStartingLives,
+                           int level_count = config::kLevelCount) noexcept;
 
     // --- Queries -----------------------------------------------------------
     [[nodiscard]] int score() const noexcept { return score_; }
@@ -146,6 +162,17 @@ public:
     [[nodiscard]] Result result() const noexcept { return result_; }
     [[nodiscard]] bool is_over() const noexcept { return result_ != Result::Playing; }
     [[nodiscard]] bool won() const noexcept { return result_ == Result::Won; }
+
+    // The level the player is on, 1-based, and the last one. Clearing the board on
+    // the last level is a win; clearing it earlier advances.
+    [[nodiscard]] int level() const noexcept { return level_; }
+    [[nodiscard]] int level_count() const noexcept { return level_count_; }
+
+    // The ball's launch speed at the current level. This is the difficulty: the
+    // speed rises with the level and is clamped, so every system that launches or
+    // re-aims the ball asks the rules for one number rather than reading the
+    // constant and inventing its own progression.
+    [[nodiscard]] fe::f32 launch_speed() const noexcept;
 
     // The screen the game is on, and the questions a system asks about it. A
     // gameplay system runs only while `is_playing()`; the menu system drives the
@@ -189,8 +216,10 @@ public:
     void sync_screen() noexcept;
 
     // --- Transitions -------------------------------------------------------
-    // Records that one brick broke: one fewer brick, `kPointsPerBrick` more
-    // score, and a win when that was the last one. A no-op once the game is over.
+    // Records that one brick broke: one fewer brick and `kPointsPerBrick` more
+    // score. Clearing the board adds `kLevelClearBonus`; on an earlier level it
+    // advances to the next one (a fresh board, a faster ball) and on the last it
+    // wins. A no-op once the game is over.
     void brick_hit() noexcept;
 
     // Records a paddle bounce. Counted for the log line only; it does not affect
@@ -213,6 +242,15 @@ public:
     [[nodiscard]] bool restart_requested() const noexcept { return restart_requested_; }
     bool consume_restart() noexcept;
 
+    // --- Level handshake ---------------------------------------------------
+    // The same handshake as the restart, for the same reason: the rules advance
+    // the level (a fresh board's worth of bricks and a faster ball), but only the
+    // owner of the scene can rebuild the bricks the last level broke. The rules
+    // set the request when a board is cleared short of the last level; the
+    // consumer rebuilds and clears it.
+    [[nodiscard]] bool level_change_requested() const noexcept { return level_change_requested_; }
+    bool consume_level_change() noexcept;
+
 private:
     void set_over(Result result) noexcept {
         if (result_ == Result::Playing) {
@@ -226,9 +264,12 @@ private:
     int lives_ = 0;
     int starting_lives_ = 0;
     int paddle_hits_ = 0;
+    int level_ = 1;
+    int level_count_ = config::kLevelCount;
     Result result_ = Result::Playing;
     Screen screen_ = Screen::Playing;
     bool restart_requested_ = false;
+    bool level_change_requested_ = false;
 };
 
 } // namespace breakout

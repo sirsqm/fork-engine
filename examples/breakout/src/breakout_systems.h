@@ -51,6 +51,9 @@ inline constexpr std::string_view kAudio = "BrickAudio";
 inline constexpr std::string_view kHudCanvas = "HudCanvas";
 inline constexpr std::string_view kScoreLabel = "ScoreLabel";
 inline constexpr std::string_view kLivesLabel = "LivesLabel";
+// The level readout, pinned to the top centre between the score and the lives.
+// It is what makes a level advance legible without reading the log.
+inline constexpr std::string_view kLevelLabel = "LevelLabel";
 // The menu canvases. Each is a screen-space canvas (ADR-0086) hidden by default
 // and shown by MenuSystem while its screen is current, so the whole flow is one
 // flag per canvas rather than a rebuild.
