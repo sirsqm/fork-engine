@@ -208,3 +208,40 @@ if(FE_BUILD_EDITOR)
 endif()
 
 add_test(NAME graphics_tests COMMAND fork_graphics_tests)
+
+# ---------------------------------------------------------------------------
+# GLES3 dialect parity (docs/PLAN.md, shipping queue, `webgl2-mobile-parity`).
+#
+# WebGL2 and the GLES3 contexts phones expose are close but not identical, and a
+# shader the ES seam translates wrongly is invisible until a phone compiles it.
+# This target closes that gap on the build machine: it reads the engine's own
+# shader sources, translates them through the real seam, and compiles each one in
+# a real GLES3 context (Mesa's software GLES is enough, and it needs no display).
+#
+# It is deliberately Linux/Unix-only: EGL and GLESv2 are the driver entry points
+# here, and the test skips itself (CTest's SKIP_RETURN_CODE) on a machine that
+# has the libraries but no context. macOS has no separate GLES, and Windows ships
+# it through ANGLE, so neither is the place to pin this down.
+if(UNIX AND NOT APPLE)
+  find_library(FE_EGL_LIBRARY NAMES EGL)
+  find_library(FE_GLES2_LIBRARY NAMES GLESv2)
+  if(FE_EGL_LIBRARY AND FE_GLES2_LIBRARY)
+    add_executable(fork_gles_dialect_tests gles/gles_dialect_compile.cpp)
+    target_link_libraries(fork_gles_dialect_tests PRIVATE FE::engine ${FE_EGL_LIBRARY} ${FE_GLES2_LIBRARY} fe_warnings)
+    target_compile_features(fork_gles_dialect_tests PRIVATE cxx_std_20)
+    set_target_properties(fork_gles_dialect_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    # The shader sources are read at run time by path, so the check proves the
+    # shipped files compile rather than a copy of them.
+    add_test(
+      NAME gles_dialect_compile
+      COMMAND fork_gles_dialect_tests
+              ${CMAKE_SOURCE_DIR}/engine/src/renderer2d/Renderer2D.cpp
+              ${CMAKE_SOURCE_DIR}/engine/src/renderer3d/Renderer3D.cpp
+              ${CMAKE_SOURCE_DIR}/engine/src/renderer3d/PostProcess.cpp
+              ${CMAKE_SOURCE_DIR}/engine/src/debugdraw/DebugDraw.cpp
+    )
+    set_tests_properties(gles_dialect_compile PROPERTIES SKIP_RETURN_CODE 77)
+  else()
+    message(STATUS "GLES3 dialect test: EGL or GLESv2 not found, skipping")
+  endif()
+endif()
