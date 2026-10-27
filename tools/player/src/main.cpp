@@ -28,6 +28,8 @@
 // gameplay modules, so the --export form is what a launcher or a packager uses;
 // --pack/--scene is for a developer running a pack in place.
 
+#include "fe/audio/AudioBackend.h"
+#include "fe/audio/AudioSystem.h"
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/pack/ExportManifest.h"
@@ -41,6 +43,7 @@
 #include "fe/player/BuiltinBehaviours.h"
 #include "fe/renderer3d/Renderer3D.h"
 #include "fe/runtime/Application.h"
+#include "fe/runtime/AudioListenerSystem.h"
 #include "fe/scene/Scene.h"
 #include "fe/script/ScriptBinding.h"
 #include "fe/script/ScriptHost.h"
@@ -298,6 +301,19 @@ protected:
         if (scene_has_collider<fe::physics2d::Collider2D>()) {
             schedule().add_system<fe::physics2d::Physics2DSystem>();
         }
+
+        // Audio, last so a cue a script or a behaviour fired this frame is mixed
+        // this frame rather than a frame late. This is the same shape the
+        // breakout slice uses (examples/breakout/src/main.cpp): adopt the
+        // engine's audio system into the schedule, then attach a real output
+        // device if the platform has one.
+        //
+        // A build with no device is not a failure. A CI machine has no sound
+        // card, a browser starts its context suspended until a gesture, and the
+        // mixer runs silently in every one of those cases rather than aborting a
+        // game that is otherwise fine. That is why a device that will not open is
+        // a warning and not an error.
+        adopt_audio_system();
 
         // Report the version the build was made with when the manifest recorded
         // it, so a run says what produced it (docs/PLAN.md,
@@ -623,10 +639,49 @@ private:
         return found;
     }
 
+    // Adopts the engine's audio system into the schedule and opens the real
+    // output device if one is available. A device that will not open is not an
+    // error: the mixer still runs, silently, which is what a CI machine with no
+    // sound card does, and what a browser does until the user's first gesture
+    // (docs/adr/0081-web-audio-autoplay-gesture.md).
+    //
+    // The listener system is added *before* the audio system so the mix this
+    // frame uses the camera's position this frame; added after, a positional
+    // source would be attenuated against wherever the camera was last frame, and
+    // a fast-moving player would hear every sound from one frame behind.
+    void adopt_audio_system() {
+        auto system = engine().take_audio_system();
+        if (system == nullptr) {
+            return;
+        }
+        audio_system_ = system.get();
+
+        schedule().add_system<fe::AudioListenerSystem>(audio_system_);
+
+        auto device = fe::audio::create_audio_device();
+        if (!device) {
+            FE_LOG_WARN("fork_player: no audio backend (%s); mixing silently", device.error().message().c_str());
+        } else if (auto opened = device.value()->open(48000, 2); !opened) {
+            FE_LOG_WARN("fork_player: could not open the audio device (%s); mixing silently",
+                        opened.error().message().c_str());
+        } else if (fe::Error error = device.value()->start(); error) {
+            FE_LOG_WARN("fork_player: could not start playback (%s); mixing silently", error.message().c_str());
+        } else {
+            audio_device_ = std::move(device.value());
+            audio_system_->set_device(audio_device_.get());
+            FE_LOG_INFO("fork_player: opened %s audio backend at %u Hz", std::string(audio_device_->backend()).c_str(),
+                        audio_device_->format().sample_rate);
+        }
+
+        schedule().add_system(std::move(system));
+    }
+
     Options options_;
     fe::ScriptHost host_;
     fe::ScriptLibrary library_;
     std::unique_ptr<fe::script::ScriptBinding> binding_;
+    fe::audio::AudioSystem* audio_system_ = nullptr;
+    std::unique_ptr<fe::audio::AudioDevice> audio_device_;
     fe::u64 frame_count_ = 0;
 #if defined(FE_PLATFORM_WEB)
     fe::Vec3 probe_start_position_{};

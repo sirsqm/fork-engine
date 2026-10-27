@@ -171,6 +171,7 @@ set(FE_ENGINE_SOURCES
     src/renderer3d/Renderer3D.cpp
     src/runtime/Engine.cpp
     src/runtime/Application.cpp
+    src/runtime/AudioListenerSystem.cpp
     src/runtime/ComponentRegistration.cpp
     src/jobs/JobSystem.cpp
     src/script/ScriptLibrary.cpp

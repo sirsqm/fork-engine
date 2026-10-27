@@ -2,14 +2,57 @@
 // SPDX-License-Identifier: MIT
 #include "fe/editor/PlaySession.h"
 
+#include "fe/audio/AudioBackend.h"
+#include "fe/audio/AudioSystem.h"
 #include "fe/core/Log.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics3d/Physics3DSystem.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/runtime/AudioListenerSystem.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/systems/SpriteAnimationSystem.h"
 
 namespace fe::editor {
+
+PlaySession::PlaySession() = default;
+PlaySession::~PlaySession() = default;
+
+void PlaySession::enable_audio(Engine& engine) {
+    if (audio_enabled_) {
+        return;
+    }
+    audio_enabled_ = true;
+
+    auto system = engine.take_audio_system();
+    if (system == nullptr) {
+        // No audio system to adopt. Leave the flag set so a later call is a
+        // no-op rather than silently retrying a transfer that cannot succeed.
+        FE_LOG_WARN("play-in-editor: the engine had no audio system; play is silent");
+        return;
+    }
+    audio_system_ = system.get();
+
+    auto device = audio::create_audio_device();
+    if (!device) {
+        FE_LOG_WARN("play-in-editor: no audio backend (%s); play is silent", device.error().message().c_str());
+    } else if (auto opened = device.value()->open(48000, 2); !opened) {
+        FE_LOG_WARN("play-in-editor: could not open the audio device (%s); play is silent",
+                    opened.error().message().c_str());
+    } else if (Error error = device.value()->start(); error) {
+        FE_LOG_WARN("play-in-editor: could not start playback (%s); play is silent", error.message().c_str());
+    } else {
+        audio_device_ = std::move(device.value());
+        audio_system_->set_device(audio_device_.get());
+        FE_LOG_INFO("play-in-editor: opened %s audio backend at %u Hz", std::string(audio_device_->backend()).c_str(),
+                    audio_device_->format().sample_rate);
+    }
+
+    // The system is added to the schedule by register_default_systems(), which
+    // runs on start() and places it after the motion systems: the listener must
+    // read a camera that this frame's gameplay has already moved, so a
+    // camera-follow sound does not trail the player by a frame.
+    audio_system_owned_ = std::move(system);
+}
 
 void PlaySession::register_default_systems() {
     // Idempotent: leave any systems a caller already registered (including ones
@@ -30,6 +73,18 @@ void PlaySession::register_default_systems() {
     // fixed so a frame's system list is deterministic and greppable.
     if (schedule_.find("Physics3DSystem") == nullptr) {
         schedule_.add_system<physics3d::Physics3DSystem>();
+    }
+
+    // Audio, last: the listener reads the camera *after* gameplay has moved it,
+    // and the mixer runs after the listener so the frame's sounds are mixed
+    // against the camera's position this frame rather than last frame's. Only
+    // when the host enabled audio -- a headless copy or physics test never opens
+    // a device.
+    if (audio_system_owned_ != nullptr) {
+        if (schedule_.find("AudioListenerSystem") == nullptr) {
+            schedule_.add_system<AudioListenerSystem>(audio_system_owned_.get());
+        }
+        schedule_.add_system(std::move(audio_system_owned_));
     }
 }
 

@@ -42,6 +42,7 @@ add_executable(fork_engine_tests
     src/test_gltf.cpp
     src/test_scene3d.cpp
     src/test_audio.cpp
+    src/test_audio_listener.cpp
     src/test_pack.cpp
     src/test_pack_fetch.cpp
     src/test_resource_manager.cpp

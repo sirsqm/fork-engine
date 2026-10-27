@@ -11,8 +11,18 @@
 #include "fe/systems/SceneSchedule.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
+
+namespace fe {
+
+namespace audio {
+class AudioSystem;
+class AudioDevice;
+} // namespace audio
+
+} // namespace fe
 
 namespace fe::editor {
 
@@ -47,7 +57,12 @@ public:
     // registry is a list of these so `PlaySession` stays component-agnostic.
     using ComponentFactory = std::function<void(const Node& source_node, Node& destination_node)>;
 
-    PlaySession() = default;
+    // Out of line because the class owns unique_ptrs to forward-declared audio
+    // types: the default constructor must be able to destroy members if a later
+    // member's constructor throws, and the deleting destructor must be
+    // instantiated where those types are complete.
+    PlaySession();
+    ~PlaySession();
 
     PlaySession(const PlaySession&) = delete;
     PlaySession& operator=(const PlaySession&) = delete;
@@ -114,6 +129,18 @@ public:
     [[nodiscard]] usize last_sprite_count() const noexcept { return last_sprite_count_; }
     [[nodiscard]] f64 play_time() const noexcept { return play_time_; }
 
+    // Enables audio for play mode: adopts `engine`'s audio system and the
+    // camera-listener system onto the schedule, and opens an output device if
+    // the platform has one. Idempotent, so the host may call it once at startup.
+    //
+    // Separate from `start()` so a headless test that only wants the copy or the
+    // physics path never opens a sound device, and so audio outlives a
+    // play/stop cycle: the systems live on the schedule, which `stop()` does not
+    // clear. A device that will not open is not an error -- the mixer runs
+    // silently, which is what a CI machine with no sound card does, and what a
+    // browser does until the first user gesture (ADR-0081).
+    void enable_audio(Engine& engine);
+
     // The first unregistered component type seen during the last copy, or ""
     // if every component was copied. Surfaced so the editor can warn once.
     // Mutable because `copy_scene` is const: the copy must not modify the
@@ -138,9 +165,18 @@ private:
 
     State state_ = State::Stopped;
     Scene play_scene_{};
+    // The audio device is declared before the schedule so it is destroyed
+    // *after* it: the schedule owns the AudioSystem, which holds a raw pointer to
+    // the device, so the device must outlive the system that plays into it.
+    std::unique_ptr<audio::AudioDevice> audio_device_;
     SceneSchedule schedule_{};
     std::vector<FactoryEntry> factories_;
     mutable std::string last_copy_warning_;
+    audio::AudioSystem* audio_system_ = nullptr;
+    // The adopted audio system, held until register_default_systems() moves it
+    // onto the schedule on the first start().
+    std::unique_ptr<audio::AudioSystem> audio_system_owned_;
+    bool audio_enabled_ = false;
     u32 frames_played_ = 0;
     usize last_sprite_count_ = 0;
     f64 play_time_ = 0.0;

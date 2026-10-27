@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/editor/EditorContext.h"
 
+#include "fe/audio/AudioSource.h"
 #include "fe/core/Log.h"
 #include "fe/editor/OperationCommand.h"
 #include "fe/physics2d/Collider2D.h"
@@ -153,6 +154,29 @@ void copy_rigid_body3d(const Node& source_node, Node& destination_node) {
     destination->fixed_rotation = source->fixed_rotation;
 }
 
+// Copies an audio source. The clip is a shared resource, shared by pointer
+// exactly as a Sprite2D's texture is (see the class comment on PlaySession): the
+// play scene must not own a second decode of the same clip, and the authored
+// scene keeps its own reference alive. Every field that controls *how* the clip
+// plays is copied, because those are authored data, not resources.
+void copy_audio_source(const Node& source_node, Node& destination_node) {
+    const auto* source = source_node.get_component<audio::AudioSource>();
+    if (source == nullptr) {
+        return;
+    }
+    auto* destination = destination_node.add_component<audio::AudioSource>();
+    destination->clip = source->clip;
+    destination->stream = source->stream;
+    destination->gain = source->gain;
+    destination->pitch = source->pitch;
+    destination->loop = source->loop;
+    destination->play_on_start = source->play_on_start;
+    destination->spatial = source->spatial;
+    destination->min_distance = source->min_distance;
+    destination->max_distance = source->max_distance;
+    destination->bus_name = source->bus_name;
+}
+
 } // namespace
 
 EditorContext::EditorContext() = default;
@@ -172,6 +196,11 @@ void EditorContext::register_default_component_factories() {
     // play schedule alongside the 2D one).
     play_.register_component_factory(physics3d::Collider3D::kTypeName, copy_collider3d);
     play_.register_component_factory(physics3d::RigidBody3D::kTypeName, copy_rigid_body3d);
+    // Audio sources copy too, so a play session plays the sounds the scene
+    // authored. Without this an audio node was silently dropped from the play
+    // scene by the unregistered-type path, so play mode had no sound at all even
+    // though the engine had a mixer.
+    play_.register_component_factory(audio::AudioSource::kTypeName, copy_audio_source);
 }
 
 Error EditorContext::new_scene(ResourceManager* resources) {

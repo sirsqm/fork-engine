@@ -111,6 +111,12 @@ Error EditorHost::initialize() {
     // the object's lifetime is the document's.
     context_.ensure_profiler();
 
+    // Give play mode audio: adopt the engine's audio system and the camera
+    // listener, and open a device if the machine has one. Done once here rather
+    // than per start(), so a play/stop cycle does not reopen the device and the
+    // systems survive across it. A machine with no sound card plays silently.
+    context_.play().enable_audio(engine_);
+
     // The viewport renders through the embedded engine's device and 2D renderer,
     // and must release its off-screen target before the device shuts down.
     auto viewport = std::make_unique<ViewportPanel>();

@@ -102,6 +102,7 @@ rather than editing it.
 | [0094](0094-export-version-stamping.md) | Stamping the engine version into an export | Accepted |
 | [0095](0095-web-gl-error-verification.md) | Verifying a web run for GL errors, not just pixels | Accepted |
 | [0096](0096-writable-user-data-storage.md) | Writable user-data storage (a store per application id, durable on desktop and web) | Accepted |
+| [0097](0097-audio-listener-from-camera.md) | Driving the audio listener from the active camera | Accepted |
 
 ## Format
 
