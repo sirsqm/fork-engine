@@ -216,6 +216,18 @@ defect, not noise.
   from stringifying it at all.
 - longjmp-based test harnesses trip MSVC C4611; suppress it at file scope with
   a comment, not globally.
+- A test that compares a `std::string_view` (a system's `name()`, a state name)
+  needs `#include <ostream>` even though it never names an ostream: doctest
+  stringifies the expression through one, and MSVC fails with `use of undefined
+  type 'std::basic_ostream<...>'` deep inside `__msvc_string_view.hpp`, which
+  reads as a library error rather than a missing include. GCC and libc++ pull
+  the header in transitively, so the file compiles everywhere but Windows.
+- A `unique_ptr<T>` member of a class whose header only forward-declares `T`
+  needs the constructor out of line as well as the destructor. `T() = default;`
+  in the header still leaves the deleting destructor to be instantiated where
+  `T` is incomplete, so the break surfaces as `invalid application of 'sizeof'
+  to incomplete type` on the constructor, not on the destructor. Declare `T();`
+  and `~T();` in the header and `= default` both in the `.cpp`.
 - Path tests must not assume POSIX. A leading `/` is not absolute on Windows
   (`fs::is_absolute("/x")` is false there), and `std::filesystem::path` uses
   backslashes on Windows. Build absolute examples from
