@@ -36,8 +36,8 @@ bool UserData::is_valid_key(std::string_view key) noexcept {
         return false;
     }
     for (const char c : key) {
-        const bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
-                          c == '.' || c == '_' || c == '-';
+        const bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' ||
+                          c == '_' || c == '-';
         if (!safe) {
             return false;
         }
@@ -47,8 +47,7 @@ bool UserData::is_valid_key(std::string_view key) noexcept {
 
 Error UserData::check_key(std::string_view key) {
     if (!is_valid_key(key)) {
-        return Error("user data: invalid key '" + std::string(key) +
-                     "' (use only letters, digits, '.', '_' and '-')");
+        return Error("user data: invalid key '" + std::string(key) + "' (use only letters, digits, '.', '_' and '-')");
     }
     return Error::none();
 }

@@ -92,7 +92,7 @@ constexpr char kBase64Alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr
 // becomes `a == = b` and breaks the module at run time with no build error. This
 // is the trap AGENTS.md records, so `startsWith` and `==` are used instead.
 [[nodiscard]] bool web_storage_available() {
-    return MAIN_THREAD_EM_ASM_INT({ return typeof localStorage === 'undefined' ? 0 : 1; }) != 0;
+    return MAIN_THREAD_EM_ASM_INT({ return typeof localStorage == 'undefined' ? 0 : 1; }) != 0;
 }
 
 // Returns 1 when the key is present, 0 when it is not. The presence test is
@@ -294,8 +294,7 @@ Error WebUserData::remove(std::string_view key) {
 
 std::vector<std::string> WebUserData::keys() const {
     std::vector<std::string> keys = web_storage_keys(prefix_ + "/");
-    keys.erase(std::remove_if(keys.begin(), keys.end(),
-                              [](const std::string& key) { return !is_valid_key(key); }),
+    keys.erase(std::remove_if(keys.begin(), keys.end(), [](const std::string& key) { return !is_valid_key(key); }),
                keys.end());
     std::sort(keys.begin(), keys.end());
     return keys;

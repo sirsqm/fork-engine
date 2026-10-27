@@ -35,8 +35,8 @@ namespace {
 class TempDir {
 public:
     explicit TempDir(std::string name) {
-        path_ = std::filesystem::temp_directory_path() /
-                ("fe_userdata_test_" + name + "_" + std::to_string(counter_++));
+        path_ =
+            std::filesystem::temp_directory_path() / ("fe_userdata_test_" + name + "_" + std::to_string(counter_++));
         std::filesystem::remove_all(path_);
     }
     ~TempDir() {
@@ -207,7 +207,9 @@ TEST_CASE("the desktop store does not list a file it did not write") {
     // A file that is not `<key>.dat` is not a key, even though it is in the
     // store's directory.
     std::filesystem::create_directories(std::filesystem::path(dir.str()) / "subdir");
-    { std::ofstream(dir.str() + "/notes.txt") << "hi"; }
+    {
+        std::ofstream(dir.str() + "/notes.txt") << "hi";
+    }
 
     auto store = UserData::create(desktop_desc(dir));
     REQUIRE(store != nullptr);

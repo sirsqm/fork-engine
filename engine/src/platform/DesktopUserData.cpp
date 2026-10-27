@@ -53,15 +53,13 @@ namespace {
 
 // The per-user data directory for `app_id`, honouring root_override.
 [[nodiscard]] std::string resolve_root(const UserData::Desc& desc) {
-    const std::string base = !desc.root_override.empty()
-                                 ? desc.root_override
-                                 : [&] {
-                                       if (const char* override_home = std::getenv(data_home_variable());
-                                           override_home != nullptr && *override_home != '\0') {
-                                           return std::string(override_home);
-                                       }
-                                       return default_data_home();
-                                   }();
+    const std::string base = !desc.root_override.empty() ? desc.root_override : [&] {
+        if (const char* override_home = std::getenv(data_home_variable());
+            override_home != nullptr && *override_home != '\0') {
+            return std::string(override_home);
+        }
+        return default_data_home();
+    }();
     if (base.empty()) {
         return {};
     }
@@ -137,8 +135,7 @@ std::vector<std::string> DesktopUserData::keys() const {
         // Only the files this store wrote: `<key>.dat`. Anything else in the
         // directory (a stray file, a future sidecar) is not a key.
         constexpr std::string_view suffix = ".dat";
-        if (name.size() <= suffix.size() ||
-            name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        if (name.size() <= suffix.size() || name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
             continue;
         }
         const std::string key = name.substr(0, name.size() - suffix.size());
