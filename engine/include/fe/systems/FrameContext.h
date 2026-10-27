@@ -12,6 +12,7 @@ class InputState;
 class ResourceManager;
 class FrameArena;
 class JobSystem;
+class UserData;
 
 // What a system is told about the frame it is running in.
 //
@@ -78,6 +79,16 @@ struct FrameContext {
     // (ADR-0017), so a job extracts, culls, or computes, and only the thread that
     // owns the frame submits.
     JobSystem* jobs = nullptr;
+
+    // The store a game saves its own data to (best score, settings). Nullable: a
+    // tool or a test that runs a schedule with no engine has no store, and a
+    // system that saves must null-check it rather than assume one exists. When
+    // present it is the engine's store, so a save through the context is the same
+    // save the engine reports, and a system never reaches for the engine to find
+    // it. It may be an in-memory store that persists nothing -- a run with no
+    // application id -- so a system treats a successful write as "saved for this
+    // run" and never assumes a reload will see it (ADR-0096).
+    UserData* user_data = nullptr;
 };
 
 } // namespace fe

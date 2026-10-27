@@ -83,6 +83,33 @@ void BreakoutState::resume() noexcept {
     }
 }
 
+void BreakoutState::set_best_score(int value) noexcept {
+    // A loaded save may be lower than a record this process already set (a save
+    // from an older run, or a corrupt file); the record only ever rises, so a
+    // lower value is ignored rather than trusted.
+    if (!has_best_score_ || value > best_score_) {
+        best_score_ = value;
+        has_best_score_ = true;
+    }
+}
+
+bool BreakoutState::record_best_score() noexcept {
+    if (score_ > best_score_) {
+        best_score_ = score_;
+        has_best_score_ = true;
+        return true;
+    }
+    // A first game that ends on zero still has a best score of zero, which is
+    // worth knowing (the HUD stops leaving the line blank) even though the number
+    // did not move.
+    if (!has_best_score_) {
+        best_score_ = score_;
+        has_best_score_ = true;
+        return true;
+    }
+    return false;
+}
+
 void BreakoutState::sync_screen() noexcept {
     // The presentation follows the rules: a game that stopped being played is on
     // its game-over screen. A game still in progress is left on whatever screen

@@ -8,13 +8,16 @@
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/platform/InputState.h"
+#include "fe/platform/UserData.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/systems/FrameContext.h"
 #include "fe/ui/UiElement.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
+#include <string>
 #include <vector>
 
 namespace breakout {
@@ -330,6 +333,86 @@ void HudSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
             element->text = state_->won() ? "YOU WIN" : config::kGameOverText;
         }
     }
+
+    // The best score, blank until there is one. It is written here rather than by
+    // PersistSystem so every label is filled in one place; PersistSystem owns the
+    // *value*, this owns the drawing.
+    if (fe::Node* node = scene.find_node_by_name(names::kBestScoreLabel); node != nullptr) {
+        if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
+            element->text = state_->has_best_score() ? "BEST " + std::to_string(state_->best_score()) : std::string{};
+        }
+    }
+}
+
+void PersistSystem::load_once(fe::UserData& store) {
+    loaded_ = true;
+    const fe::Result<std::string> saved = store.read_text(key_);
+    if (!saved) {
+        // No save yet: a first run. Leaving has_best_score() false is what makes
+        // the HUD blank rather than showing a best of zero.
+        return;
+    }
+
+    int value = 0;
+    const char* begin = saved.value().data();
+    const char* end = begin + saved.value().size();
+    const auto [ptr, ec] = std::from_chars(begin, end, value);
+    if (ec != std::errc{} || ptr != end || value < 0) {
+        // A save that is not a plain non-negative integer is treated as absent
+        // rather than fatal: a corrupt file must not stop the game from starting.
+        FE_LOG_WARN("breakout: ignoring unreadable best score '%s'", saved.value().c_str());
+        return;
+    }
+    state_->set_best_score(value);
+    FE_LOG_INFO("breakout: loaded best score %d", value);
+}
+
+void PersistSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
+    (void)scene;
+    if (state_ == nullptr) {
+        return;
+    }
+
+    fe::UserData* store = context.user_data;
+
+    // Load once, on the first frame the store is available. Doing it here rather
+    // than in a constructor is what lets the store come from the context; a run
+    // whose context has no store never loads and never saves.
+    if (!loaded_ && store != nullptr) {
+        load_once(*store);
+    }
+
+    const BreakoutState::Screen screen = state_->screen();
+
+    // The title shows a fresh, unplayed game, so its score is not a result and
+    // must not be recorded as a best; only a game that has actually been played
+    // (playing, paused, or ended) counts. That is what keeps a first run's HUD
+    // blank until the player has played.
+    if (screen != BreakoutState::Screen::Title) {
+        // The best score rises with the live score, so the HUD shows a new record
+        // the moment it is set rather than only after the game ends.
+        if (state_->record_best_score()) {
+            FE_LOG_INFO("breakout: new best score %d", state_->best_score());
+        }
+    }
+
+    // Persist on the edge *into* the game-over screen: the score is final there,
+    // and it is one write per game instead of one per frame. last_screen_ is
+    // updated every frame so the edge is detected exactly once.
+    const bool just_ended =
+        screen == BreakoutState::Screen::GameOver && last_screen_ != BreakoutState::Screen::GameOver;
+    last_screen_ = screen;
+
+    if (!just_ended || store == nullptr) {
+        return;
+    }
+
+    const std::string text = std::to_string(state_->best_score());
+    if (fe::Error error = store->write(key_, std::string_view(text)); error) {
+        FE_LOG_WARN("breakout: could not save the best score: %s", error.message().c_str());
+        return;
+    }
+    FE_LOG_INFO("breakout: saved best score %d", state_->best_score());
 }
 
 void MenuSystem::apply_visibility(fe::Scene& scene, BreakoutState::Screen screen) {

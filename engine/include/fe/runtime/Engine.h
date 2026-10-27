@@ -6,6 +6,7 @@
 #include "fe/core/Log.h"
 #include "fe/core/Types.h"
 #include "fe/platform/InputState.h"
+#include "fe/platform/UserData.h"
 #include "fe/platform/Window.h"
 #include "fe/resources/ResourceManager.h"
 #include "fe/rhi/Device.h"
@@ -70,6 +71,16 @@ public:
         // what a verification run and a headless capture need, and what a game
         // that wants a stable simulation would pin. See docs/adr/0079.
         f32 fixed_delta_time = 0.0f;
+        // The id the per-user data store is named after, e.g. "breakout". Empty
+        // (the default) leaves the store in memory and persistent nowhere, so a
+        // run that never set an id cannot write to a shared location by accident.
+        // A game that saves sets it. See docs/adr/0096-writable-user-data-storage.md.
+        std::string app_id;
+        // Overrides where the per-user data store lives. Empty (the default)
+        // resolves the OS's conventional per-user directory under `app_id`. A
+        // test sets it to a temporary directory, and a portable install sets it
+        // beside the game so a save travels with it.
+        std::string user_data_root;
     };
 
     // Declared but not defined here: the unique_ptr members need their types
@@ -122,6 +133,16 @@ public:
 
     [[nodiscard]] ResourceManager& resources() noexcept { return *resources_; }
     [[nodiscard]] const ResourceManager& resources() const noexcept { return *resources_; }
+
+    // The store a game saves its own data to (best score, settings). It always
+    // exists once the engine is initialized: a run that set no `app_id`, or one
+    // whose backend could not open, gets an in-memory store that persists
+    // nothing rather than a null pointer, so a game that saves runs unchanged
+    // and only loses the persistence. Check backend_name() == "null" to learn
+    // whether a save will survive. See
+    // docs/adr/0096-writable-user-data-storage.md.
+    [[nodiscard]] UserData& user_data() noexcept { return *user_data_; }
+    [[nodiscard]] const UserData& user_data() const noexcept { return *user_data_; }
 
     // Requires has_graphics().
     [[nodiscard]] renderer2d::Renderer2D& renderer_2d() noexcept { return *renderer_2d_; }
@@ -187,6 +208,7 @@ private:
     std::unique_ptr<Window> window_;
     std::unique_ptr<rhi::Device> device_;
     std::unique_ptr<ResourceManager> resources_;
+    std::unique_ptr<UserData> user_data_;
     std::unique_ptr<renderer2d::Renderer2D> renderer_2d_;
     std::unique_ptr<renderer3d::Renderer3D> renderer_3d_;
     std::unique_ptr<audio::AudioSystem> audio_system_;

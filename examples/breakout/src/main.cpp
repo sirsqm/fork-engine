@@ -332,6 +332,15 @@ int main(int argc, char** argv) {
     config.window.width = 1280;
     config.window.height = 720;
     config.log_level = options.log_level;
+    // The application id names the per-user save directory (desktop) or the
+    // localStorage namespace (web), and it is what makes the best score survive a
+    // reload -- `slice-persistence`. A headless run deliberately sets no id: the
+    // engine then hands out an in-memory store that persists nothing, so an
+    // automated run never writes a best score into the machine's real home
+    // directory (ADR-0096).
+    if (!options.headless) {
+        config.app_id = breakout::config::kAppId;
+    }
     if (options.headless) {
         config.window.visible = false;
         config.window.vsync = false;

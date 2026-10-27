@@ -121,6 +121,23 @@ Error Engine::initialize(const Config& config) {
     }
 
     resources_ = std::make_unique<ResourceManager>();
+    // The store a game saves to. Created after the window (so a web build's
+    // localStorage is reachable) and before the renderers, because nothing in the
+    // graphics stack depends on it. An empty app id, or a backend that cannot
+    // open, yields the in-memory store: the engine always has one, so a game that
+    // saves never null-checks it and only loses the persistence.
+    {
+        UserData::Desc desc;
+        desc.app_id = config.app_id;
+        desc.root_override = config.user_data_root;
+        user_data_ = UserData::create(desc);
+        if (user_data_->backend_name() == std::string_view("null")) {
+            FE_LOG_INFO("user data: in-memory only (nothing is persisted)");
+        } else {
+            FE_LOG_INFO("user data: %s backend at '%s'", user_data_->backend_name(),
+                        user_data_->root().empty() ? "<browser storage>" : user_data_->root().c_str());
+        }
+    }
     // Opt into the import cache only when a root is configured. The cache is
     // inert otherwise, so the loader's cache check is a no-op and the load path
     // is byte-for-byte the pre-cache behaviour.
@@ -186,6 +203,7 @@ void Engine::shutdown() {
     audio_system_.reset();
     renderer_3d_.reset();
     renderer_2d_.reset();
+    user_data_.reset();
     if (resources_ != nullptr) {
         resources_->collect_garbage();
         resources_.reset();

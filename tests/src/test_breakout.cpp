@@ -14,6 +14,7 @@
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/platform/InputActions.h"
 #include "fe/platform/InputState.h"
+#include "fe/platform/UserData.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
@@ -25,7 +26,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -363,7 +367,7 @@ TEST_CASE("the game systems are installed in order") {
 
     auto* physics = breakout::install_breakout_systems(schedule, state, /*autoplay=*/false);
     CHECK(physics != nullptr);
-    REQUIRE(schedule.system_count() == 8);
+    REQUIRE(schedule.system_count() == 9);
     // The UI input system runs first: it writes each element's interaction state
     // from this frame's pointer before any gameplay system reads it, so the menu
     // system sees the same frame's clicks.
@@ -376,8 +380,12 @@ TEST_CASE("the game systems are installed in order") {
     CHECK(std::string(schedule.system_at(4)->name()) == "Physics2DSystem");
     CHECK(std::string(schedule.system_at(5)->name()) == "BallContactSystem");
     CHECK(std::string(schedule.system_at(6)->name()) == "GameStateSystem");
+    // Persistence runs after the rules have settled the screen, so the game-over
+    // edge it saves on is the real one, and before the HUD, so a best score set
+    // this frame is drawn this frame.
+    CHECK(std::string(schedule.system_at(7)->name()) == "PersistSystem");
     // The HUD runs last so it reads the state every system above it produced.
-    CHECK(std::string(schedule.system_at(7)->name()) == "HudSystem");
+    CHECK(std::string(schedule.system_at(8)->name()) == "HudSystem");
 }
 
 TEST_CASE("the field is gravity-free") {
@@ -1201,4 +1209,189 @@ TEST_CASE("a ball with a vertical component keeps bouncing rather than going fla
         REQUIRE(run.wall_hits > 4);
         CHECK(run.min_vertical_ratio > 0.05f);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Persistence: the best score through the storage seam
+// (docs/PLAN.md, `slice-persistence`).
+//
+// The seam itself is tested in test_user_data.cpp; here it is the *game* that
+// is under test: that a played game records a best score, saves it on the
+// game-over edge, and that a fresh game on the same store reads it back -- the
+// reload the queue item is about. The store is a real desktop store pointed at a
+// temporary directory, so this exercises the shipped backend and not a mock.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A unique temporary directory per case, removed on destruction. The same shape
+// test_user_data.cpp uses, so the two suites clean up identically.
+class ScoreDir {
+public:
+    explicit ScoreDir(std::string name) {
+        path_ = std::filesystem::temp_directory_path() / ("fe_breakout_score_" + name);
+        std::filesystem::remove_all(path_);
+    }
+    ~ScoreDir() {
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
+    }
+    [[nodiscard]] std::string str() const { return path_.string(); }
+
+private:
+    std::filesystem::path path_;
+};
+
+// A desktop store in `dir`, so the game saves to a real file in a temp directory
+// rather than the developer's home directory.
+[[nodiscard]] std::unique_ptr<UserData> score_store(const ScoreDir& dir) {
+    UserData::Desc desc;
+    desc.app_id = breakout::config::kAppId;
+    desc.root_override = dir.str();
+    return UserData::create(desc);
+}
+
+// One frame of the shipped schedule with the store attached, exactly as
+// Application does: the context carries the store so the persistence system
+// finds it there and never reaches for the engine.
+void run_persist_frame(SceneSchedule& schedule, Scene& scene, UserData& store) {
+    FrameContext context = step(1.0f / 60.0f);
+    context.user_data = &store;
+    schedule.update(context, scene);
+}
+
+} // namespace
+
+TEST_CASE("the best score is a record that survives reset") {
+    // The rules half, with no engine: a fresh game has no best score, playing
+    // raises it, and a reset (a new game) keeps it.
+    breakout::BreakoutState state(1, 3, /*level_count=*/1);
+
+    CHECK_FALSE(state.has_best_score());
+    CHECK(state.best_score() == 0);
+
+    state.brick_hit();
+    CHECK(state.record_best_score());
+    CHECK(state.has_best_score());
+    CHECK(state.best_score() == breakout::config::kPointsPerBrick + breakout::config::kLevelClearBonus);
+
+    // A fresh game does not lower the record, and a stale save cannot either.
+    state.reset();
+    CHECK(state.best_score() == breakout::config::kPointsPerBrick + breakout::config::kLevelClearBonus);
+    state.set_best_score(5);
+    CHECK(state.best_score() == breakout::config::kPointsPerBrick + breakout::config::kLevelClearBonus);
+}
+
+TEST_CASE("the title does not record a best score") {
+    // A fresh game on the title has a score of zero that is not a result, so the
+    // HUD must stay blank rather than claim a best of zero.
+    breakout::BreakoutState state;
+    state.show_title();
+    CHECK_FALSE(state.has_best_score());
+}
+
+TEST_CASE("a played game saves its best score and a fresh game reads it back") {
+    // The acceptance test for `slice-persistence` on desktop: the shipped
+    // schedule plays a game to the game-over screen through a real store, and a
+    // *fresh* state on the same store reads the score back. That second read is
+    // the reload the queue item is about -- it is a different BreakoutState, so
+    // nothing in memory carries the value across.
+    ScoreDir dir("roundtrip");
+    auto store = score_store(dir);
+    REQUIRE(store != nullptr);
+    int earned = 0;
+
+    {
+        Scene scene;
+        breakout::build_breakout_scene(scene);
+        SceneSchedule schedule;
+        breakout::BreakoutState state(2, 1, /*level_count=*/1);
+        static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+        state.start_game();
+        state.brick_hit(); // score some points
+        earned = state.score();
+        REQUIRE(earned > 0);
+
+        // Lose the last life: the game ends, and the next frame is the game-over
+        // edge the persistence system writes on.
+        state.ball_missed();
+        REQUIRE(state.is_over());
+        run_persist_frame(schedule, scene, *store);
+        CHECK(state.has_best_score());
+        CHECK(state.best_score() == earned);
+    }
+
+    // A fresh state and schedule on the same store -- a reload.
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state(2, 1, /*level_count=*/1);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+    CHECK_FALSE(state.has_best_score()); // nothing in memory yet
+    run_persist_frame(schedule, scene, *store);
+    CHECK(state.has_best_score());
+    // The reload sees exactly what the first game saved, not a value this test
+    // recomputed -- the two would agree by construction and prove nothing.
+    CHECK(state.best_score() == earned);
+}
+
+TEST_CASE("the HUD shows the best score once there is one") {
+    ScoreDir dir("hud");
+    auto store = score_store(dir);
+    REQUIRE(store != nullptr);
+    // Pre-seed a save so a fresh game starts with a record to show.
+    REQUIRE_FALSE(store->write(breakout::config::kBestScoreKey, std::string_view("1230")));
+
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state(2, 3, /*level_count=*/1);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    Node* best_node = scene.find_node_by_name(breakout::names::kBestScoreLabel);
+    REQUIRE(best_node != nullptr);
+    auto* best_element = best_node->get_component<ui::UiElement>();
+    REQUIRE(best_element != nullptr);
+
+    // Before the first frame the label is blank: a first run shows no best score.
+    CHECK(best_element->text.empty());
+
+    state.show_title();
+    run_persist_frame(schedule, scene, *store);
+    // The title loads the save and shows it, even though no game is running.
+    CHECK(state.best_score() == 1230);
+    CHECK(best_element->text == "BEST 1230");
+}
+
+TEST_CASE("a run with no store tracks the best score in memory and persists nothing") {
+    // The context's store is nullable. A run handed none must still play: the
+    // best score is tracked in memory (so the HUD is right), but nothing reaches
+    // a disk. That is what lets a headless autoplay run avoid touching a real
+    // save directory.
+    ScoreDir dir("nostore");
+
+    Scene scene;
+    breakout::build_breakout_scene(scene);
+    SceneSchedule schedule;
+    breakout::BreakoutState state(1, 1, /*level_count=*/1);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    state.start_game();
+    state.brick_hit();
+    const int earned = state.score();
+    state.ball_missed();
+    REQUIRE(state.is_over());
+    // No store on the context.
+    schedule.update(step(1.0f / 60.0f), scene);
+
+    // The record is known in memory...
+    CHECK(state.has_best_score());
+    CHECK(state.best_score() == earned);
+
+    // ...and a store in the directory the game would have used is empty: nothing
+    // was written, which is the point of a run with no application id.
+    auto store = score_store(dir);
+    REQUIRE(store != nullptr);
+    CHECK_FALSE(store->contains(breakout::config::kBestScoreKey));
 }

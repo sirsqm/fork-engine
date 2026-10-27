@@ -8,11 +8,13 @@
 #include "fe/platform/InputActions.h"
 #include "fe/systems/System.h"
 
+#include <string>
 #include <string_view>
 
 namespace fe {
 class Node;
 class Scene;
+class UserData;
 struct FrameContext;
 namespace physics2d {
 class Physics2DSystem;
@@ -54,6 +56,9 @@ inline constexpr std::string_view kLivesLabel = "LivesLabel";
 // The level readout, pinned to the top centre between the score and the lives.
 // It is what makes a level advance legible without reading the log.
 inline constexpr std::string_view kLevelLabel = "LevelLabel";
+// The best-score readout, pinned below the score in the top-left corner. It is
+// blank until a game has been played, so a first run does not claim a best of 0.
+inline constexpr std::string_view kBestScoreLabel = "BestScoreLabel";
 // The menu canvases. Each is a screen-space canvas (ADR-0086) hidden by default
 // and shown by MenuSystem while its screen is current, so the whole flow is one
 // flag per canvas rather than a rebuild.
@@ -227,6 +232,50 @@ public:
 
 private:
     BreakoutState* state_ = nullptr;
+};
+
+// Saves the best score through the storage seam, and writes it into the HUD's
+// best-score label. This is `slice-persistence`: the part of the game that makes
+// progress survive a reload.
+//
+// It is deliberately the *only* system that touches persistence, and it takes
+// the store from the FrameContext rather than reaching for the engine, exactly
+// as the paddle takes its input. A headless run that was handed no store (the
+// context field is null) simply does not save, which is what lets the same game
+// run with no OS and no save directory.
+//
+// The save happens on the transition *into* the game-over screen, not every
+// frame: that is the moment the score is final, and it is one write per game
+// rather than sixty a second. It records the best score in the rules first
+// (BreakoutState::record_best_score) so the number saved and the number the HUD
+// shows are the same one.
+//
+// It reads the score back on the first frame, so a game that has never been
+// played shows no best score and a returning player sees theirs immediately.
+class PersistSystem final : public fe::System {
+public:
+    [[nodiscard]] std::string_view name() const noexcept override { return "PersistSystem"; }
+
+    void update(const fe::FrameContext& context, fe::Scene& scene) override;
+
+    void set_state(BreakoutState* state) noexcept { state_ = state; }
+
+    // The key the best score is stored under. Set from the game's config so the
+    // system and any tool agree on the name.
+    void set_key(std::string_view key) noexcept { key_ = std::string(key); }
+
+private:
+    // Loads the saved best score into the rules once, on the first update. A
+    // missing key (a first run) leaves the rules with no best score rather than
+    // one of zero.
+    void load_once(fe::UserData& store);
+
+    BreakoutState* state_ = nullptr;
+    std::string key_ = config::kBestScoreKey;
+    // The screen the previous frame ended on, so the game-over *edge* can be
+    // detected. The system is otherwise stateless across frames.
+    BreakoutState::Screen last_screen_ = BreakoutState::Screen::Playing;
+    bool loaded_ = false;
 };
 
 // Drives the screen flow: title -> play -> game over -> title, with a pause in

@@ -50,6 +50,18 @@ else()
   set(FE_WINDOW_BACKEND_SOURCE src/platform/GlfwWindow.cpp)
 endif()
 
+# ---------------------------------------------------------------------------
+# The user-data backend is chosen the same way, and for the same reason: a web
+# build has no filesystem, so the desktop backend must not be compiled into it,
+# and a desktop build has no browser storage. UserData.cpp's factory takes the
+# same FE_PLATFORM_WEB branch. See docs/adr/0096-writable-user-data-storage.md.
+# ---------------------------------------------------------------------------
+if(FE_TARGETS_WEB)
+  set(FE_USER_DATA_BACKEND_SOURCE src/platform/WebUserData.cpp)
+else()
+  set(FE_USER_DATA_BACKEND_SOURCE src/platform/DesktopUserData.cpp)
+endif()
+
 set(FE_ENGINE_SOURCES
     src/core/Log.cpp
     src/core/Assert.cpp
@@ -64,12 +76,19 @@ set(FE_ENGINE_SOURCES
     src/platform/CanvasScale.cpp
     src/platform/NullWindow.cpp
     src/platform/DynamicLibrary.cpp
+    src/platform/UserData.cpp
+    src/platform/NullUserData.cpp
     src/platform/Window.cpp
     # The context-bearing window backend is chosen by the platform: GLFW cannot
     # be compiled to wasm, so a web build compiles the canvas backend instead and
     # never sees GlfwWindow.cpp. Window.cpp's factory picks the same way, from the
     # same macro. See docs/adr/0074-web-window-backend.md.
     ${FE_WINDOW_BACKEND_SOURCE}
+    # The persistent user-data backend is chosen the same way: the desktop
+    # backend needs a filesystem a web build does not have, and the web backend
+    # needs browser storage a desktop build does not have. See
+    # docs/adr/0096-writable-user-data-storage.md.
+    ${FE_USER_DATA_BACKEND_SOURCE}
     src/rhi/Device.cpp
     src/rhi/ShaderDialect.cpp
     src/rhi/null/NullDevice.cpp

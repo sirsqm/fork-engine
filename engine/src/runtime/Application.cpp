@@ -159,6 +159,9 @@ bool Application::step_frame() {
         frame.actions = &actions_;
         frame.arena = frame_arena_.get();
         frame.jobs = jobs_.get();
+        // The store a game saves to, so a gameplay system saves through the same
+        // seam the engine owns rather than reaching for the engine (ADR-0096).
+        frame.user_data = &engine_.user_data();
         // The render target's size, so a screen-space UI lays out against the same
         // viewport the renderer draws with (ADR-0084). Zero when the window has no
         // surface, which a UI system reads as "nothing to lay out".

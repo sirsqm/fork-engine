@@ -217,6 +217,11 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
 
     add_hud_label(hud, names::kScoreLabel, fe::ui::UiAnchor::TopLeft, fe::Vec2{cfg::kHudMargin, cfg::kHudMargin},
                   fe::ui::UiAlign::Start);
+    // The best score, one row under the score. It is authored empty: the label
+    // draws nothing until PersistSystem fills it in, so a first run shows no
+    // best score rather than a misleading zero.
+    add_hud_label(hud, names::kBestScoreLabel, fe::ui::UiAnchor::TopLeft,
+                  fe::Vec2{cfg::kHudMargin, cfg::kHudMargin + cfg::kHudBestScoreOffsetY}, fe::ui::UiAlign::Start);
     add_hud_label(hud, names::kLivesLabel, fe::ui::UiAnchor::TopRight, fe::Vec2{-cfg::kHudMargin, cfg::kHudMargin},
                   fe::ui::UiAlign::End);
     // The level sits between them, so the three readouts never overlap and a
@@ -312,6 +317,14 @@ fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& sche
 
     auto* game_state = schedule.add_system<GameStateSystem>();
     game_state->set_state(&state);
+
+    // Persistence runs after the rules have settled the screen for this frame
+    // (so the game-over edge is the real one) and before the HUD (so a best score
+    // set this frame is drawn this frame). It is the one system that touches the
+    // storage seam.
+    auto* persist = schedule.add_system<PersistSystem>();
+    persist->set_state(&state);
+    persist->set_key(config::kBestScoreKey);
 
     // Last, so it reads the state the systems above it produced this frame. It
     // owns nothing, so a restart that rebuilds the field needs no hand-off.

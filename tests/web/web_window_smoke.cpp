@@ -20,6 +20,7 @@
 // See docs/adr/0074-web-window-backend.md.
 
 #include "fe/platform/InputActions.h"
+#include "fe/platform/UserData.h"
 #include "fe/platform/Window.h"
 
 #include <emscripten.h>
@@ -261,6 +262,57 @@ int main() {
     report.check("the web window does not claim to be closing", !window.should_close());
     window.request_close();
     report.check("request_close() is recorded", window.should_close());
+
+    // --- User data: the browser's localStorage ------------------------------
+    //
+    // The acceptance test for `slice-persistence` on the web half: the store the
+    // engine hands a game must really reach browser storage, not just an
+    // in-memory map. localStorage is what makes a save survive a reload, so the
+    // proof has two parts: the seam round-trips a value, and the value is
+    // physically in localStorage (read back through the raw browser API, not
+    // through the seam), which is what a reload would read.
+    {
+        fe::UserData::Desc desc;
+        desc.app_id = "web_smoke";
+        auto store = fe::UserData::create(desc);
+        report.check("UserData::create() on the web backend succeeds", store != nullptr);
+        report.check("the store identifies itself as the web backend",
+                     store != nullptr && std::string_view(store->backend_name()) == "web");
+
+        const std::string_view key = "best_score";
+        report.check("a write to the store succeeds", store != nullptr && !store->write(key, std::string_view("1230")));
+
+        // A second store on the same application id is a *different object* (the
+        // reload shape): it must read the value from browser storage, not from
+        // anything shared in memory.
+        auto reopened = fe::UserData::create(desc);
+        const fe::Result<std::string> loaded =
+            reopened != nullptr ? reopened->read_text(key) : fe::Result<std::string>(fe::Error("no store"));
+        report.check("a fresh store on the same id reads the value back", loaded.ok() && loaded.value() == "1230");
+
+        // The decisive check: the bytes are in localStorage itself, which is what
+        // a reload reads. The value is base64 of "1230" = "MTIzMA==".
+        const int in_local_storage = MAIN_THREAD_EM_ASM_INT({
+            try {
+                var value = localStorage.getItem("web_smoke/best_score");
+                return value == "MTIzMA==" ? 1 : 0;
+            } catch (error) {
+                return -1;
+            }
+        });
+        report.check("the value is physically in localStorage, so a reload keeps it", in_local_storage == 1);
+
+        // Removal is durable too: the key is gone from localStorage.
+        report.check("removing the key succeeds", store != nullptr && !store->remove(key));
+        const int erased = MAIN_THREAD_EM_ASM_INT({
+            try {
+                return localStorage.getItem("web_smoke/best_score") == null ? 1 : 0;
+            } catch (error) {
+                return -1;
+            }
+        });
+        report.check("the key is gone from localStorage after remove", erased == 1);
+    }
 
     const std::string text = report.text();
     EM_ASM({ document.title = UTF8ToString($0); }, text.c_str());

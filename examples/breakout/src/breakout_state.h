@@ -99,6 +99,10 @@ inline constexpr fe::f32 kHudMargin = 24.0f;
 inline constexpr fe::f32 kHudTopY = kFieldHalfHeight - kHudMargin;
 inline constexpr fe::f32 kHudLeftX = -kFieldHalfWidth + kHudMargin;
 inline constexpr fe::f32 kHudRightX = kFieldHalfWidth - kHudMargin;
+// The best-score line sits directly under the score, one text row down. It is a
+// separate row rather than part of the score string so the two readouts are
+// independent: the score is this game's, the best is the record.
+inline constexpr fe::f32 kHudBestScoreOffsetY = kHudTextSize * 1.3f;
 
 // The menu text (title, pause, game over). Larger than the HUD counters, because
 // a menu line is the only thing on its screen and should read at a glance.
@@ -108,6 +112,12 @@ inline constexpr fe::f32 kMenuTextSize = 72.0f;
 inline constexpr const char* kTitleText = "BREAKOUT";
 inline constexpr const char* kPauseText = "PAUSED";
 inline constexpr const char* kGameOverText = "GAME OVER";
+
+// The best score, persisted (`slice-persistence`). The key the score is saved
+// under, and the application id the store is named after. Both live here so the
+// scene builder, the system and the application name the same string.
+inline constexpr const char* kBestScoreKey = "best_score";
+inline constexpr const char* kAppId = "breakout";
 
 } // namespace config
 
@@ -181,6 +191,26 @@ public:
     [[nodiscard]] bool is_title() const noexcept { return screen_ == Screen::Title; }
     [[nodiscard]] bool is_playing() const noexcept { return screen_ == Screen::Playing; }
     [[nodiscard]] bool is_paused() const noexcept { return screen_ == Screen::Paused; }
+
+    // The best score ever reached, and whether there is one. A fresh state has no
+    // best score: "no save yet" is distinct from "the best score is zero", so the
+    // HUD can leave the line blank on a first run rather than claim a best of 0.
+    // The persisted value is loaded into this once at startup and raised as the
+    // current game beats it (`slice-persistence`).
+    [[nodiscard]] int best_score() const noexcept { return best_score_; }
+    [[nodiscard]] bool has_best_score() const noexcept { return has_best_score_; }
+
+    // Sets the best score, e.g. from a loaded save. Ignores a value that is not
+    // above the current best, so a stale save cannot lower it. A non-negative
+    // value marks a best score as known.
+    void set_best_score(int value) noexcept;
+
+    // Raises the best score to the current score if the current game has passed
+    // it, and reports whether it moved. This is the one place the running score
+    // and the best score are compared, so the HUD, the log and the save all agree
+    // on when a record was set. Called by the system that owns the save after it
+    // reads the rules.
+    [[nodiscard]] bool record_best_score() noexcept;
 
     // A short, stable label for the result, used in the machine-checkable log
     // line ("result=win"). Stable so a CI grep can rely on it.
@@ -266,6 +296,11 @@ private:
     int paddle_hits_ = 0;
     int level_ = 1;
     int level_count_ = config::kLevelCount;
+    // The best score survives reset() and return_to_title(): it is the record
+    // across games, not part of one game's state. Only a fresh process (or a
+    // loaded save) sets it.
+    int best_score_ = 0;
+    bool has_best_score_ = false;
     Result result_ = Result::Playing;
     Screen screen_ = Screen::Playing;
     bool restart_requested_ = false;
