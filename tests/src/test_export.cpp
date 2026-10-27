@@ -285,6 +285,12 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
     // fills a phone-sized window rather than trusting the stylesheet alone.
     const std::string js = web_shell_js();
     CHECK(js.find("FE_SHELL_LAYOUT") != std::string::npos);
+
+    // A phone game wants the whole screen, so the shell asks for fullscreen from
+    // the first touch and swallows a refusal: a browser that declines leaves the
+    // game playable, so a rejection must not surface as an error.
+    CHECK(js.find("requestFullscreen") != std::string::npos);
+    CHECK(js.find("'touchstart'") != std::string::npos);
 }
 
 TEST_CASE("writing the web shell produces the page and its loader") {

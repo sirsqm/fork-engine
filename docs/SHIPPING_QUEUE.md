@@ -284,10 +284,17 @@ the window box.
 ### `touch-fullscreen-prompt`
 
 Offer a fullscreen request on the first touch, so a phone game is not stuck in a
-browser chrome frame.
+browser chrome frame. Shipped as a best-effort request on the first touch or
+pointer press on the canvas: `{ once: true }`, and every refusal — a missing API,
+a rejected promise, a synchronous throw — is swallowed, because the game is
+already playable in the frame it has
+([ADR-0092](adr/0092-fullscreen-from-first-touch.md)).
 
 **Done when** the shell requests fullscreen from a gesture and degrades silently
-where the browser refuses.
+where the browser refuses. Both hold: the request is bound to the first
+`touchstart`/`pointerdown` on the canvas and its failure paths are all caught;
+the unit test asserts the request and the gesture binding, since a headless
+Chromium cannot grant fullscreen to a synthetic event.
 
 ### `mobile-safe-area`
 

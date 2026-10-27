@@ -212,6 +212,43 @@ std::string web_shell_js() {
     js += "  }\n";
     js += "}\n";
     js += "\n";
+    // A phone game wants the whole screen. A browser only grants fullscreen from
+    // a user gesture, and the first touch is the earliest one a game reliably
+    // gets, so it is taken as the cue. It degrades silently: a browser that
+    // refuses (desktop, an embedded webview, a policy) leaves the game playable
+    // in the frame it already has, so a rejection is not an error and is not
+    // reported as one (docs/SHIPPING_QUEUE.md, `touch-fullscreen-prompt`).
+    //
+    // `touchstart` is registered `{ once: true }` so the request is made at most
+    // once rather than on every touch, and passive so the listener cannot delay
+    // the first frame's input. The element is the canvas, matching where the
+    // backend binds its own touch listener.
+    js += "function requestFullscreenOnFirstTouch() {\n";
+    js += "  const canvas = document.getElementById(CANVAS_ID);\n";
+    js += "  if (!canvas) {\n";
+    js += "    return;\n";
+    js += "  }\n";
+    js += "  const enter = () => {\n";
+    js += "    const target = document.documentElement;\n";
+    js += "    const request = target.requestFullscreen || target.webkitRequestFullscreen;\n";
+    js += "    if (typeof request !== 'function') {\n";
+    js += "      return;\n";
+    js += "    }\n";
+    js += "    try {\n";
+    js += "      const result = request.call(target);\n";
+    js += "      if (result && typeof result.catch === 'function') {\n";
+    js += "        result.catch(() => {});\n";
+    js += "      }\n";
+    js += "    } catch (error) {\n";
+    js += "      // A refusal is not a failure: the game is already usable.\n";
+    js += "    }\n";
+    js += "  };\n";
+    js += "  canvas.addEventListener('touchstart', enter, { once: true, passive: true });\n";
+    js += "  canvas.addEventListener('pointerdown', enter, { once: true, passive: true });\n";
+    js += "}\n";
+    js += "\n";
+    js += "requestFullscreenOnFirstTouch();\n";
+    js += "\n";
     js += "start().catch((error) => fail(String(error && error.message ? error.message : error)));\n";
     return js;
 }

@@ -97,6 +97,7 @@ rather than editing it.
 | [0089](0089-editor-transform-editing.md) | Editing a node's transform in the editor (SetTransform operation, inspector section, viewport drag) | Accepted |
 | [0090](0090-declarative-input-bindings.md) | Declarative input bindings (touch regions and keys as data) | Accepted |
 | [0091](0091-mobile-viewport-and-full-bleed-canvas.md) | A mobile viewport and a full-bleed canvas | Accepted |
+| [0092](0092-fullscreen-from-first-touch.md) | A fullscreen request from the first touch | Accepted |
 
 ## Format
 
