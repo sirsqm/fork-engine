@@ -76,7 +76,7 @@ struct Options {
     std::vector<std::string> modules;
     std::string name;
     // The pack key of a declarative input-binding document, if the build ships
-    // one (docs/PLAN.md, `touch-gesture-regions`). Read from the pack after the
+    // one (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`). Read from the pack after the
     // engine's own declarations, so a game's touch regions are data rather than
     // code. Empty means the build declares no bindings of its own.
     std::string bindings;
@@ -98,7 +98,7 @@ struct Options {
     // Drive the probe with a *touch* instead of a key: dispatch a synthetic
     // touchstart on the canvas at a normalised point and report how far the
     // watched node moved. This is the acceptance test for "touch works in the web
-    // build" (docs/PLAN.md, `touch-gesture-regions`): a browser check can dispatch
+    // build" (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`): a browser check can dispatch
     // an event but cannot touch a screen, so the player does it and reports the
     // result. Ignored off the web target.
     bool probe_touch = false;
@@ -194,7 +194,7 @@ protected:
         // A game's own bindings, if the build ships a document for them. Applied
         // after the standard set, so a game can add actions, rebind the built-ins
         // to its own layout, or declare touch regions of its own - and it does so
-        // in data, without a rebuild (docs/PLAN.md, `touch-gesture-regions`).
+        // in data, without a rebuild (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`).
         //
         // A malformed document is fatal rather than ignored: a game whose regions
         // silently did not load is a game whose touch controls do nothing, which is

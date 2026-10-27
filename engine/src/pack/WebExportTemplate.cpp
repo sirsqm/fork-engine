@@ -148,7 +148,7 @@ std::string web_shell_js() {
     js += "  // `?probeNode=NAME` watches a node other than the default (Camera).\n";
     js += "  // `?touch=1` makes the probe a touch on the canvas instead of a key press,\n";
     js += "  // which is how the headless check proves touch reaches gameplay; `?touchAt=x,y`\n";
-    js += "  // aims it at a normalised point (docs/PLAN.md, `touch-gesture-regions`).\n";
+    js += "  // aims it at a normalised point (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`).\n";
     js += "  const probe = new URLSearchParams(location.search).get('probe');\n";
     js += "  if (probe === '1') {\n";
     js += "    const touch = new URLSearchParams(location.search).get('touch');\n";

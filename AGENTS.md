@@ -1,13 +1,21 @@
 # AGENTS.md — repository notes for automated contributors
 
 Fork Engine is a modular C++20 2D/3D game engine. Read `docs/ARCHITECTURE.md`
-for the design and `docs/PLAN.md` for the pillars, the milestone order, the
-shipping queue, and the next concrete step, before changing anything.
+for the design, then the three planning documents: `docs/STRATEGY.md` for the
+pillars (why the work is ordered this way), `docs/ROADMAP.md` for the milestone
+order and where each milestone stands, and `docs/SHIPPING_QUEUE.md` for the
+ordered backlog of the next concrete step — before changing anything.
+
+The three planning documents were once merged into one `docs/PLAN.md`; they were
+split back out because each answers a different question and they were being
+read as one. Keep them separate, and keep each idea in exactly one of them:
+strategy is *why*, roadmap is *sequence and status*, the queue is *what next*.
 
 ## Strategy: the pillars
 
-Three capabilities shape the design, not just the feature list, and every
-subsystem should be checked against them:
+`docs/STRATEGY.md` is the authority; this is only the checklist to test a
+subsystem against. Three capabilities shape the design, not just the feature
+list:
 
 - **Performance is a product feature** (M9, ADR-0017). Measure before
   optimizing; the authoring model (scene graph) and the processing model (a flat
@@ -17,18 +25,17 @@ subsystem should be checked against them:
   contract with a null backend; assets ship in a pack; targets are new backends,
   added on demand. This is about shipping *games*, not running the editor on
   several OSes.
-- **Edits are durable and shareable** (M10). An edit is a serializable operation
-  over a stably identified object, so undo, redo, and replay share one model;
-  component identity is [ADR-0045](docs/adr/0045-component-identity.md), the
-  local operation model [ADR-0047](docs/adr/0047-local-operation-model.md).
+- **Edits are durable and shareable** (ADR-0045, ADR-0047). An edit is a
+  serializable operation over a stably identified object, so undo, redo, and
+  replay share one model.
 
-The local steps toward collaborative editing — stable component identity, a
-serializable operation model, and an ordered log — are shipped and kept, because
-they make undo/redo robust on their own. Networked collaborative editing is not
-planned: it needs a hosted authoritative service, and the project will not carry
-that running cost.
+Networked collaborative editing is not planned: it needs a hosted authoritative
+service, and the project will not carry that running cost. The local steps
+(component identity, the operation model, the ordered log) stay, because they
+make undo/redo robust on their own.
 
-These are plans, not shipped code. Do not present a planned item as done.
+These are plans, not shipped code. Do not present a planned item as done. Check
+`docs/ROADMAP.md` for the current status of a milestone before describing it.
 
 ## Build and test
 

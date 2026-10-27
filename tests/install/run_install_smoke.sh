@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 #
 # Installs a build tree and checks the installed tree is complete and runnable.
-# This is the acceptance test for the install rules (docs/PLAN.md,
+# This is the acceptance test for the install rules (docs/SHIPPING_QUEUE.md,
 # `desktop-export-templates`): an installed tree is what a packager and a
 # downstream consumer see, and a missing library or header is invisible in a
 # build tree, where everything is found by path.

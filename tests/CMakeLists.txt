@@ -130,7 +130,7 @@ add_test(
 # building: a green desktop build says nothing about whether the wasm job still
 # builds the player or still runs the browser smoke test. Like the platform
 # classifier, it is checked by reading the workflow in CMake's script mode
-# (docs/PLAN.md, shipping queue, `web-smoke-test-ci`).
+# (docs/SHIPPING_QUEUE.md, `web-smoke-test-ci`).
 add_test(
   NAME ci_web_job
   COMMAND
@@ -210,7 +210,7 @@ endif()
 add_test(NAME graphics_tests COMMAND fork_graphics_tests)
 
 # ---------------------------------------------------------------------------
-# GLES3 dialect parity (docs/PLAN.md, shipping queue, `webgl2-mobile-parity`).
+# GLES3 dialect parity (docs/SHIPPING_QUEUE.md, `webgl2-mobile-parity`).
 #
 # WebGL2 and the GLES3 contexts phones expose are close but not identical, and a
 # shader the ES seam translates wrongly is invisible until a phone compiles it.

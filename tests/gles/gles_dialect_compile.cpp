@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// The GLES3 dialect parity check (docs/PLAN.md, shipping queue,
+// The GLES3 dialect parity check (docs/SHIPPING_QUEUE.md,
 // `webgl2-mobile-parity`).
 //
 // WebGL2 and the GLES3 contexts Android and iOS expose are close but not
@@ -86,8 +86,8 @@ struct ShaderLiteral {
         }
         ShaderLiteral lit;
         lit.name = name;
-        lit.stage = name.find("Fragment") != std::string::npos ? fe::rhi::ShaderStage::Fragment
-                                                              : fe::rhi::ShaderStage::Vertex;
+        lit.stage =
+            name.find("Fragment") != std::string::npos ? fe::rhi::ShaderStage::Fragment : fe::rhi::ShaderStage::Vertex;
         lit.source = std::string(text.substr(body, end - body));
         out.push_back(std::move(lit));
         pos = end + 6;
@@ -119,8 +119,8 @@ struct ShaderLiteral {
 // Creates a surfaceless GLES3 context with no display. Returns EGL_NO_CONTEXT
 // when the driver is absent, which the caller turns into a skip.
 [[nodiscard]] EGLContext make_context(EGLDisplay& display) {
-    auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-        eglGetProcAddress("eglGetPlatformDisplayEXT"));
+    auto get_platform_display =
+        reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(eglGetProcAddress("eglGetPlatformDisplayEXT"));
     if (get_platform_display == nullptr) {
         return EGL_NO_CONTEXT;
     }
@@ -130,8 +130,8 @@ struct ShaderLiteral {
     if (display == EGL_NO_DISPLAY || eglInitialize(display, &major, &minor) != EGL_TRUE) {
         return EGL_NO_CONTEXT;
     }
-    const EGLint config_attrs[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE,
-                                   EGL_OPENGL_ES3_BIT, EGL_NONE};
+    const EGLint config_attrs[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+                                   EGL_NONE};
     EGLConfig config = nullptr;
     EGLint count = 0;
     if (eglChooseConfig(display, config_attrs, &config, 1, &count) != EGL_TRUE || count < 1) {
@@ -157,8 +157,7 @@ int main(int argc, char** argv) {
         std::printf("gles_dialect_compile: no GLES3 context available, skipping\n");
         return 77;
     }
-    std::printf("gles_dialect_compile: %s | %s\n",
-                reinterpret_cast<const char*>(glGetString(GL_VERSION)),
+    std::printf("gles_dialect_compile: %s | %s\n", reinterpret_cast<const char*>(glGetString(GL_VERSION)),
                 reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
     int failures = 0;

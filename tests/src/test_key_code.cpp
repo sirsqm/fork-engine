@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// Tests for the DOM physical-key translation (docs/PLAN.md,
+// Tests for the DOM physical-key translation (docs/SHIPPING_QUEUE.md,
 // `touch-input-actions`).
 //
 // The mapping is a pure function of a `code` string, so these need no browser:

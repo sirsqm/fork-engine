@@ -58,7 +58,7 @@ struct ExportManifest {
     std::string scene;
     // The key a declarative input-binding document is stored under inside the
     // pack ("input/bindings.json"), or empty for a build that declares no
-    // bindings of its own (docs/PLAN.md, `touch-gesture-regions`). The player
+    // bindings of its own (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`). The player
     // reads it after the engine's own declarations, so a game's regions are data
     // rather than code. Empty is the common case and is omitted from the
     // document, so a build without bindings is byte-for-byte what it was before
