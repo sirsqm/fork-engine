@@ -331,6 +331,20 @@ TEST_CASE("the render path submits draws headless through the frame loop") {
     CHECK(app.had_headless_render == true);
 }
 
+TEST_CASE("a null device has no error queue to report") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+
+    // The drain exists so a browser-only GL error fails a web run rather than
+    // being found by eye. The null device touches no graphics API, so it can
+    // neither raise nor miss an error, and the honest answer is always "none" --
+    // not a fabricated error a caller would have to special-case. A caller that
+    // drains a device it did not create therefore reads an empty list and does
+    // not have to know which backend it holds.
+    CHECK(device.drain_errors().empty());
+}
+
 TEST_CASE("headless render is off unless asked for") {
     Engine::Config config = null_render_config();
     config.headless_render = false;

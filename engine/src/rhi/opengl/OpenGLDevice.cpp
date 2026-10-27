@@ -29,6 +29,47 @@ namespace fe::rhi::opengl {
 namespace {
 
 // ---------------------------------------------------------------------------
+// Error reporting
+// ---------------------------------------------------------------------------
+
+// A human-readable name for a `glGetError` code. An unknown code is reported by
+// number rather than dropped: a value this table does not know is still a real
+// error the run should surface, and silently discarding it is the failure mode
+// the whole drain exists to avoid.
+[[nodiscard]] std::string describe_gl_error(GLenum code) {
+    switch (code) {
+    case GL_INVALID_ENUM:
+        return "GL_INVALID_ENUM";
+    case GL_INVALID_VALUE:
+        return "GL_INVALID_VALUE";
+    case GL_INVALID_OPERATION:
+        return "GL_INVALID_OPERATION";
+    case GL_INVALID_FRAMEBUFFER_OPERATION:
+        return "GL_INVALID_FRAMEBUFFER_OPERATION";
+    case GL_OUT_OF_MEMORY:
+        return "GL_OUT_OF_MEMORY";
+#ifdef GL_CONTEXT_LOST
+    case GL_CONTEXT_LOST:
+        return "GL_CONTEXT_LOST";
+#endif
+    default:
+        // Hex, the way a GL error is normally written down. Formatted without
+        // <sstream> to keep this header-light file free of another include.
+        constexpr const char* kDigits = "0123456789ABCDEF";
+        std::string text = "GL error 0x";
+        bool started = false;
+        for (int shift = 28; shift >= 0; shift -= 4) {
+            const auto nibble = static_cast<unsigned>((code >> shift) & 0xFU);
+            if (nibble != 0U || started || shift == 0) {
+                text.push_back(kDigits[nibble]);
+                started = true;
+            }
+        }
+        return text;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Shader compilation helpers
 // ---------------------------------------------------------------------------
 
@@ -675,6 +716,27 @@ public:
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
         glReadPixels(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width),
                      static_cast<GLsizei>(height), GL_RGBA, GL_UNSIGNED_BYTE, out.data());
+    }
+
+    std::vector<std::string> drain_errors() override {
+        std::vector<std::string> errors;
+        // glGetError is a queue, not a flag: it returns one error per call and
+        // clears it, so a drain loops until it reports GL_NO_ERROR. The queue is
+        // shallow (a driver may record one code per kind and drop repeats), which
+        // is why the name is attached here rather than relied on to be unique.
+        //
+        // The loop is bounded. A backend that reported GL_NO_ERROR forever, or a
+        // context already lost, must not spin here; a lost context reports
+        // GL_CONTEXT_LOST for every call, so a handful of iterations is all a
+        // real queue can ever need.
+        for (u32 guard = 0; guard < 16; ++guard) {
+            const GLenum code = glGetError();
+            if (code == GL_NO_ERROR) {
+                break;
+            }
+            errors.push_back(describe_gl_error(code));
+        }
+        return errors;
     }
 
 private:

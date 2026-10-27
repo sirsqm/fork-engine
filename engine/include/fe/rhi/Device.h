@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fe {
 
@@ -124,6 +125,25 @@ public:
     // assert that something was actually drawn, and the future editor, which
     // needs screenshots and thumbnail capture. It is not a general image API.
     virtual void read_pixels(u32 x, u32 y, u32 width, u32 height, std::span<u8> out) = 0;
+
+    // --- Diagnostics -------------------------------------------------------
+    // Drains the backend's pending error queue and returns one human-readable
+    // description per error found, clearing them, so a later call sees only
+    // errors raised after this one. An empty result means the queue was clean.
+    //
+    // This exists because "it rendered" and "it rendered legally" are different
+    // claims, and the difference is invisible without asking. A WebGL2 context
+    // rejects calls a desktop GL 3.3 context tolerates -- an illegal
+    // depth-texture format, a draw into a framebuffer whose colour attachment
+    // has no fragment output -- and the frame can still come back non-blank
+    // while the driver has silently dropped the pass. The web acceptance check
+    // drains this after a bounded run so a browser-only GL error fails the run
+    // rather than being found by eye later.
+    //
+    // The default returns nothing, which is honest for a backend with no error
+    // queue: the null device never touches a graphics API, so it can neither
+    // raise nor miss an error.
+    [[nodiscard]] virtual std::vector<std::string> drain_errors() { return {}; }
 };
 
 // Creates the default graphics device for `window`.

@@ -187,6 +187,36 @@ TEST_CASE("renderer3d draws a lit mesh covering the centre of the view") {
     CHECK(centre.b < 60);
 }
 
+TEST_CASE("a render through the OpenGL device leaves no GL error behind") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+    Node* cube_node = scene.create_node("Cube");
+    auto* mesh_renderer = cube_node->add_component<MeshRenderer3D>();
+    mesh_renderer->mesh = Mesh::make_cube();
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    context.device->end_frame();
+
+    // "It drew something" and "it drew legally" are different claims. The web
+    // acceptance check drains this same queue after a headless run, because a
+    // WebGL2 context rejects calls a desktop GL 3.3 context tolerates and can
+    // still leave a non-blank frame behind. This test pins the desktop half: a
+    // correct render leaves the queue clean, so a future change that makes the
+    // drain report a false positive fails here, on a desktop context, rather
+    // than as a confusing red web job.
+    CHECK(context.device->drain_errors().empty());
+}
+
 TEST_CASE("renderer3d reports the number of instances drawn") {
     GraphicsContext3D context;
     if (!context.available) {
