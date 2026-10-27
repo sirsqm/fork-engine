@@ -100,6 +100,7 @@ rather than editing it.
 | [0092](0092-fullscreen-from-first-touch.md) | A fullscreen request from the first touch | Accepted |
 | [0093](0093-safe-area-insets-seam.md) | Safe-area insets as a normalised seam | Accepted |
 | [0094](0094-export-version-stamping.md) | Stamping the engine version into an export | Accepted |
+| [0095](0095-web-gl-error-verification.md) | Verifying a web run for GL errors, not just pixels | Accepted |
 
 ## Format
 

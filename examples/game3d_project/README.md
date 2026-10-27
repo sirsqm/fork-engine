@@ -128,13 +128,18 @@ http://localhost:8000/index.html?frames=2&probe=1&probeNode=Player
 ```
 
 The page title then reads
-`FE_PLAYER_RESULT canvas=1 frames=2 distinct=… moved=… probe=1 jumped=…`. A
+`FE_PLAYER_RESULT canvas=1 frames=2 distinct=… moved=… probe=1 jumped=… glerr=0`. A
 non-zero `moved` is proof that a synthetic key reached the action layer and drove
 a behaviour, and a non-zero `jumped` is proof that the jump half of the
 controller fired too — the movement check alone would pass on a controller whose
-jump never worked. `tests/web/run_web_game.sh` runs this project with the probe
-on and fails the run when either is zero, so "input works in the browser" is
-checked on every push rather than asserted in prose.
+jump never worked. `glerr` is the backend's error count after the run: a WebGL2
+context rejects calls a desktop GL 3.3 context tolerates, and a rejected pass can
+still leave a non-blank frame behind, so the check fails on a non-zero count
+rather than trusting the frame's colours alone
+([ADR-0095](../../docs/adr/0095-web-gl-error-verification.md)). `tests/web/run_web_game.sh`
+runs this project with the probe on and fails the run when `moved` or `jumped` is
+zero or `glerr` is non-zero, so "input works in the browser, and the driver
+accepted every call" is checked on every push rather than asserted in prose.
 
 The probe pins a fixed simulation step (`--fixed-step`, defaulting to 1/60 s when
 the probe is on; ADR-0079), so the distance it reports is a property of the input

@@ -134,6 +134,17 @@ Chromium with no GL error, a pruned 3D export carries its mesh and texture, and
 the web game check runs both renderers. See
 [ADR-0076](adr/0076-3d-in-the-browser.md).
 
+Both hold. The check runs the 2D demo, the 3D game, a 3D touch run and a
+phone-sized 2D run, and asserts a live canvas, a live loop, a non-blank frame
+and a pruned export that carries its mesh and texture. The "no GL error" half
+was the last to be checked: a non-blank frame is blind to a *rejected* draw, and
+the two defects this item fixed — a depth-texture format GLSL ES 3.00 rejects,
+and a colour-attached depth pass — both left a non-blank frame behind. The
+device now has a `drain_errors()` seam (the null backend reports none), the
+player reports the count as `glerr=N` and logs each error, and the web game
+check fails on a non-zero count ([ADR-0095](adr/0095-web-gl-error-verification.md)).
+All four runs report `glerr=0`.
+
 ### `web-gameplay-logic`
 
 A 3D scene rendered in a browser but nothing responded to input: gameplay logic
