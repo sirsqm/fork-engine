@@ -267,10 +267,19 @@ parsed and applied end to end in a browser.
 ### `mobile-viewport-meta`
 
 A mobile browser needs a viewport meta tag and a full-bleed canvas or the game
-renders at desktop scale with scrollbars.
+renders at desktop scale with scrollbars. Shipped as a full-bleed, non-scrolling
+page: the canvas is `position: fixed; inset: 0` over the whole window, the
+viewport meta carries `width=device-width` and `viewport-fit=cover`, and the page
+suppresses scroll, overscroll and browser touch gestures so a drag reaches the
+game ([ADR-0091](adr/0091-mobile-viewport-and-full-bleed-canvas.md)). The shell
+also measures its own layout into a hidden `#layout` element, because a headless
+browser can read a number but cannot judge "looks right".
 
 **Done when** the export shell carries the viewport meta and a test asserts the
-canvas fills the window under a simulated phone size.
+canvas fills the window under a simulated phone size. Both hold: a unit test
+asserts the meta's contents and the canvas rules, and the web game check runs the
+2D slice at a phone's CSS size (844x390) and fails unless the canvas box equals
+the window box.
 
 ### `touch-fullscreen-prompt`
 

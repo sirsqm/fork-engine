@@ -244,6 +244,49 @@ TEST_CASE("the web shell fetches exactly the files the export writes") {
     CHECK(js.find("manifest.target") != std::string::npos);
 }
 
+TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta") {
+    // The acceptance test for `mobile-viewport-meta`. A phone browser without a
+    // viewport meta renders at desktop scale, and a fixed-aspect box centred in a
+    // scrollable page letterboxes the game and puts its edges outside the element
+    // the backend binds touch to. Both are asserted here because both fail
+    // silently: the game loads and looks merely wrong.
+    ExportManifest manifest;
+    manifest.name = "Phone";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetWeb;
+
+    const std::string html = web_index_html(manifest);
+
+    // The viewport meta must exist and must ask for the phone's own width. Without
+    // `width=device-width` the page is laid out at a nominal desktop width.
+    const std::string viewport_meta = "<meta name=\"viewport\"";
+    const auto meta_at = html.find(viewport_meta);
+    REQUIRE(meta_at != std::string::npos);
+    const std::string meta = html.substr(meta_at, html.find('>', meta_at) - meta_at);
+    CHECK(meta.find("width=device-width") != std::string::npos);
+    CHECK(meta.find("initial-scale=1") != std::string::npos);
+    // `viewport-fit=cover` is what makes the safe-area insets non-zero on a
+    // notched phone; without it the insets are always zero and the safe-area item
+    // has nothing to offset.
+    CHECK(meta.find("viewport-fit=cover") != std::string::npos);
+
+    // The canvas fills the viewport: a fixed inset of 0 on every edge and a full
+    // width/height, with no max-width that would letterbox a wide phone.
+    CHECK(html.find("#canvas { position: fixed; inset: 0; width: 100%; height: 100%") != std::string::npos);
+    // The page does not scroll, or a touch-drag would scroll the page instead of
+    // reaching the game.
+    CHECK(html.find("overflow: hidden") != std::string::npos);
+    // The browser must not claim a touch as a scroll or a pinch before the game
+    // sees it.
+    CHECK(html.find("touch-action: none") != std::string::npos);
+
+    // The shell reports its own layout so the headless check can prove the canvas
+    // fills a phone-sized window rather than trusting the stylesheet alone.
+    const std::string js = web_shell_js();
+    CHECK(js.find("FE_SHELL_LAYOUT") != std::string::npos);
+}
+
 TEST_CASE("writing the web shell produces the page and its loader") {
     TempDir dir("web_shell");
 

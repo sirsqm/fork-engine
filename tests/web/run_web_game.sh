@@ -88,6 +88,7 @@ export_project() {
 # and can be observed; a game otherwise runs until its tab closes.
 run_project() {
   local project="$1" label="$2" base_port="${3:-8733}" probe_node="${4:-}" probe_touch="${5:-0}"
+  local window_size="${6:-}"
   [[ -d "${project}" ]] || fail "no project at ${project}"
 
   # Where the export lands. A normal run exports to a temporary directory and
@@ -181,6 +182,12 @@ run_project() {
     local chrome_cmd=("${CHROME_BIN}")
     if [[ -n "${CHROME_TIMEOUT}" ]]; then
       chrome_cmd=(timeout "${CHROME_TIMEOUT}" "${CHROME_BIN}")
+    fi
+    # A window size turns this into the phone check: the shell's full-bleed canvas
+    # must fill the window exactly, and the run is asserted against that below.
+    # Left unset the browser picks its own default, which is the desktop shape.
+    if [[ -n "${window_size}" ]]; then
+      chrome_cmd+=("--window-size=${window_size}")
     fi
     dump="$("${chrome_cmd[@]}" \
       --headless=new \
@@ -286,7 +293,27 @@ PY
     input_note=", input moved ${moved_reported}"
     [[ "${probe_touch}" == "1" ]] && input_note+=" (touch)"
   fi
-  echo "web game: [${label}] PASS (canvas, ${frames_reported} frames, ${distinct_reported} distinct colours${input_note})"
+
+  # The phone check: the shell's canvas must fill a phone-sized window exactly, or
+  # the game is letterboxed or scrollable on the device this phase targets. The
+  # shell reports its own measurement into the hidden `#layout` element, which the
+  # dump carries (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`).
+  local layout_note=""
+  if [[ -n "${window_size}" ]]; then
+    local layout_line
+    layout_line="$(sed -n 's/.*\(FE_SHELL_LAYOUT[^<]*\).*/\1/p' <<<"${dump}")"
+    [[ -n "${layout_line}" ]] ||
+      fail "[${label}] the shell reported no layout; the page did not measure itself"
+    local fullbleed_reported
+    fullbleed_reported="$(sed -n 's/.*fullbleed=\([0-9]*\).*/\1/p' <<<"${layout_line}")"
+    [[ -n "${fullbleed_reported}" ]] || fail "[${label}] the layout report had no fullbleed flag: ${layout_line}"
+    if (( fullbleed_reported != 1 )); then
+      fail "[${label}] the canvas does not fill the window at ${window_size}: ${layout_line}"
+    fi
+    layout_note=", ${layout_line#FE_SHELL_LAYOUT }"
+  fi
+
+  echo "web game: [${label}] PASS (canvas, ${frames_reported} frames, ${distinct_reported} distinct colours${input_note}${layout_note})"
 }
 
 # A single project can be named for a focused run; by default both renderers are
@@ -313,12 +340,20 @@ PY
 # behaviour, not of how fast the browser happened to run the frames.
 if [[ -n "${FE_WEB_GAME_PROJECT:-}" ]]; then
   run_project "${FE_WEB_GAME_PROJECT}" "$(basename "${FE_WEB_GAME_PROJECT}")" \
-    "${FE_WEB_GAME_PORT:-8733}" "${FE_WEB_GAME_PROBE_NODE:-}" "${FE_WEB_GAME_PROBE_TOUCH:-0}"
+    "${FE_WEB_GAME_PORT:-8733}" "${FE_WEB_GAME_PROBE_NODE:-}" "${FE_WEB_GAME_PROBE_TOUCH:-0}" \
+    "${FE_WEB_GAME_WINDOW_SIZE:-}"
 else
   run_project "${ROOT_DIR}/examples/demo_project" "2d" "${FE_WEB_GAME_PORT:-8733}"
   run_project "${ROOT_DIR}/examples/game3d_project" "3d" \
     "$((${FE_WEB_GAME_PORT:-8733} + 4))" "Player"
   FE_WEB_GAME_REQUIRE_JUMP=0 run_project "${ROOT_DIR}/examples/game3d_project" "3d-touch" \
     "$((${FE_WEB_GAME_PORT:-8733} + 8))" "Player" "1"
+  # The 2D slice again at a phone's CSS size, to prove the shell's full-bleed
+  # canvas fills the window rather than letterboxing at desktop scale. The window
+  # size is a phone in landscape (844x390 is an iPhone 14's CSS box rotated), and
+  # the check reads the shell's own layout measurement out of the page
+  # (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`).
+  run_project "${ROOT_DIR}/examples/demo_project" "2d-phone" \
+    "$((${FE_WEB_GAME_PORT:-8733} + 12))" "" "0" "844,390"
 fi
 

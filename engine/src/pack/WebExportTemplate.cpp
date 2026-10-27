@@ -41,29 +41,45 @@ std::string web_index_html(const ExportManifest& manifest) {
     // the module, where it can write a sentence into the status element instead
     // of leaving a blank canvas. The page itself cannot fail.
     //
-    // The canvas is styled to fill the viewport and to keep a 16:9 CSS box. The
-    // page owns that box; the backend follows it, keeping the drawing buffer at
-    // the box size in device pixels so a HiDPI display renders sharp rather than
-    // merely large, and converting DOM event coordinates out of CSS pixels
-    // (WebWindow::sync_canvas_size). A page that resizes the canvas therefore
-    // needs no engine-side wiring: the browser's resize event is what tells the
-    // backend to recompute.
+    // The canvas fills the whole viewport and the page never scrolls. That is the
+    // mobile shape (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`): a fixed-aspect box
+    // centred in a scrollable page renders at desktop scale on a phone, with
+    // browser chrome and scrollbars around it, and a touch near the edge lands
+    // outside the canvas the backend binds its listeners to. Full-bleed is also
+    // what makes a safe-area inset meaningful - there is no letterbox to hide in.
+    //
+    // `viewport-fit=cover` lets the page paint under a notch or a home indicator,
+    // which is what a full-bleed game wants; `user-scalable=no` stops a
+    // double-tap from zooming the page out from under the game; `touch-action:
+    // none` on the canvas stops the browser from claiming a drag as a scroll or a
+    // pinch before the game sees it.
     std::string html;
     html += "<!DOCTYPE html>\n";
     html += "<html lang=\"en\">\n";
     html += "<head>\n";
     html += "  <meta charset=\"utf-8\">\n";
-    html += "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n";
+    html += "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1,"
+            " viewport-fit=cover, user-scalable=no\">\n";
+    html += "  <meta name=\"mobile-web-app-capable\" content=\"yes\">\n";
+    html += "  <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n";
+    html += "  <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">\n";
+    html += "  <meta name=\"theme-color\" content=\"#101014\">\n";
     html += "  <title>" + title + "</title>\n";
     html += "  <style>\n";
-    html += "    html, body { margin: 0; height: 100%; background: #101014; }\n";
-    html += "    body { display: flex; align-items: center; justify-content: center; }\n";
+    html += "    html, body { margin: 0; height: 100%; background: #101014;"
+            " overflow: hidden; overscroll-behavior: none; }\n";
+    html += "    body { touch-action: none; -webkit-user-select: none; user-select: none; }\n";
     html += "    #" + std::string(kCanvasId) +
-            " { width: 100%; max-width: 1280px; aspect-ratio: 16 / 9;"
-            " display: block; touch-action: none; }\n";
+            " { position: fixed; inset: 0; width: 100%; height: 100%; display: block;"
+            " touch-action: none; }\n";
     html += "    #status { position: fixed; inset: 0; display: none; align-items: center;"
             " justify-content: center; color: #e6e6e6; font: 14px/1.5 system-ui, sans-serif;"
             " padding: 2rem; text-align: center; white-space: pre-wrap; }\n";
+    // A hidden element the shell writes its layout measurement into. It is a
+    // sibling of the canvas rather than the title because the runtime already
+    // owns the title for its own result, and because the measurement is read
+    // from a DOM dump rather than shown to a player.
+    html += "    #layout { display: none; }\n";
     html += "  </style>\n";
     html += "</head>\n";
     html += "<body>\n";
@@ -71,6 +87,7 @@ std::string web_index_html(const ExportManifest& manifest) {
     // element the descriptor names rather than creating one at the wrong size.
     html += "  <canvas id=\"" + std::string(kCanvasId) + "\" width=\"1280\" height=\"720\"></canvas>\n";
     html += "  <div id=\"status\"></div>\n";
+    html += "  <div id=\"layout\"></div>\n";
     html += "  <script type=\"module\" src=\"" + std::string(WebExportNames::kShellJs) + "\"></script>\n";
     html += "</body>\n";
     html += "</html>\n";
@@ -101,6 +118,24 @@ std::string web_shell_js() {
     js += "    status.style.display = 'flex';\n";
     js += "  }\n";
     js += "  console.error('fork_shell: ' + message);\n";
+    js += "}\n";
+    js += "\n";
+    // The page's own layout measurement, written into the hidden `#layout`
+    // element so an automated check can read it out of a DOM dump. It proves the
+    // canvas fills the window: a phone-sized window must not letterbox or scroll.
+    // `fullbleed` is the canvas covering the window's whole CSS box; the
+    // tolerance absorbs a sub-pixel layout rounding, not a real gap.
+    js += "function reportLayout() {\n";
+    js += "  const canvas = document.getElementById(CANVAS_ID);\n";
+    js += "  const rect = canvas.getBoundingClientRect();\n";
+    js += "  const w = window.innerWidth;\n";
+    js += "  const h = window.innerHeight;\n";
+    js += "  const fullbleed = Math.abs(rect.width - w) <= 1 && Math.abs(rect.height - h) <= 1;\n";
+    js += "  const element = document.getElementById('layout');\n";
+    js += "  if (element) {\n";
+    js += "    element.textContent = 'FE_SHELL_LAYOUT canvas=' + Math.round(rect.width) + 'x' +\n";
+    js += "      Math.round(rect.height) + ' window=' + w + 'x' + h + ' fullbleed=' + (fullbleed ? 1 : 0);\n";
+    js += "  }\n";
     js += "}\n";
     js += "\n";
     js += "async function start() {\n";
@@ -137,6 +172,7 @@ std::string web_shell_js() {
     js += "  if (manifest.bindings) {\n";
     js += "    runtimeArguments.push('--bindings', manifest.bindings);\n";
     js += "  }\n";
+    js += "  reportLayout();\n";
     js += "  const frames = new URLSearchParams(location.search).get('frames');\n";
     js += "  if (frames && /^[0-9]+$/.test(frames)) {\n";
     js += "    runtimeArguments.push('--frames', frames);\n";
