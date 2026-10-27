@@ -24,6 +24,7 @@
 #include "fe/systems/SceneSchedule.h"
 
 #include <memory>
+#include <ostream>
 
 using namespace fe;
 
@@ -133,7 +134,7 @@ TEST_CASE("the listener is a no-op with no audio system") {
     camera_node->transform().position = Vec3{4.0f, 5.0f, 6.0f};
 
     listener.update(step(0.016f), scene);
-    CHECK(listener.audio_system() == nullptr);
+    CHECK((listener.audio_system() == nullptr));
 }
 
 TEST_CASE("the listener leaves the position untouched with no camera") {
@@ -159,7 +160,7 @@ TEST_CASE("the system reports a stable name and can be re-pointed at an audio sy
 
     audio::AudioSystem audio(nullptr);
     listener.set_audio_system(&audio);
-    CHECK(listener.audio_system() == &audio);
+    CHECK((listener.audio_system() == &audio));
 
     Scene scene;
     Node* camera_node = scene.create_node("Camera");
@@ -181,11 +182,11 @@ TEST_CASE("a schedule drives the listener from a real engine's audio system") {
     // must not inherit this test's level.
     const LogLevel previous_level = log::min_level();
     REQUIRE(engine.initialize(null_config()).ok());
-    REQUIRE(engine.audio_system() != nullptr);
+    REQUIRE((engine.audio_system() != nullptr));
 
     auto system = engine.take_audio_system();
-    REQUIRE(system != nullptr);
-    CHECK(engine.audio_system() == nullptr); // ownership transferred
+    REQUIRE((system != nullptr));
+    CHECK((engine.audio_system() == nullptr)); // ownership transferred
 
     SceneSchedule schedule;
     schedule.add_system<AudioListenerSystem>(system.get());
@@ -199,7 +200,7 @@ TEST_CASE("a schedule drives the listener from a real engine's audio system") {
 
     schedule.update(step(0.016f), scene);
     const auto* audio = static_cast<const audio::AudioSystem*>(schedule.find("AudioSystem"));
-    REQUIRE(audio != nullptr);
+    REQUIRE((audio != nullptr));
     CHECK(audio->listener_position().x == doctest::Approx(3.0f));
     CHECK(audio->listener_position().y == doctest::Approx(1.0f));
     CHECK(audio->listener_position().z == doctest::Approx(-2.0f));
