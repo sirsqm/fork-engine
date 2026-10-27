@@ -11,7 +11,7 @@ requires a measurement before an optimisation lands. Three M9 rows were open and
 each one is the same kind of decision — move work off a path that does not need
 it — so they are recorded together:
 
-1. **GPU efficiency: instancing** (`ROADMAP.md`, M9). `Renderer2D` built one quad
+1. **GPU efficiency: instancing** (docs/PLAN.md, M9). `Renderer2D` built one quad
    per sprite as four vertices and six indices in a CPU buffer, then uploaded the
    whole thing every frame. The vertex data for two sprites at different
    positions is identical except for the transform, so the stream was mostly
