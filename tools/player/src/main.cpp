@@ -539,6 +539,28 @@ private:
                     static_cast<unsigned int>(height), static_cast<unsigned long long>(distinct.size()));
 
 #if defined(FE_PLATFORM_WEB)
+        // Drain the backend's error queue and add anything found to the run's
+        // total. "It drew something" and "it drew legally" are different claims:
+        // a WebGL2 context rejects calls a desktop GL 3.3 context tolerates, and
+        // a rejected pass can still leave a non-blank frame behind -- the shadow
+        // map this queue's ADR-0076 was about came back incomplete while the main
+        // pass kept drawing. Reading the queue is the only way a headless run
+        // sees that, so the count is part of the verdict and the check fails on a
+        // non-zero one. Each error is logged, so a failure names what the driver
+        // rejected rather than only that it did.
+        //
+        // The drain *accumulates* rather than replacing. report_frame() runs on
+        // every frame from the target onward (the loop keeps stepping until the
+        // browser's virtual-time budget ends, and each of those frames reports),
+        // so an error raised on one frame would be drained there and then
+        // overwritten by the next frame's empty queue -- the run would report
+        // clean while the log showed the error. Appending keeps a transient error
+        // in the verdict, which is what "the run was legal" has to mean.
+        for (const std::string& error : engine().device().drain_errors()) {
+            FE_LOG_ERROR("fork_player: GL error after the run: %s", error.c_str());
+            gl_errors_seen_.push_back(error);
+        }
+
         // The report a headless-browser check reads back out of the page. The
         // engine's log goes to the browser console, which --dump-dom does not
         // show, so the verdict is written into the title where the harness can
@@ -555,11 +577,11 @@ private:
         EM_ASM(
             {
                 document.title = 'FE_PLAYER_RESULT canvas=' + $0 + ' frames=' + $1 + ' distinct=' + $2 + ' moved=' +
-                                 $3.toFixed(3) + ' probe=' + $4 + ' jumped=' + $5.toFixed(3);
+                                 $3.toFixed(3) + ' probe=' + $4 + ' jumped=' + $5.toFixed(3) + ' glerr=' + $6;
             },
             engine().window().has_context() ? 1 : 0, static_cast<int>(frame_count_), static_cast<int>(distinct.size()),
             static_cast<double>(probe_moved_distance()), options_.probe_input ? 1 : 0,
-            static_cast<double>(probe_peak_rise()));
+            static_cast<double>(probe_peak_rise()), static_cast<int>(gl_errors_seen_.size()));
 #endif
     }
 
@@ -610,6 +632,10 @@ private:
     fe::Vec3 probe_start_position_{};
     fe::f32 probe_peak_rise_ = 0.0f;
     bool probe_active_ = false;
+    // Every GL error the backend reported, accumulated across the frames that
+    // reported. Kept so the report's count is the run's total and a later clean
+    // drain cannot overwrite an earlier error (see report_frame()).
+    std::vector<std::string> gl_errors_seen_;
 #endif
 };
 

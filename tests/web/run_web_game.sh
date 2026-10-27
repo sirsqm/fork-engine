@@ -239,13 +239,14 @@ PY
   # shader compile, a dead renderer, a scene that never drew — is one colour, and
   # a rendered scene is several, so this fails when the renderer is deliberately
   # broken without needing a golden image.
-  local canvas_reported frames_reported distinct_reported moved_reported probe_reported jumped_reported
+  local canvas_reported frames_reported distinct_reported moved_reported probe_reported jumped_reported glerr_reported
   canvas_reported="$(sed -n 's/.*canvas=\([0-9]*\).*/\1/p' <<<"${report}")"
   frames_reported="$(sed -n 's/.*frames=\([0-9]*\).*/\1/p' <<<"${report}")"
   distinct_reported="$(sed -n 's/.*distinct=\([0-9]*\).*/\1/p' <<<"${report}")"
   moved_reported="$(sed -n 's/.*moved=\([0-9.]*\).*/\1/p' <<<"${report}")"
   probe_reported="$(sed -n 's/.*probe=\([0-9]*\).*/\1/p' <<<"${report}")"
   jumped_reported="$(sed -n 's/.*jumped=\([0-9.]*\).*/\1/p' <<<"${report}")"
+  glerr_reported="$(sed -n 's/.*glerr=\([0-9]*\).*/\1/p' <<<"${report}")"
 
   [[ -n "${canvas_reported}" ]] || fail "[${label}] the report carried no canvas flag: ${report}"
   [[ -n "${frames_reported}" ]] || fail "[${label}] the report carried no frame count: ${report}"
@@ -259,6 +260,18 @@ PY
   fi
   if (( distinct_reported < 2 )); then
     fail "[${label}] the rendered frame has ${distinct_reported} distinct colour(s); it is blank"
+  fi
+
+  # The backend's GL error queue must be empty after the run. A WebGL2 context
+  # rejects calls a desktop context tolerates and can still leave a non-blank
+  # frame behind, so a non-zero count is a browser-only defect the frame's colour
+  # count cannot see — the shadow-map format and the colour-less depth pass this
+  # queue's ADR-0076 was about both failed this way. The player logs each error,
+  # so a failure here names what the driver rejected; the browser console carries
+  # those lines and `--dump-dom` does not, which is why the count is in the title.
+  [[ -n "${glerr_reported}" ]] || fail "[${label}] the report carried no GL error count: ${report}"
+  if (( glerr_reported != 0 )); then
+    fail "[${label}] the backend reported ${glerr_reported} GL error(s) after the run"
   fi
 
   # When the project was run with the input probe, the watched node must have
