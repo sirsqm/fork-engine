@@ -39,6 +39,12 @@ Result<std::string> ExportManifest::to_json() const {
     if (!modules.empty()) {
         document["modules"] = modules;
     }
+    // Written only when set, so a manifest written by a caller that does not know
+    // the engine version (a unit test, an older tool) keeps the shape it had
+    // before this field existed.
+    if (!engine_version.empty()) {
+        document["engine_version"] = engine_version;
+    }
     // Indented: a manifest is small, and a human reading an export directory
     // should be able to see what it runs without a JSON tool.
     return document.dump(2);
@@ -76,6 +82,13 @@ Error ExportManifest::from_json(std::string_view text, ExportManifest& out) {
     parsed.pack = document.value("pack", std::string{});
     parsed.scene = document.value("scene", std::string{});
     parsed.bindings = document.value("bindings", std::string{});
+    // Absent in a document written before the field existed, which reads as an
+    // unrecorded version rather than a guess. A wrong type is a document the
+    // writer would not have produced.
+    if (document.contains("engine_version") && !document.at("engine_version").is_string()) {
+        return Error("export manifest: 'engine_version' is not a string");
+    }
+    parsed.engine_version = document.value("engine_version", std::string{});
     if (parsed.pack.empty()) {
         return Error("export manifest: no pack file named");
     }

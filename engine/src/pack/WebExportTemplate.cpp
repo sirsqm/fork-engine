@@ -35,6 +35,11 @@ constexpr const char* kModuleFactory = "createForkPlayer";
 
 std::string web_index_html(const ExportManifest& manifest) {
     const std::string title = manifest.name.empty() ? std::string("Fork Engine") : manifest.name;
+    // The version the build was produced with, appended when it was recorded, so
+    // a tab, a bookmark and a screenshot say which engine made the build
+    // (docs/SHIPPING_QUEUE.md, `release-version-stamping`). A manifest written before the
+    // field existed has none, and the title is then exactly what it was.
+    const std::string title_suffix = manifest.engine_version.empty() ? std::string() : " " + manifest.engine_version;
 
     // The page is deliberately minimal. Everything that needs to fail
     // gracefully (a missing runtime, a wrong target, a fetch error) happens in
@@ -66,7 +71,7 @@ std::string web_index_html(const ExportManifest& manifest) {
     html += "  <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n";
     html += "  <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">\n";
     html += "  <meta name=\"theme-color\" content=\"#101014\">\n";
-    html += "  <title>" + title + "</title>\n";
+    html += "  <title>" + title + title_suffix + "</title>\n";
     html += "  <style>\n";
     html += "    html, body { margin: 0; height: 100%; background: #101014;"
             " overflow: hidden; overscroll-behavior: none; }\n";
@@ -209,6 +214,19 @@ std::string web_shell_js() {
     js += "  // an automated check to observe: the headless-browser verification uses it\n";
     js += "  // to let the shipped shell run, stop, and report what it drew.\n";
     js += "  const runtimeArguments = ['--pack', manifest.pack, '--scene', manifest.scene];\n";
+    // The runtime is handed the pack and the scene rather than the manifest, so
+    // the game's display name and the engine version it was built with travel as
+    // argv too. Without the name a browser build's title is the engine's default
+    // rather than the game's; without the version the title cannot say what made
+    // the build (docs/SHIPPING_QUEUE.md, `release-version-stamping`). Passed only when the
+    // manifest records them, so a build from an older export keeps the argv it
+    // had.
+    js += "  if (manifest.name) {\n";
+    js += "    runtimeArguments.push('--name', manifest.name);\n";
+    js += "  }\n";
+    js += "  if (manifest.engine_version) {\n";
+    js += "    runtimeArguments.push('--engine-version', manifest.engine_version);\n";
+    js += "  }\n";
     js += "  // A game's own declarative input bindings, if the build ships them. The\n";
     js += "  // key is inside the pack, so it is passed through verbatim. Without this\n";
     js += "  // the runtime would fall back to the engine's built-in layout and the\n";

@@ -406,10 +406,21 @@ an artifact that runs on a clean machine.
 ### `release-version-stamping`
 
 A downloadable build must say which version it is. Stamp the engine version into
-the exported manifest and show it in the game.
+the exported manifest and show it in the game. Shipped as an optional
+`engine_version` field on the export manifest, stamped by `fork_export` from
+`fe::version::kEngineVersionString` so it comes from the one source of truth
+(the root `CMakeLists.txt`, through the generated `Version.h`) and cannot be
+typed in wrong. The web page's `<title>` carries it as `Name 0.1.0`, and the
+player logs one line when a manifest recorded one. The field is optional and
+`format_version` is not bumped: an added optional field a reader may ignore does
+not change the document's shape ([ADR-0094](adr/0094-export-version-stamping.md)).
 
 **Done when** the export manifest carries the version from
 `CMakeLists.txt` and a test proves it matches `fe::version::kEngineVersion`.
+Both hold: a unit test round-trips the field and rejects a wrong type, and an
+end-to-end export of `examples/demo_project` writes `"engine_version": "0.1.0"`
+and a `<title>Demo 0.1.0</title>`. A manifest written before the field existed
+still loads, reading no version rather than a guess.
 
 ---
 

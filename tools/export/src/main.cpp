@@ -45,6 +45,7 @@
 #include "fe/resources/AssetDatabase.h"
 #include "fe/runtime/ComponentRegistration.h"
 #include "fe/serialization/SceneReferences.h"
+#include "fe/version/Version.h"
 
 #include <nlohmann/json.hpp>
 
@@ -409,6 +410,11 @@ int main(int argc, char** argv) {
     manifest.pack = pack_name;
     manifest.scene = scene_key;
     manifest.bindings = bindings_key;
+    // Stamp the version the build was produced with, from the one source of
+    // truth (the root CMakeLists.txt, through the generated Version.h), so a
+    // downloaded build can say what made it. This is the export side of the
+    // "one source of truth" rule: nothing here is typed in by hand.
+    manifest.engine_version = fe::version::kEngineVersionString;
 
     // Copy each gameplay module in beside the player and record it by its file
     // name, so the player loads it from the export directory. Modules are named

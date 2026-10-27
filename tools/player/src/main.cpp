@@ -75,6 +75,11 @@ struct Options {
     std::string scene;
     std::vector<std::string> modules;
     std::string name;
+    // The engine version the build was produced with, read from the manifest so
+    // a run can log it (docs/SHIPPING_QUEUE.md, `release-version-stamping`). Empty for a
+    // build whose manifest predates the field, or a run pointed at a pack and a
+    // scene directly rather than at an export directory.
+    std::string engine_version;
     // The pack key of a declarative input-binding document, if the build ships
     // one (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`). Read from the pack after the
     // engine's own declarations, so a game's touch regions are data rather than
@@ -156,6 +161,7 @@ struct Options {
     out.pack = resolve_against(directory, manifest.value().pack);
     out.scene = manifest.value().scene;
     out.name = manifest.value().name;
+    out.engine_version = manifest.value().engine_version;
     // The bindings key is a path *inside the pack*, not beside the manifest, so
     // it is taken verbatim: resolving it against the manifest's directory would
     // turn a pack key into a filesystem path the pack does not use.
@@ -291,6 +297,14 @@ protected:
         }
         if (scene_has_collider<fe::physics2d::Collider2D>()) {
             schedule().add_system<fe::physics2d::Physics2DSystem>();
+        }
+
+        // Report the version the build was made with when the manifest recorded
+        // it, so a run says what produced it (docs/SHIPPING_QUEUE.md,
+        // `release-version-stamping`). Silent for a build whose manifest predates
+        // the field, or a run pointed at a pack and a scene directly.
+        if (!options_.engine_version.empty()) {
+            FE_LOG_INFO("fork_player: build made with engine v%s", options_.engine_version.c_str());
         }
 
         FE_LOG_INFO("fork_player: scene '%s' has %llu node(s), %llu script(s)", options_.scene.c_str(),
@@ -607,6 +621,10 @@ void print_usage() {
               "                  (its pack, scene, and gameplay modules)\n"
               "  --pack FILE     a pack file to mount (direct form)\n"
               "  --scene KEY     the startup scene's key inside the pack (direct form)\n"
+              "  --name NAME     the game's display name, for the window and page title\n"
+              "                  (direct form; --export reads it from the manifest)\n"
+              "  --engine-version V  the engine version the build was made with, shown in\n"
+              "                  the title (direct form; --export reads it from the manifest)\n"
               "  --bindings KEY  a declarative input-binding document's key inside the\n"
               "                  pack (direct form; --export reads it from the manifest)\n"
               "  --module PATH   an extra gameplay module to load (repeatable)\n"
@@ -642,6 +660,18 @@ void print_usage() {
             out.pack = argv[++i];
         } else if (arg == "--scene" && has_value) {
             out.scene = argv[++i];
+        } else if (arg == "--name" && has_value) {
+            // The game's display name. `--export` reads it from the manifest; the
+            // web shell, which is handed the pack and scene directly rather than
+            // an export directory, passes it here so a browser build's title is
+            // the game's rather than the engine's default.
+            out.name = argv[++i];
+        } else if (arg == "--engine-version" && has_value) {
+            // The engine version the build was produced with, for the same
+            // reason: the web shell has the manifest but the runtime is handed
+            // argv, so the version travels with it (docs/SHIPPING_QUEUE.md,
+            // `release-version-stamping`).
+            out.engine_version = argv[++i];
         } else if (arg == "--bindings" && has_value) {
             // The pack key of a declarative input-binding document. `--export`
             // reads this from the manifest; the web shell, which is handed the
@@ -739,6 +769,15 @@ void print_usage() {
     fe::Engine::Config config;
     config.log_level = fe::log::min_level();
     config.window.title = options.name.empty() ? "Fork Engine" : options.name;
+    // A build that recorded the engine that made it says so in its title, so a
+    // tab, a bookmark and a screenshot carry the version. On the web the title
+    // is the document title, which the backend sets from here, so this is also
+    // what a player sees. The suffix is left off a build whose manifest predates
+    // the field, and a run pointed at a pack and a scene directly
+    // (docs/SHIPPING_QUEUE.md, `release-version-stamping`).
+    if (!options.engine_version.empty()) {
+        config.window.title += " " + options.engine_version;
+    }
     config.window.width = 1280;
     config.window.height = 720;
     if (options.headless) {

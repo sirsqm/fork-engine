@@ -70,6 +70,14 @@ struct ExportManifest {
     // scene asks for them (ADR-0061, ADR-0063). Empty for a game whose scene
     // binds no behaviours, which is the common case for a data-only build.
     std::vector<std::string> modules;
+    // The engine version the build was produced with, as
+    // `fe::version::kEngineVersionString` spells it ("0.1.0"). Stamped by the
+    // export step from the one source of truth, the root CMakeLists.txt, so a
+    // downloaded build can say what produced it (docs/SHIPPING_QUEUE.md,
+    // `release-version-stamping`). Empty in a document written before this field
+    // existed, which is the honest reading of a build whose version was not
+    // recorded.
+    std::string engine_version;
 
     // Serialises to the document text. Always writes the format marker and the
     // current version, so a manifest is self-describing.

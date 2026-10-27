@@ -26,6 +26,7 @@
 #include "fe/script/ScriptRegistry.h"
 #include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/FrameContext.h"
+#include "fe/version/Version.h"
 
 #include <filesystem>
 #include <memory>
@@ -140,6 +141,36 @@ TEST_CASE("an export manifest saves and loads from disk") {
 
     // A missing file is an error, not a default-constructed manifest.
     CHECK_FALSE(ExportManifest::load(dir.file("absent.json")));
+}
+
+TEST_CASE("an export manifest records the engine version that made it") {
+    ExportManifest manifest;
+    manifest.name = "Versioned";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    // The export step stamps the version from the one source of truth, so a
+    // downloaded build can say what produced it. The test names the value the
+    // same way the tool does, so a drift between the two is caught here.
+    manifest.engine_version = fe::version::kEngineVersionString;
+
+    auto text = manifest.to_json();
+    REQUIRE(text);
+    CHECK(text.value().find(fe::version::kEngineVersionString) != std::string::npos);
+
+    ExportManifest parsed;
+    REQUIRE_FALSE(ExportManifest::from_json(text.value(), parsed));
+    CHECK(parsed.engine_version == fe::version::kEngineVersionString);
+
+    // A manifest written before the field existed has none, which reads as an
+    // unrecorded version rather than a guess, and a wrong type is rejected
+    // rather than coerced.
+    ExportManifest old;
+    REQUIRE_FALSE(ExportManifest::from_json(
+        R"({"format":"fork_export","format_version":1,"pack":"g.fepack","scene":"s.fescene"})", old));
+    CHECK(old.engine_version.empty());
+    CHECK(ExportManifest::from_json(
+        R"({"format":"fork_export","format_version":1,"pack":"g.fepack","scene":"s.fescene","engine_version":7})",
+        old));
 }
 
 TEST_CASE("an export manifest round-trips its module list") {
@@ -281,6 +312,15 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
     // sees it.
     CHECK(html.find("touch-action: none") != std::string::npos);
 
+    // The page's title carries the version the build was made with, when the
+    // manifest recorded it, so a tab and a bookmark say which engine produced
+    // the build (docs/SHIPPING_QUEUE.md, `release-version-stamping`). A manifest without
+    // one leaves the title exactly as it was.
+    ExportManifest versioned = manifest;
+    versioned.engine_version = "9.8.7";
+    CHECK(web_index_html(versioned).find("<title>Phone 9.8.7</title>") != std::string::npos);
+    CHECK(web_index_html(manifest).find("<title>Phone</title>") != std::string::npos);
+
     // The shell reports its own layout so the headless check can prove the canvas
     // fills a phone-sized window, and reads the safe-area insets from CSS.
     const std::string js = web_shell_js();
@@ -290,6 +330,11 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
     // the player. A shell that measured them and never passed them would be the
     // same silent failure as the bindings drop this queue started from.
     CHECK(js.find("'--safe-area'") != std::string::npos);
+    // The name and the engine version travel as argv too, because the runtime is
+    // handed the pack and the scene rather than the manifest. Without them a
+    // browser build's title is the engine's default and cannot say what made it.
+    CHECK(js.find("'--name'") != std::string::npos);
+    CHECK(js.find("'--engine-version'") != std::string::npos);
     // `env()` reports CSS pixels but a touch region is a fraction of the
     // viewport, so the shell must divide before it passes them down. A raw pixel
     // value would be read as a fraction and could clamp the whole axis away.
