@@ -9,7 +9,7 @@ Related: [ADR-0074](0074-web-window-backend.md), [ADR-0076](0076-3d-in-the-brows
 
 ## Context
 
-`3d-in-the-browser` (docs/SHIPPING_QUEUE.md) is done when "an exported 3D project renders
+`3d-in-the-browser` (docs/PLAN.md) is done when "an exported 3D project renders
 a non-blank frame in headless Chromium **with no GL error**". The web game check
 proved the first half and could not prove the second.
 

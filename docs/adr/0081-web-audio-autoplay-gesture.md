@@ -19,7 +19,7 @@ resolved. So `ma_device_start()` returns success, the engine marks the device
 playing, and the mixer submits frames that the browser silently discards. The
 engine's `AudioDevice` interface had no way to express "started, but not yet
 audible", so a web run could not tell a page waiting for a gesture apart from a
-page whose audio was broken. `web-audio-context` (docs/SHIPPING_QUEUE.md) asks for exactly
+page whose audio was broken. `web-audio-context` (docs/PLAN.md) asks for exactly
 that distinction: the device must tolerate a suspended context and play after a
 resume, rather than crash or lie about its state.
 

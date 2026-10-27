@@ -19,7 +19,7 @@ namespace fe {
 // gameplay code serve a keyboard, a mouse and a touchscreen: each device is a
 // binding, and the system that reads the action never learns which one fired.
 //
-// This is the seam docs/SHIPPING_QUEUE.md's `touch-input-actions` item calls for. Touch
+// This is the seam docs/PLAN.md's `touch-input-actions` item calls for. Touch
 // already reaches InputState — a backend translates native events into
 // `on_touch` — but without an action layer it is present and unusable, because
 // gameplay reads raw keys. Here a touch region produces the same action a key
@@ -72,7 +72,7 @@ public:
     // same units the regions are written in and survive a resize the way a region
     // does. They are measured from CSS `env(safe-area-inset-*)` by the web shell,
     // which is the only layer that can read them, and handed down as numbers
-    // (docs/SHIPPING_QUEUE.md, `mobile-safe-area`).
+    // (docs/PLAN.md, `mobile-safe-area`).
     //
     // The insets *shrink the space a region is measured in* rather than being
     // subtracted from each region: a region written `[0, 0, 0.34, 1.0]` means "the

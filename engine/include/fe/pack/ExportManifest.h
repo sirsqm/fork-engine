@@ -58,7 +58,7 @@ struct ExportManifest {
     std::string scene;
     // The key a declarative input-binding document is stored under inside the
     // pack ("input/bindings.json"), or empty for a build that declares no
-    // bindings of its own (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`). The player
+    // bindings of its own (docs/PLAN.md, `touch-gesture-regions`). The player
     // reads it after the engine's own declarations, so a game's regions are data
     // rather than code. Empty is the common case and is omitted from the
     // document, so a build without bindings is byte-for-byte what it was before
@@ -73,7 +73,7 @@ struct ExportManifest {
     // The engine version the build was produced with, as
     // `fe::version::kEngineVersionString` spells it ("0.1.0"). Stamped by the
     // export step from the one source of truth, the root CMakeLists.txt, so a
-    // downloaded build can say what produced it (docs/SHIPPING_QUEUE.md,
+    // downloaded build can say what produced it (docs/PLAN.md,
     // `release-version-stamping`). Empty in a document written before this field
     // existed, which is the honest reading of a build whose version was not
     // recorded.

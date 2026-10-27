@@ -2,7 +2,7 @@
 # mode.
 #
 # The web job is the only thing that stops the wasm build from rotting between
-# runs (docs/SHIPPING_QUEUE.md, `web-smoke-test-ci`), and nothing in the desktop
+# runs (docs/PLAN.md, `web-smoke-test-ci`), and nothing in the desktop
 # suite can observe it: a green desktop build says nothing about whether the job
 # still configures the web target, still builds the player, or still runs the
 # browser smoke test. A workflow is YAML, not code, so it is checked here the

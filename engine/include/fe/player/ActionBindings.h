@@ -26,7 +26,7 @@ namespace player {
 // and cannot change it without a compiler — which is the wrong shape for a
 // shipped game, a rebinding screen, or a per-device layout.
 //
-// This is the `touch-gesture-regions` seam (docs/SHIPPING_QUEUE.md): the regions a game
+// This is the `touch-gesture-regions` seam (docs/PLAN.md): the regions a game
 // declares once, in data, and the loader that turns them into the bindings
 // `ActionMap` already understands. It adds no new input mechanism — it is the
 // same `bind_key`/`bind_mouse_button`/`bind_touch_region` calls, made from a

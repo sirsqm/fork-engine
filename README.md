@@ -24,11 +24,7 @@ eventually features:
   [ADR-0032](docs/adr/0032-near-term-platform-scope.md) for why the wider claim
   is sequenced rather than asserted.
 The plan for all of this — the pillars, the milestone order, and the shipping
-queue the daily automation works through — is in
-[`docs/STRATEGY.md`](docs/STRATEGY.md) (why the work is ordered this way),
-[`docs/ROADMAP.md`](docs/ROADMAP.md) (what each milestone contains and where it
-stands), and [`docs/SHIPPING_QUEUE.md`](docs/SHIPPING_QUEUE.md) (the ordered
-backlog of what to do next).
+queue the daily automation works through — is in [`docs/PLAN.md`](docs/PLAN.md).
 
 The project is young and honest about it. The repository currently contains the
 engine core through its first several milestones: a buildable library, working

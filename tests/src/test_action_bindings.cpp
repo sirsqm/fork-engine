@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //
 // Tests for declarative input bindings (fe/player/ActionBindings.h,
-// docs/SHIPPING_QUEUE.md, `touch-gesture-regions`).
+// docs/PLAN.md, `touch-gesture-regions`).
 //
 // The acceptance test for the queue item is here: a game *declares* its regions
 // in a document, and a touch in each region fires the bound action while a touch

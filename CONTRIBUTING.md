@@ -10,7 +10,7 @@ feature so we can agree on the design first.
 
 Development happens in the open: work lands on `main` through reviewable pull
 requests, architectural decisions are recorded as ADRs in `docs/adr/`, and the
-roadmap's [near-term priorities](docs/ROADMAP.md#near-term-priorities) say what
+roadmap's [near-term priorities](docs/PLAN.md#near-term-priorities) say what
 is being worked on next. The maintainer decides direction, ADRs record the
 reasoning, and anyone can propose a change.
 
@@ -27,10 +27,10 @@ reasoning, and anyone can propose a change.
   is a small, complete game built end to end (roadmap M2.5) — it proves the
   systems work together and exposes the gaps that matter.
 
-Two capabilities shape where the project is going — performance, and shipping to
-every platform players use — and are planned in [`docs/ROADMAP.md`](docs/ROADMAP.md).
-Work that advances either is especially welcome; check its shipping queue first
-so we do not duplicate effort.
+Three capabilities shape where the project is going — performance, shipping to
+every platform players use, and a durable, shareable edit model — and are planned
+in [`docs/PLAN.md`](docs/PLAN.md). Work that advances any of them is especially
+welcome; check its shipping queue first so we do not duplicate effort.
 
 ## Getting started
 

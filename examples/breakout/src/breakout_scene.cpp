@@ -224,7 +224,7 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
     add_hud_label(hud, names::kLevelLabel, fe::ui::UiAnchor::TopCenter, fe::Vec2{0.0f, cfg::kHudMargin},
                   fe::ui::UiAlign::Center);
 
-    // The menu screens (docs/SHIPPING_QUEUE.md, `slice-title-and-menus`): a title,
+    // The menu screens (docs/PLAN.md, `slice-title-and-menus`): a title,
     // a pause, and a game-over canvas, each hidden until MenuSystem shows it.
     // They are built here so the authored scene file and the code-built field
     // stay identical, exactly as the field's own nodes are. The game-over canvas

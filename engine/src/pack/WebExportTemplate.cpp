@@ -37,7 +37,7 @@ std::string web_index_html(const ExportManifest& manifest) {
     const std::string title = manifest.name.empty() ? std::string("Fork Engine") : manifest.name;
     // The version the build was produced with, appended when it was recorded, so
     // a tab, a bookmark and a screenshot say which engine made the build
-    // (docs/SHIPPING_QUEUE.md, `release-version-stamping`). A manifest written before the
+    // (docs/PLAN.md, `release-version-stamping`). A manifest written before the
     // field existed has none, and the title is then exactly what it was.
     const std::string title_suffix = manifest.engine_version.empty() ? std::string() : " " + manifest.engine_version;
 
@@ -47,7 +47,7 @@ std::string web_index_html(const ExportManifest& manifest) {
     // of leaving a blank canvas. The page itself cannot fail.
     //
     // The canvas fills the whole viewport and the page never scrolls. That is the
-    // mobile shape (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`): a fixed-aspect box
+    // mobile shape (docs/PLAN.md, `mobile-viewport-meta`): a fixed-aspect box
     // centred in a scrollable page renders at desktop scale on a phone, with
     // browser chrome and scrollbars around it, and a touch near the edge lands
     // outside the canvas the backend binds its listeners to. Full-bleed is also
@@ -132,7 +132,7 @@ std::string web_shell_js() {
     // indicator each shrink the usable area, and an interactive region that
     // ignores them sits under the system UI where a thumb cannot reach it.
     // Reading them here keeps the DOM knowledge in the shell; the runtime only
-    // ever sees four numbers (docs/SHIPPING_QUEUE.md, `mobile-safe-area`).
+    // ever sees four numbers (docs/PLAN.md, `mobile-safe-area`).
     //
     // The values are returned as normalised fractions of the viewport, the same
     // units a touch region is written in, because `env()` reports CSS pixels and
@@ -218,7 +218,7 @@ std::string web_shell_js() {
     // the game's display name and the engine version it was built with travel as
     // argv too. Without the name a browser build's title is the engine's default
     // rather than the game's; without the version the title cannot say what made
-    // the build (docs/SHIPPING_QUEUE.md, `release-version-stamping`). Passed only when the
+    // the build (docs/PLAN.md, `release-version-stamping`). Passed only when the
     // manifest records them, so a build from an older export keeps the argv it
     // had.
     js += "  if (manifest.name) {\n";
@@ -236,7 +236,7 @@ std::string web_shell_js() {
     js += "  }\n";
     // The safe-area insets, measured above from CSS env() and handed to the
     // runtime as normalised fractions, so a declared touch region is offset off a
-    // notch or a home indicator (docs/SHIPPING_QUEUE.md, `mobile-safe-area`). Passed only
+    // notch or a home indicator (docs/PLAN.md, `mobile-safe-area`). Passed only
     // when the page actually reserves something, so a desktop page's argv is what
     // it was before insets existed.
     js += "  const insets = safeAreaInsets();\n";
@@ -257,7 +257,7 @@ std::string web_shell_js() {
     js += "  // `?probeNode=NAME` watches a node other than the default (Camera).\n";
     js += "  // `?touch=1` makes the probe a touch on the canvas instead of a key press,\n";
     js += "  // which is how the headless check proves touch reaches gameplay; `?touchAt=x,y`\n";
-    js += "  // aims it at a normalised point (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`).\n";
+    js += "  // aims it at a normalised point (docs/PLAN.md, `touch-gesture-regions`).\n";
     js += "  const probe = new URLSearchParams(location.search).get('probe');\n";
     js += "  if (probe === '1') {\n";
     js += "    const touch = new URLSearchParams(location.search).get('touch');\n";
@@ -290,7 +290,7 @@ std::string web_shell_js() {
     // gets, so it is taken as the cue. It degrades silently: a browser that
     // refuses (desktop, an embedded webview, a policy) leaves the game playable
     // in the frame it already has, so a rejection is not an error and is not
-    // reported as one (docs/SHIPPING_QUEUE.md, `touch-fullscreen-prompt`).
+    // reported as one (docs/PLAN.md, `touch-fullscreen-prompt`).
     //
     // `touchstart` is registered `{ once: true }` so the request is made at most
     // once rather than on every touch, and passive so the listener cannot delay

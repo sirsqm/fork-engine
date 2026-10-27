@@ -76,12 +76,12 @@ struct Options {
     std::vector<std::string> modules;
     std::string name;
     // The engine version the build was produced with, read from the manifest so
-    // a run can log it (docs/SHIPPING_QUEUE.md, `release-version-stamping`). Empty for a
+    // a run can log it (docs/PLAN.md, `release-version-stamping`). Empty for a
     // build whose manifest predates the field, or a run pointed at a pack and a
     // scene directly rather than at an export directory.
     std::string engine_version;
     // The pack key of a declarative input-binding document, if the build ships
-    // one (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`). Read from the pack after the
+    // one (docs/PLAN.md, `touch-gesture-regions`). Read from the pack after the
     // engine's own declarations, so a game's touch regions are data rather than
     // code. Empty means the build declares no bindings of its own.
     std::string bindings;
@@ -103,7 +103,7 @@ struct Options {
     // Drive the probe with a *touch* instead of a key: dispatch a synthetic
     // touchstart on the canvas at a normalised point and report how far the
     // watched node moved. This is the acceptance test for "touch works in the web
-    // build" (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`): a browser check can dispatch
+    // build" (docs/PLAN.md, `touch-gesture-regions`): a browser check can dispatch
     // an event but cannot touch a screen, so the player does it and reports the
     // result. Ignored off the web target.
     bool probe_touch = false;
@@ -117,7 +117,7 @@ struct Options {
     // viewport, in top,right,bottom,left order. The web shell measures them from
     // CSS `env(safe-area-inset-*)` and passes them here, because only the page
     // can read them and only the engine can apply them to touch regions
-    // (docs/SHIPPING_QUEUE.md, `mobile-safe-area`). All zero on every other target.
+    // (docs/PLAN.md, `mobile-safe-area`). All zero on every other target.
     fe::f32 safe_top = 0.0f;
     fe::f32 safe_right = 0.0f;
     fe::f32 safe_bottom = 0.0f;
@@ -209,7 +209,7 @@ protected:
         // A game's own bindings, if the build ships a document for them. Applied
         // after the standard set, so a game can add actions, rebind the built-ins
         // to its own layout, or declare touch regions of its own - and it does so
-        // in data, without a rebuild (docs/SHIPPING_QUEUE.md, `touch-gesture-regions`).
+        // in data, without a rebuild (docs/PLAN.md, `touch-gesture-regions`).
         //
         // A malformed document is fatal rather than ignored: a game whose regions
         // silently did not load is a game whose touch controls do nothing, which is
@@ -234,7 +234,7 @@ protected:
         // down as normalised fractions. Applied after the bindings so they
         // constrain every declared region, the game's own and the built-ins'
         // alike. Zero on every other target, which is the identity mapping
-        // (docs/SHIPPING_QUEUE.md, `mobile-safe-area`).
+        // (docs/PLAN.md, `mobile-safe-area`).
         actions().set_safe_area_insets(options_.safe_top, options_.safe_right, options_.safe_bottom,
                                        options_.safe_left);
         if (options_.safe_top > 0.0f || options_.safe_right > 0.0f || options_.safe_bottom > 0.0f ||
@@ -300,7 +300,7 @@ protected:
         }
 
         // Report the version the build was made with when the manifest recorded
-        // it, so a run says what produced it (docs/SHIPPING_QUEUE.md,
+        // it, so a run says what produced it (docs/PLAN.md,
         // `release-version-stamping`). Silent for a build whose manifest predates
         // the field, or a run pointed at a pack and a scene directly.
         if (!options_.engine_version.empty()) {
@@ -695,7 +695,7 @@ void print_usage() {
         } else if (arg == "--engine-version" && has_value) {
             // The engine version the build was produced with, for the same
             // reason: the web shell has the manifest but the runtime is handed
-            // argv, so the version travels with it (docs/SHIPPING_QUEUE.md,
+            // argv, so the version travels with it (docs/PLAN.md,
             // `release-version-stamping`).
             out.engine_version = argv[++i];
         } else if (arg == "--bindings" && has_value) {
@@ -800,7 +800,7 @@ void print_usage() {
     // is the document title, which the backend sets from here, so this is also
     // what a player sees. The suffix is left off a build whose manifest predates
     // the field, and a run pointed at a pack and a scene directly
-    // (docs/SHIPPING_QUEUE.md, `release-version-stamping`).
+    // (docs/PLAN.md, `release-version-stamping`).
     if (!options.engine_version.empty()) {
         config.window.title += " " + options.engine_version;
     }

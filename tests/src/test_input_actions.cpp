@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// Tests for the gameplay action layer (docs/SHIPPING_QUEUE.md, `touch-input-actions`).
+// Tests for the gameplay action layer (docs/PLAN.md, `touch-input-actions`).
 //
 // The acceptance test for the queue item is here: a touch sequence drives the
 // same action a keyboard press produces. Everything is pure logic over an

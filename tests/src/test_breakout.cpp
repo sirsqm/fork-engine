@@ -112,7 +112,7 @@ TEST_CASE("a brick broken after the win does not score") {
 
 // ---------------------------------------------------------------------------
 // Levels: clearing a board advances and makes the ball faster
-// (docs/SHIPPING_QUEUE.md, `slice-scoring-and-progression`).
+// (docs/PLAN.md, `slice-scoring-and-progression`).
 // ---------------------------------------------------------------------------
 
 TEST_CASE("clearing a board advances the level and speeds the ball up") {
@@ -528,7 +528,7 @@ TEST_CASE("the game-over screen says YOU WIN after a win") {
 
 // ---------------------------------------------------------------------------
 // Screens: the title -> play -> game over -> title flow
-// (docs/SHIPPING_QUEUE.md, `slice-title-and-menus`).
+// (docs/PLAN.md, `slice-title-and-menus`).
 //
 // The rules half is BreakoutState on its own, with no engine; the shipped half
 // drives the real scene and the real schedule, which is what proves the flow the

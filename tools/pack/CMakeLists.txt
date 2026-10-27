@@ -1,7 +1,7 @@
 # Fork Engine packaging tools.
 #
 # fork_pack assembles a project into one pack file: the first shipping step of
-# M8 (docs/ROADMAP.md). It is built against the engine's public headers only,
+# M8 (docs/PLAN.md). It is built against the engine's public headers only,
 # exactly as an external tool would be, and it links FE::engine rather than the
 # editor: packing a project is not an editor feature (docs/adr/0030).
 

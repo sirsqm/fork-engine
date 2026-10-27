@@ -321,7 +321,7 @@ jobs:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
           # Publish the export the check just ran instead of throwing it away, so
           # the next step can upload it as an artifact a reviewer can download and
-          # open (docs/SHIPPING_QUEUE.md, `web-build-in-ci-artifacts`). One directory per
+          # open (docs/PLAN.md, `web-build-in-ci-artifacts`). One directory per
           # project, under the runner's temp so it never enters the checkout.
           FE_WEB_GAME_KEEP_DIR: ${{ runner.temp }}/web-game-export
         run: |

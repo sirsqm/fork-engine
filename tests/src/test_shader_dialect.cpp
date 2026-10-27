@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// Tests for the GLSL dialect translation seam (docs/SHIPPING_QUEUE.md,
+// Tests for the GLSL dialect translation seam (docs/PLAN.md,
 // `glsl-dialect-seam`).
 //
 // The translation is a pure function of (dialect, stage, source), so these are
@@ -153,7 +153,7 @@ TEST_CASE("a source with no version directive and leading whitespace still start
 }
 
 // ---------------------------------------------------------------------------
-// Wiring the seam into the device (docs/SHIPPING_QUEUE.md,
+// Wiring the seam into the device (docs/PLAN.md,
 // `shader-dialect-wiring`).
 //
 // The dialect is a property of the device, chosen once where the device is

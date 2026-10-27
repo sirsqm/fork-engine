@@ -86,5 +86,5 @@ the destructive path go through a prompt.
 
 * ADR-0007 — the editor UI toolkit.
 * ADR-0064 — export runtime and player (the shipping path the tools serve).
-* `docs/ROADMAP.md` — the editor work sits on the authoring side of the shipping
+* `docs/PLAN.md` — the editor work sits on the authoring side of the shipping
   path.
