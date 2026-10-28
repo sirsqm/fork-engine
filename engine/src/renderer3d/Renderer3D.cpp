@@ -30,18 +30,31 @@ layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec2 a_uv;
 
+// The per-instance stream (VertexLayout::mesh_instance): the instance's model
+// matrix and its normal matrix, each as four column vectors. One draw call
+// covers every instance of a mesh, so the transform travels with the instance
+// rather than in a uniform.
+layout(location = 3) in vec4 a_model_0;
+layout(location = 4) in vec4 a_model_1;
+layout(location = 5) in vec4 a_model_2;
+layout(location = 6) in vec4 a_model_3;
+layout(location = 7) in vec4 a_normal_0;
+layout(location = 8) in vec4 a_normal_1;
+layout(location = 9) in vec4 a_normal_2;
+
 uniform mat4 u_view_projection;
-uniform mat4 u_model;
-uniform mat3 u_normal_matrix;
 
 out vec3 v_world_position;
 out vec3 v_normal;
 out vec2 v_uv;
 
 void main() {
-    vec4 world = u_model * vec4(a_position, 1.0);
+    // Constructed column-major, matching how the columns were uploaded.
+    mat4 model = mat4(a_model_0, a_model_1, a_model_2, a_model_3);
+    mat3 normal_matrix = mat3(a_normal_0.xyz, a_normal_1.xyz, a_normal_2.xyz);
+    vec4 world = model * vec4(a_position, 1.0);
     v_world_position = world.xyz;
-    v_normal = u_normal_matrix * a_normal;
+    v_normal = normal_matrix * a_normal;
     v_uv = a_uv;
     gl_Position = u_view_projection * world;
 }
@@ -196,16 +209,23 @@ void main() {
 // Depth-only pass. Renders the scene from the light's point of view; the depth
 // buffer is the only output the shadow map needs. There is no colour work and
 // no fragment output, so the driver can discard the fragment stage entirely.
+//
+// It reads the same per-instance stream the main pass does, so the shadow map
+// is drawn with the same batching: one call per mesh, all its casters at once.
 constexpr const char* kShadowVertexShaderSource = R"glsl(
 #version 330 core
 
 layout(location = 0) in vec3 a_position;
+layout(location = 3) in vec4 a_model_0;
+layout(location = 4) in vec4 a_model_1;
+layout(location = 5) in vec4 a_model_2;
+layout(location = 6) in vec4 a_model_3;
 
 uniform mat4 u_light_view_projection;
-uniform mat4 u_model;
 
 void main() {
-    gl_Position = u_light_view_projection * u_model * vec4(a_position, 1.0);
+    mat4 model = mat4(a_model_0, a_model_1, a_model_2, a_model_3);
+    gl_Position = u_light_view_projection * model * vec4(a_position, 1.0);
 }
 )glsl";
 
@@ -567,6 +587,88 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
                       viewport_width, viewport_height);
 }
 
+void Renderer3D::ensure_instance_capacity(rhi::Device& device, u32 count) {
+    // The record uploaded per instance must match the vertex layout's stride
+    // exactly, or the GPU reads each instance's transform shifted by the
+    // difference and every instance after the first is wrong.
+    static_assert(sizeof(Instance) == 7 * 16, "Instance must match VertexLayout::mesh_instance()'s stride");
+
+    if (count <= instance_capacity_) {
+        return;
+    }
+    const u32 new_capacity = std::max(count, instance_capacity_ * 2);
+    auto buffer = device.create_vertex_buffer(rhi::VertexLayout::mesh_instance(),
+                                              new_capacity * static_cast<u32>(sizeof(Instance)));
+    if (!buffer) {
+        FE_LOG_ERROR("renderer3d: could not grow instance buffer: %s", buffer.error().message().c_str());
+        return;
+    }
+    instance_buffer_ = buffer.value();
+    instance_capacity_ = new_capacity;
+}
+
+void Renderer3D::build_batches(const std::vector<render::MeshInstance>& instances) {
+    frame_instance_data_.clear();
+    frame_batches_.clear();
+    if (instances.empty()) {
+        return;
+    }
+    frame_instance_data_.reserve(instances.size());
+
+    for (const render::MeshInstance& instance : instances) {
+        if (instance.mesh == nullptr || instance.renderer == nullptr) {
+            continue;
+        }
+
+        // Resolve the surface and its textures here, once per instance, so the
+        // batch key below compares resolved values rather than re-resolving.
+        // `load_texture` memoises per frame, so two instances of one material
+        // share the lookup and compare equal.
+        const MeshRenderer3D::Surface surface = instance.renderer->resolve_surface();
+        const Texture2D* base_texture = nullptr;
+        if (!surface.material.base_color_texture.empty()) {
+            base_texture = load_texture(surface.material.base_color_texture);
+        }
+        if (base_texture == nullptr && instance.renderer->has_texture()) {
+            base_texture = dynamic_cast<const Texture2D*>(instance.renderer->texture.get());
+        }
+        const Texture2D* emissive_texture = nullptr;
+        if (!surface.material.emissive_texture.empty()) {
+            emissive_texture = load_texture(surface.material.emissive_texture);
+        }
+
+        // The per-instance transform record. The model matrix's columns go in
+        // directly; the normal matrix is derived on the CPU (one inverse per
+        // instance) rather than per vertex in the shader.
+        Instance record{};
+        for (usize col = 0; col < 4; ++col) {
+            record.model[col] = Vec4{instance.model.at(0, col), instance.model.at(1, col), instance.model.at(2, col),
+                                     instance.model.at(3, col)};
+        }
+        const std::array<f32, 9> normal = normal_matrix(instance.model);
+        record.normal[0] = Vec4{normal[0], normal[1], normal[2], 0.0f};
+        record.normal[1] = Vec4{normal[3], normal[4], normal[5], 0.0f};
+        record.normal[2] = Vec4{normal[6], normal[7], normal[8], 0.0f};
+        frame_instance_data_.push_back(record);
+
+        const BatchState state{surface.material.base_color, surface.specular, surface.shininess,
+                               surface.material.emissive};
+
+        // Extend the open batch when this instance matches it in every per-batch
+        // field and is contiguous in the instance stream, so the run is one draw.
+        if (!frame_batches_.empty()) {
+            Batch& open = frame_batches_.back();
+            if (open.mesh == instance.mesh && open.base_texture == base_texture &&
+                open.emissive_texture == emissive_texture && open.state == state) {
+                open.instance_count += 1;
+                continue;
+            }
+        }
+        frame_batches_.push_back(Batch{instance.mesh, base_texture, emissive_texture, state,
+                                       static_cast<u32>(frame_instance_data_.size() - 1), 1});
+    }
+}
+
 Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
                                const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
                                const std::vector<const Mesh*>& meshes_seen) {
@@ -644,7 +746,23 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     const f32 light_intensity = light != nullptr ? light->intensity : 1.0f;
     const f32 ambient = light != nullptr ? light->ambient : 0.15f;
 
-    u32 drawn = 0;
+    // --- 3a. Batch ----------------------------------------------------------
+    // Group the visible instances into one instanced draw per (mesh, textures,
+    // batch state) run and build the per-instance transform stream they read.
+    // Done once, before either pass, so the shadow pass and the main pass draw
+    // the same batches from the same upload. The count is every instance that
+    // resolved to a drawable record, so it matches the pre-instancing per-instance
+    // loop; a batch whose mesh fails to acquire is subtracted below.
+    build_batches(instances);
+    u32 drawn = static_cast<u32>(frame_instance_data_.size());
+    if (drawn > 0) {
+        ensure_instance_capacity(device, drawn);
+    }
+    const bool instancing_ready = drawn > 0 && instance_buffer_ != nullptr;
+    if (instancing_ready) {
+        instance_buffer_->update(std::span<const u8>(reinterpret_cast<const u8*>(frame_instance_data_.data()),
+                                                     frame_instance_data_.size() * sizeof(Instance)));
+    }
 
     // --- 3b. Shadow pass ----------------------------------------------------
     // Render the visible geometry's depth from the light's point of view into
@@ -654,7 +772,7 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     // keeps the map from being spread thin by distant geometry.
     bool shadows_enabled = false;
     Mat4 light_view_projection = Mat4::identity();
-    if (light != nullptr && !instances.empty()) {
+    if (light != nullptr && instancing_ready) {
         Vec3 scene_min{};
         Vec3 scene_max{};
         bool bounds_valid = false;
@@ -689,16 +807,17 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
             device.bind_shader(*shadow_shader_);
             shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
 
-            for (const render::MeshInstance& instance : instances) {
-                auto gpu = acquire_mesh(device, *instance.mesh);
+            for (const Batch& batch : frame_batches_) {
+                auto gpu = acquire_mesh(device, *batch.mesh);
                 if (!gpu) {
                     continue;
                 }
-                shadow_shader_->set_mat4("u_model", instance.model);
                 device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+                device.bind_instance_buffer(*instance_buffer_,
+                                            batch.instance_offset * static_cast<u32>(sizeof(Instance)));
                 device.bind_index_buffer(*gpu.value()->index_buffer);
-                device.draw_indexed(gpu.value()->index_count);
-                ++last_shadow_casters_;
+                device.draw_indexed_instanced(gpu.value()->index_count, batch.instance_count);
+                last_shadow_casters_ += batch.instance_count;
             }
 
             // Restore whatever the caller had bound (the window, or an editor
@@ -771,52 +890,34 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     }
 
     // --- 5. Draw ------------------------------------------------------------
-    for (const render::MeshInstance& instance : instances) {
-        auto gpu = acquire_mesh(device, *instance.mesh);
-        if (!gpu) {
-            FE_LOG_ERROR("renderer3d: %s", gpu.error().message().c_str());
-            continue;
+    // One instanced draw per batch. Every per-batch uniform is set once here;
+    // the per-instance transform and normal matrix arrive in the instance
+    // stream, so nothing below varies per instance.
+    if (instancing_ready) {
+        for (const Batch& batch : frame_batches_) {
+            auto gpu = acquire_mesh(device, *batch.mesh);
+            if (!gpu) {
+                FE_LOG_ERROR("renderer3d: %s", gpu.error().message().c_str());
+                drawn -= batch.instance_count;
+                continue;
+            }
+
+            shader_->set_vec4("u_base_color", batch.state.base_color);
+            shader_->set_float("u_specular", batch.state.specular);
+            shader_->set_float("u_shininess", batch.state.shininess);
+            shader_->set_vec3("u_emissive", batch.state.emissive);
+
+            device.bind_texture(0, batch.base_texture != nullptr ? batch.base_texture->texture() : *default_texture_);
+            shader_->set_float("u_emissive_map_enabled", batch.emissive_texture != nullptr ? 1.0f : 0.0f);
+            device.bind_texture(2, batch.emissive_texture != nullptr ? batch.emissive_texture->texture()
+                                                                     : *default_texture_);
+
+            device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+            device.bind_instance_buffer(*instance_buffer_, batch.instance_offset * static_cast<u32>(sizeof(Instance)));
+            device.bind_index_buffer(*gpu.value()->index_buffer);
+            device.draw_indexed_instanced(gpu.value()->index_count, batch.instance_count);
+            ++last_draw_calls_;
         }
-
-        // The surface the draw uses: the component's authored material, else the
-        // mesh's imported one, else the component's base_color/specular. Resolved
-        // once per instance and reused for every uniform below, so the
-        // precedence rule lives in MeshRenderer3D and not in the renderer.
-        const MeshRenderer3D::Surface surface = instance.renderer->resolve_surface();
-
-        shader_->set_mat4("u_model", instance.model);
-        const std::array<f32, 9> normal_mat = normal_matrix(instance.model);
-        shader_->set_mat3("u_normal_matrix", normal_mat.data());
-        shader_->set_vec4("u_base_color", surface.material.base_color);
-        shader_->set_float("u_specular", surface.specular);
-        shader_->set_float("u_shininess", surface.shininess);
-        shader_->set_vec3("u_emissive", surface.material.emissive);
-
-        // The base-colour texture: the material's, resolved through the resource
-        // manager, or the component's own `texture` when the material names none.
-        const Texture2D* base_texture = nullptr;
-        if (!surface.material.base_color_texture.empty()) {
-            base_texture = load_texture(surface.material.base_color_texture);
-        }
-        if (base_texture == nullptr && instance.renderer->has_texture()) {
-            base_texture = dynamic_cast<const Texture2D*>(instance.renderer->texture.get());
-        }
-        device.bind_texture(0, base_texture != nullptr ? base_texture->texture() : *default_texture_);
-
-        // The emissive map. A material without one keeps the emissive factor
-        // alone, which is what the shader's `u_emissive_map_enabled = 0` selects.
-        const Texture2D* emissive_texture = nullptr;
-        if (!surface.material.emissive_texture.empty()) {
-            emissive_texture = load_texture(surface.material.emissive_texture);
-        }
-        shader_->set_float("u_emissive_map_enabled", emissive_texture != nullptr ? 1.0f : 0.0f);
-        device.bind_texture(2, emissive_texture != nullptr ? emissive_texture->texture() : *default_texture_);
-
-        device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
-        device.bind_index_buffer(*gpu.value()->index_buffer);
-        device.draw_indexed(gpu.value()->index_count);
-        ++last_draw_calls_;
-        ++drawn;
     }
 
     // --- 6. Sweep dead mesh buffers ----------------------------------------

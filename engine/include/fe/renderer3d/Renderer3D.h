@@ -50,11 +50,17 @@ namespace renderer3d {
 // not know how a mesh was authored. It is a pure consumer of scene data and RHI
 // resources, exactly like Renderer2D.
 //
-// Batching model: for the first 3D cut every visible instance is its own draw
-// call. The mesh buffer cache removes the per-frame upload cost, and frustum
-// culling removes off-screen instances, which are the two real wins. Instance
-// batching and material sorting are later revisions that do not change this
-// interface.
+// Batching model: instances that share a mesh, both material textures, and the
+// per-batch shading state (base colour, specular, shininess, emissive) are
+// drawn in one instanced call. The instance's model and normal matrices travel
+// in a per-instance vertex stream, so the transform is no longer a uniform and
+// one call can cover many instances. The mesh buffer cache removes the per-frame
+// upload cost and frustum culling removes off-screen instances; instancing then
+// removes the per-instance draw call, which is what lets a scene of repeated
+// meshes (a floor of tiles, a forest of one tree) hold a frame budget. A scene
+// whose instances differ in material still batches per run, so the draw-call
+// count is bounded by the number of distinct (mesh, material) pairs, not the
+// instance count.
 //
 // Culling model: culling tests each instance's world-space AABB against the six
 // frustum planes and is conservative - a box that straddles a plane is kept - so
@@ -221,6 +227,59 @@ private:
         u32 index_count = 0;
     };
 
+    // The per-batch shader state: every field a draw sets once per batch rather
+    // than once per instance. Two instances may share a draw call only when all
+    // of these are equal and they use the same mesh and textures, which is what
+    // makes the key a batch is grouped by.
+    struct BatchState {
+        Vec4 base_color{};
+        f32 specular = 0.0f;
+        f32 shininess = 0.0f;
+        Vec3 emissive{};
+
+        [[nodiscard]] constexpr bool operator==(const BatchState&) const noexcept = default;
+    };
+
+    // One instance's resolved draw data, before grouping: the instance itself,
+    // the textures its material resolves to, and its batch state.
+    struct DrawItem {
+        const render::MeshInstance* instance = nullptr;
+        const Texture2D* base_texture = nullptr;
+        const Texture2D* emissive_texture = nullptr;
+        BatchState state;
+    };
+
+    // A run of consecutive draw items sharing a mesh, both textures, and the
+    // batch state, so the whole run is one instanced draw call.
+    // `instance_offset`/`instance_count` index the frame's instance stream.
+    struct Batch {
+        const Mesh* mesh = nullptr;
+        const Texture2D* base_texture = nullptr;
+        const Texture2D* emissive_texture = nullptr;
+        BatchState state;
+        u32 instance_offset = 0;
+        u32 instance_count = 0;
+    };
+
+    // The per-instance record uploaded for an instanced mesh draw. Its layout is
+    // VertexLayout::mesh_instance(): the model matrix's four columns then the
+    // normal matrix's three, each padded to a vec4. The padding components are
+    // written but never read by the shader.
+    struct Instance {
+        Vec4 model[4];
+        Vec4 normal[3];
+    };
+
+    // Builds this frame's instance stream and batches from `instances`: resolves
+    // each instance's surface and textures, groups instances that share every
+    // per-batch field, and fills `frame_instance_data_` and `frame_batches_`.
+    // Reuses both buffers across frames, so a steady-state frame does not grow.
+    void build_batches(const std::vector<render::MeshInstance>& instances);
+
+    // Ensures the shared instance buffer can hold `count` records, growing it on
+    // demand. A no-op when the current capacity already covers `count`.
+    void ensure_instance_capacity(rhi::Device& device, u32 count);
+
     // A point or spot light gathered from the scene for the shader, before the
     // per-frame cap. Named here rather than locally in draw() so the gathered
     // lists can be reused buffers (see frame_point_lights_ below).
@@ -385,6 +444,19 @@ private:
     std::vector<const Mesh*> frame_meshes_seen_;
     std::vector<PointLightEntry> frame_point_lights_;
     std::vector<SpotLightEntry> frame_spot_lights_;
+
+    // The instanced draw path's per-frame working set, reused across frames for
+    // the same reason as the buffers above. `frame_instance_data_` is the record
+    // stream uploaded to the shared instance buffer; `frame_batches_` groups it
+    // into one draw call per (mesh, textures, batch state) run.
+    std::vector<Instance> frame_instance_data_;
+    std::vector<Batch> frame_batches_;
+
+    // The shared per-instance buffer the mesh draws read from, and its capacity
+    // in records. Created lazily on the first frame that has a drawable instance,
+    // so a scene with no 3D content never allocates it.
+    rhi::BufferRef instance_buffer_;
+    u32 instance_capacity_ = 0;
 
     // The live mesh set for one frame's buffer sweep, reused across frames so the
     // sweep does not allocate. Rebuilt from frame_meshes_seen_ each frame; see

@@ -106,6 +106,7 @@ rather than editing it.
 | [0098](0098-persisted-settings-and-a-settings-screen.md) | Persisted settings and a settings screen | Accepted |
 | [0099](0099-stereo-panning-from-listener-orientation.md) | Stereo panning from the listener's orientation | Accepted |
 | [0100](0100-render-graph-seam.md) | A render-graph seam | Accepted |
+| [0101](0101-instanced-3d-draws.md) | Instanced 3D draws | Accepted |
 
 ## Format
 

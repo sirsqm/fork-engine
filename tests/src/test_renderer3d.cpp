@@ -241,10 +241,126 @@ TEST_CASE("renderer3d reports the number of instances drawn") {
     auto result = renderer.render(*context.device, scene, 64, 64);
     REQUIRE(result);
     CHECK(result.value() == 3);
-    CHECK(renderer.last_draw_calls() == 3);
+    // Three instances of one mesh, one material: one instanced draw call, not
+    // three. The count is what instancing exists to reduce, so it is asserted
+    // here rather than left to the benchmark.
+    CHECK(renderer.last_draw_calls() == 1);
     // The shared mesh is uploaded once, not per instance.
     CHECK(renderer.cached_mesh_count() == 1);
     context.device->end_frame();
+}
+
+TEST_CASE("renderer3d draws distinct meshes and materials in separate batches") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    auto cube = Mesh::make_cube();
+    auto plane = Mesh::make_plane(0.5f, 0.5f);
+
+    // Two instances of the cube, one of the plane: two meshes, so two draws.
+    for (int i = 0; i < 2; ++i) {
+        Node* node = scene.create_node("Cube");
+        auto* renderer = node->add_component<MeshRenderer3D>();
+        renderer->mesh = cube;
+        node->transform().position = Vec3{static_cast<f32>(i) * 0.4f - 0.2f, 0.0f, 0.0f};
+    }
+    Node* plane_node = scene.create_node("Plane");
+    auto* plane_renderer = plane_node->add_component<MeshRenderer3D>();
+    plane_renderer->mesh = plane;
+    plane_node->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(result.value() == 3);
+    CHECK(renderer.last_draw_calls() == 2);
+    CHECK(renderer.cached_mesh_count() == 2);
+    context.device->end_frame();
+}
+
+TEST_CASE("renderer3d splits one mesh into a batch per material") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    auto cube = Mesh::make_cube();
+
+    // One mesh, but two instances whose materials differ: the shading state is
+    // per-batch, so they cannot share a draw call. The renderer must split them
+    // rather than shade one with the other's colour.
+    for (int i = 0; i < 2; ++i) {
+        Node* node = scene.create_node("Cube");
+        auto* renderer = node->add_component<MeshRenderer3D>();
+        renderer->mesh = cube;
+        renderer->override_material = true;
+        renderer->material.base_color = i == 0 ? Vec4{1.0f, 0.0f, 0.0f, 1.0f} : Vec4{0.0f, 1.0f, 0.0f, 1.0f};
+        node->transform().position = Vec3{static_cast<f32>(i) * 0.4f - 0.2f, 0.0f, 0.0f};
+    }
+
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render(*context.device, scene, 64, 64);
+    REQUIRE(result);
+    CHECK(result.value() == 2);
+    CHECK(renderer.last_draw_calls() == 2);
+    context.device->end_frame();
+}
+
+TEST_CASE("renderer3d gives each instanced draw its own transform") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene); // Camera at +Z, looking down -Z.
+
+    // Two instances of one mesh at opposite sides of the frame, so they share a
+    // draw call but must land in different places. The failure this catches is
+    // the one instancing invites: the per-instance transform not being read, so
+    // every instance is drawn with one matrix and the second copy vanishes or
+    // overlaps the first. A draw-call count alone would not catch that.
+    auto cube = Mesh::make_cube();
+    for (int i = 0; i < 2; ++i) {
+        Node* node = scene.create_node("Cube");
+        auto* renderer = node->add_component<MeshRenderer3D>();
+        renderer->mesh = cube;
+        node->transform().position = Vec3{i == 0 ? -1.0f : 1.0f, 0.0f, 0.0f};
+    }
+
+    context.window->poll_events();
+    context.window->swap_buffers();
+    context.device->begin_frame(64, 64, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer3d::Renderer3D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    REQUIRE(renderer.render(*context.device, scene, 64, 64));
+    CHECK(renderer.last_draw_calls() == 1);
+
+    // Sample the centre of each cube's screen footprint: world x = -1 and +1 at
+    // z = 0 project to roughly pixel 13 and 50 across a 64-wide frame.
+    std::vector<u8> left(4, 0);
+    std::vector<u8> right(4, 0);
+    context.device->read_pixels(13, 32, 1, 1, std::span<u8>(left.data(), left.size()));
+    context.device->read_pixels(50, 32, 1, 1, std::span<u8>(right.data(), right.size()));
+    context.device->end_frame();
+
+    CHECK(left[0] > 30);  // The left instance was drawn where it belongs.
+    CHECK(right[0] > 30); // And so was the right one, with its own transform.
 }
 
 TEST_CASE("renderer3d draws a camera's gradient background") {

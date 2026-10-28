@@ -127,6 +127,36 @@ struct VertexLayout {
         return layout;
     }
 
+    // The instanced mesh path pairs `position_normal_uv()` (locations 0-2) with
+    // this per-instance stream (locations 3-9). One record is the instance's model
+    // matrix followed by its normal matrix, each as four-column vectors in the
+    // same column-major order the RHI uploads a `Mat4`, so the vertex shader
+    // assembles both with no repacking.
+    //
+    // The normal matrix travels per instance rather than being derived in the
+    // shader: `transpose(inverse(model))` per vertex is real vertex work, and the
+    // CPU already computes it once per instance. The fourth column of each normal
+    // column is padding the shader ignores; it keeps every attribute a vec4 and
+    // the stride 16-byte aligned, which is the shape every backend accepts.
+    //
+    // Unlike the sprite path, no column is dropped: a sprite transform never
+    // writes a world z, but a mesh's model matrix scales, rotates, and translates
+    // on all three axes, so the shader needs the full matrix to place a vertex.
+    [[nodiscard]] static VertexLayout mesh_instance() {
+        VertexLayout layout;
+        layout.stride = 7 * 16;
+        layout.attributes = {
+            {3, VertexFormat::Float4, 0, 1},  // model column 0
+            {4, VertexFormat::Float4, 16, 1}, // model column 1
+            {5, VertexFormat::Float4, 32, 1}, // model column 2
+            {6, VertexFormat::Float4, 48, 1}, // model column 3
+            {7, VertexFormat::Float4, 64, 1}, // normal matrix column 0
+            {8, VertexFormat::Float4, 80, 1}, // normal matrix column 1
+            {9, VertexFormat::Float4, 96, 1}, // normal matrix column 2
+        };
+        return layout;
+    }
+
     [[nodiscard]] static VertexLayout position_uv() {
         // vec2 clip-space position, vec2 uv - the full-screen quad format used
         // by a background or post-processing pass. The position is already in

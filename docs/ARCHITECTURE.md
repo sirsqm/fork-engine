@@ -525,15 +525,20 @@ loader, so a mounted pack is served unchanged
 
 **`renderer3d::Renderer3D`** runs the same seam: it extracts each
 `MeshRenderer3D` with its node's world matrix and the mesh's world-space AABB
-into a flat array, culls it, then issues one indexed draw per instance. It owns a
-buffer cache keyed by the mesh, uploading on first use and sweeping dead entries
-each frame, so a shared mesh is uploaded once. The pass is a single forward
-Blinn-Phong shader: albedo × (ambient + the sum of the light contributions),
-each light contributing colour × intensity × (diffuse + specular) with its own
-falloff. It is depth-tested and opaque, so draw order does not change the image.
-The camera position is a uniform; the shader does not assume the camera is at
-the origin. A 1×1 white texture stands in for meshes without one, as in
-`Renderer2D`.
+into a flat array, culls it, batches it, then issues one indexed *instanced*
+draw per batch (ADR-0101). A batch is a run of instances sharing a mesh, both
+material textures, and the per-batch shading state, so the draw-call count tracks
+the number of distinct (mesh, material) pairs a scene shows, not its instance
+count. The per-instance model and normal matrices travel in a per-instance vertex
+stream, so the transform is not a uniform and one call covers every instance of a
+mesh. It owns a buffer cache keyed by the mesh, uploading on first use and
+sweeping dead entries each frame, so a shared mesh is uploaded once. The pass is
+a single forward Blinn-Phong shader: albedo × (ambient + the sum of the light
+contributions), each light contributing colour × intensity × (diffuse + specular)
+with its own falloff. It is depth-tested and opaque, so draw order does not
+change the image. The camera position is a uniform; the shader does not assume
+the camera is at the origin. A 1×1 white texture stands in for meshes without
+one, as in `Renderer2D`.
 
 The 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`,
 `PointLight3D`, `SpotLight3D`) live in `scene3d`, which does **not** depend on
@@ -574,13 +579,15 @@ keeps the flat pass, which suits its small, highly dynamic quad set.
 depth-only pass before the main pass, rendering the culled instances into a
 1024² sample-depth target (ADR-0014). The light-space matrix is an orthographic
 projection fitted to the culled instances' world bounds, sized from their
-bounding sphere so coverage is stable as the camera moves. The main pass samples
+bounding sphere so coverage is stable as the camera moves. The depth pass draws
+the same batches as the main pass, from the same instance upload, so it inherits
+the batching (ADR-0101). The main pass samples
 that depth with a 3×3 PCF filter; fragments outside the map are treated as lit,
 and a slope-scaled bias removes self-shadowing acne. Only the directional light
 casts; ambient stays unshadowed so occluded areas keep fill. `last_shadow_casters()`
-reports the depth-pass draw count.
+reports the depth-pass instance count.
 
-Batching, point/spot shadows, and a material graph are later work behind these
+Point/spot shadows and a material graph are later work behind these
 same interfaces.
 
 **Environment and post-processing.** A camera can enable a full-screen gradient
@@ -1219,8 +1226,9 @@ Every milestone must build and pass its tests before the next one begins.
   owns one arena, resets it each frame, and hands it to systems through
   `FrameContext` ([ADR-0054](adr/0054-frame-loop-arena.md)); the job system is
   in place too (section 5, [ADR-0068](adr/0068-job-system.md)), so parallel
-  culling, instancing, and moving the extraction seam onto the arena are what
-  remain in M9.
+  culling, 2D and 3D instancing, and the arena-backed extraction seam are done;
+  pass culling and render-target ownership in the render graph are what remain in
+  M9.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 11). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).

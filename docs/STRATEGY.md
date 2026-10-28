@@ -105,9 +105,11 @@ not a claim.
   counters to prove the churn is gone. **Landed**
   ([ADR-0051](adr/0051-frame-arena.md), [ADR-0054](adr/0054-frame-loop-arena.md),
   [ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md)).
-- **P6 — GPU efficiency.** Instancing and material batching are landed
-  ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md)), and
-  the **render-graph seam**'s scheduler landed
+- **P6 — GPU efficiency.** Instancing and material batching are landed for both
+  renderers: the 2D sprite path
+  ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md)) and the
+  3D mesh path ([ADR-0101](adr/0101-instanced-3d-draws.md)), and the
+  **render-graph seam**'s scheduler landed
   ([ADR-0100](adr/0100-render-graph-seam.md)): pass order is data, and each pass
   is profiled as `pass/<name>`. Pass culling and render-target ownership remain
   open, and are what turn the scheduler into an optimizer.
