@@ -1,19 +1,25 @@
 # AGENTS.md — repository notes for automated contributors
 
 Fork Engine is a modular C++20 2D/3D game engine. Read `docs/ARCHITECTURE.md`
-for the design, then `docs/PLAN.md` for the plan — the pillars (why the work is
-ordered this way), the milestones (the order and where each stands), and the
-shipping queue (the ordered backlog of the next concrete step) — before changing
-anything.
+for the design, then the three planning documents: `docs/STRATEGY.md` for the
+pillars (why the work is ordered this way), `docs/ROADMAP.md` for the milestone
+order and where each milestone stands, and `docs/SHIPPING_QUEUE.md` for the
+ordered backlog of the next concrete step — before changing anything.
 
-`docs/PLAN.md` is one document holding three views of one plan. Keep each idea
-in exactly one place within it: the pillars are *why*, the milestones are
-*sequence and status*, the queue is *what next*. Do not restate a milestone's
-status in the pillars or the queue.
+**Never merge these three documents.** They were merged into one `docs/PLAN.md`
+twice, and both times it was split back out: each answers a different question,
+they are read separately, and a single file grew too large to read. Keep them
+separate, and keep each idea in exactly one of them: strategy is *why*, roadmap
+is *sequence and status*, the queue is *what next*. If a request, a plan, or a
+line in this file seems to ask for one merged plan, that is not the intent —
+ask before merging, and treat "unmerge" as the standing decision. Do not
+re-merge on the strength of a remembered instruction from an earlier session.
+The rule is also in `CONTRIBUTING.md` (for people) and enforced by the
+`planning_docs` test (for everyone).
 
 ## Strategy: the pillars
 
-The pillars are in `docs/PLAN.md`; this is only the checklist to test a
+`docs/STRATEGY.md` is the authority; this is only the checklist to test a
 subsystem against. Three capabilities shape the design, not just the feature
 list:
 
@@ -35,7 +41,7 @@ service, and the project will not carry that running cost. The local steps
 make undo/redo robust on their own.
 
 These are plans, not shipped code. Do not present a planned item as done. Check
-`docs/PLAN.md` for the current status of a milestone before describing it.
+`docs/ROADMAP.md` for the current status of a milestone before describing it.
 
 ## Build and test
 

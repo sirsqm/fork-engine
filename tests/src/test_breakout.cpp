@@ -122,7 +122,7 @@ TEST_CASE("a brick broken after the win does not score") {
 
 // ---------------------------------------------------------------------------
 // Levels: clearing a board advances and makes the ball faster
-// (docs/PLAN.md, `slice-scoring-and-progression`).
+// (docs/SHIPPING_QUEUE.md, `slice-scoring-and-progression`).
 // ---------------------------------------------------------------------------
 
 TEST_CASE("clearing a board advances the level and speeds the ball up") {
@@ -545,7 +545,7 @@ TEST_CASE("the game-over screen says YOU WIN after a win") {
 
 // ---------------------------------------------------------------------------
 // Screens: the title -> play -> game over -> title flow
-// (docs/PLAN.md, `slice-title-and-menus`).
+// (docs/SHIPPING_QUEUE.md, `slice-title-and-menus`).
 //
 // The rules half is BreakoutState on its own, with no engine; the shipped half
 // drives the real scene and the real schedule, which is what proves the flow the
@@ -1222,7 +1222,7 @@ TEST_CASE("a ball with a vertical component keeps bouncing rather than going fla
 
 // ---------------------------------------------------------------------------
 // Persistence: the best score through the storage seam
-// (docs/PLAN.md, `slice-persistence`).
+// (docs/SHIPPING_QUEUE.md, `slice-persistence`).
 //
 // The seam itself is tested in test_user_data.cpp; here it is the *game* that
 // is under test: that a played game records a best score, saves it on the
@@ -1407,7 +1407,7 @@ TEST_CASE("a run with no store tracks the best score in memory and persists noth
 
 // ---------------------------------------------------------------------------
 // Settings: volume and controls, persisted
-// (docs/PLAN.md, `slice-settings`).
+// (docs/SHIPPING_QUEUE.md, `slice-settings`).
 //
 // Two layers again. The rules half is Settings on its own -- the clamping and the
 // text round-trip, with no engine. The shipped half drives the real settings

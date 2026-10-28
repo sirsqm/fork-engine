@@ -204,7 +204,7 @@ bool parse_settings(std::string_view text, Settings& out) noexcept;
 // the last life, cannot corrupt the score or flip a finished result. Those
 // guards are what the unit tests pin down.
 //
-// It also owns the *screen* the game is on (docs/PLAN.md,
+// It also owns the *screen* the game is on (docs/SHIPPING_QUEUE.md,
 // `slice-title-and-menus`), which is the phase the presentation is in rather
 // than the outcome: a game opens on a title, runs while playing, can be paused,
 // and ends on a game-over screen that leads back to the title. Keeping the

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
 //
-// The GLES3 dialect parity check (docs/PLAN.md,
+// The GLES3 dialect parity check (docs/SHIPPING_QUEUE.md,
 // `webgl2-mobile-parity`).
 //
 // WebGL2 and the GLES3 contexts Android and iOS expose are close but not

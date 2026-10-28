@@ -58,7 +58,7 @@ use. WebGPU is deferred until a target demands it.
 
 ### The blockers, in order
 
-The queue in `docs/PLAN.md` is the decision, made concrete. Its order
+The queue in `docs/SHIPPING_QUEUE.md` is the decision, made concrete. Its order
 is chosen so that each item is verifiable by the next:
 
 1. **A GLSL dialect seam.** Translate the existing desktop sources to GLSL ES

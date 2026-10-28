@@ -132,12 +132,23 @@ add_test(
 # building: a green desktop build says nothing about whether the wasm job still
 # builds the player or still runs the browser smoke test. Like the platform
 # classifier, it is checked by reading the workflow in CMake's script mode
-# (docs/PLAN.md, `web-smoke-test-ci`).
+# (docs/SHIPPING_QUEUE.md, `web-smoke-test-ci`).
 add_test(
   NAME ci_web_job
   COMMAND
     ${CMAKE_COMMAND} -DCI_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/ci.yml -P
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_ci_web_job.cmake
+)
+
+# The planning documents are three files by decision, and that decision has been
+# undone by a later session twice. This guards it mechanically: it fails if a
+# merged plan reappears, if a document is missing or truncated, if AGENTS.md
+# stops recording the rule, or if a tracked file still points at a merged plan.
+add_test(
+  NAME planning_docs
+  COMMAND
+    ${CMAKE_COMMAND} -DREPO_ROOT=${CMAKE_SOURCE_DIR} -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_planning_docs.cmake
 )
 
 # ---------------------------------------------------------------------------
@@ -212,7 +223,7 @@ endif()
 add_test(NAME graphics_tests COMMAND fork_graphics_tests)
 
 # ---------------------------------------------------------------------------
-# GLES3 dialect parity (docs/PLAN.md, `webgl2-mobile-parity`).
+# GLES3 dialect parity (docs/SHIPPING_QUEUE.md, `webgl2-mobile-parity`).
 #
 # WebGL2 and the GLES3 contexts phones expose are close but not identical, and a
 # shader the ES seam translates wrongly is invisible until a phone compiles it.

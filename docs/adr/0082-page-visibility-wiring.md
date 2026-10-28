@@ -14,7 +14,7 @@ the loop measures spans the whole time the tab was hidden.
 ADR-0079's clamp (`kMaxDeltaTime`, 0.25 s) bounds how far one step can move the
 simulation, but it does not fix the case: the player was not playing, so *no*
 game time passed, and a bounded step is still a lurch. `web-visibility-pause`
-(docs/PLAN.md) asks for the honest answer — a resume advances the simulation by
+(docs/SHIPPING_QUEUE.md) asks for the honest answer — a resume advances the simulation by
 nothing. The engine half of that already exists and is recorded here: `Engine`
 owns the clock policy, `notify_page_visibility(visible)` rebaselines it so the
 first frame after a hidden span steps by zero and the next frame measures

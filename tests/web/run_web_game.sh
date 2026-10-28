@@ -7,7 +7,7 @@
 # regression in either renderer fails the run.
 #
 # This is the acceptance test for `headless-browser-verification`
-# (docs/PLAN.md): the web smoke test proves the window backend can
+# (docs/SHIPPING_QUEUE.md): the web smoke test proves the window backend can
 # obtain a WebGL2 context, and this proves a game built on top of it runs end to
 # end. It covers the whole shipping path in one run — the export template, the
 # pack fetched over HTTP, the player running under Emscripten's browser
@@ -94,7 +94,7 @@ run_project() {
   # Where the export lands. A normal run exports to a temporary directory and
   # removes it: the point of the check is the verdict, not the bytes. A run that
   # sets FE_WEB_GAME_KEEP_DIR is publishing the export -- CI uploads it as an
-  # artifact (docs/PLAN.md, `web-build-in-ci-artifacts`) -- so it exports under
+  # artifact (docs/SHIPPING_QUEUE.md, `web-build-in-ci-artifacts`) -- so it exports under
   # that directory, one subdirectory per project, and leaves it in place for the
   # upload step that follows.
   local export_dir
@@ -311,7 +311,7 @@ PY
   # the game is letterboxed or scrollable on the device this phase targets. The
   # shell reports its own measurement into the hidden `#layout` element, which the
   # dump carries; the insets it recorded are printed so a run shows what the
-  # runtime was told (docs/PLAN.md, `mobile-viewport-meta`).
+  # runtime was told (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`).
   local layout_note=""
   if [[ -n "${window_size}" ]]; then
     local layout_line
@@ -344,7 +344,7 @@ PY
 #      on the canvas at a point (0.5, 0.75) that no built-in region covers but the
 #      game's own `input/bindings.json` MoveForward region does. So the node only
 #      moves if the document was packed, read, parsed and applied — the whole
-#      declarative path, end to end in a browser (docs/PLAN.md,
+#      declarative path, end to end in a browser (docs/SHIPPING_QUEUE.md,
 #      `touch-gesture-regions`). This run does not require a jump: a jump would
 #      move the node too, and then `moved > 0` would no longer mean the touch
 #      landed. The key run above is what proves the jump.
@@ -366,7 +366,7 @@ else
   # canvas fills the window rather than letterboxing at desktop scale. The window
   # size is a phone in landscape (844x390 is an iPhone 14's CSS box rotated), and
   # the check reads the shell's own layout measurement out of the page
-  # (docs/PLAN.md, `mobile-viewport-meta`).
+  # (docs/SHIPPING_QUEUE.md, `mobile-viewport-meta`).
   run_project "${ROOT_DIR}/examples/demo_project" "2d-phone" \
     "$((${FE_WEB_GAME_PORT:-8733} + 12))" "" "0" "844,390"
 fi

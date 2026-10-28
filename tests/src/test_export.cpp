@@ -314,7 +314,7 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
 
     // The page's title carries the version the build was made with, when the
     // manifest recorded it, so a tab and a bookmark say which engine produced
-    // the build (docs/PLAN.md, `release-version-stamping`). A manifest without
+    // the build (docs/SHIPPING_QUEUE.md, `release-version-stamping`). A manifest without
     // one leaves the title exactly as it was.
     ExportManifest versioned = manifest;
     versioned.engine_version = "9.8.7";

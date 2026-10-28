@@ -10,7 +10,7 @@ feature so we can agree on the design first.
 
 Development happens in the open: work lands on `main` through reviewable pull
 requests, architectural decisions are recorded as ADRs in `docs/adr/`, and the
-plan's [near-term priorities](docs/PLAN.md#near-term-priorities) say what
+roadmap's [near-term priorities](docs/ROADMAP.md#near-term-priorities) say what
 is being worked on next. The maintainer decides direction, ADRs record the
 reasoning, and anyone can propose a change.
 
@@ -24,13 +24,14 @@ reasoning, and anyone can propose a change.
   welcome.
 - **Add tests.** Coverage of existing behaviour is always useful.
 - **Build a game in the engine.** The single most useful contribution right now
-  is a small, complete game built end to end (M2.5 in [the plan](docs/PLAN.md)) — it proves the
+  is a small, complete game built end to end (roadmap M2.5) — it proves the
   systems work together and exposes the gaps that matter.
 
 Three capabilities shape where the project is going — performance, shipping to
 every platform players use, and a durable, shareable edit model — and are planned
-in [`docs/PLAN.md`](docs/PLAN.md). Work that advances any of them is especially
-welcome; check the plan's shipping queue first so we do not duplicate effort.
+in [`docs/STRATEGY.md`](docs/STRATEGY.md). Work that advances any of them is
+especially welcome; check the [shipping queue](docs/SHIPPING_QUEUE.md) first so we
+do not duplicate effort.
 
 ## Getting started
 
@@ -132,6 +133,22 @@ template used by the existing records) and reference it from the pull request.
   ```bash
   cd build && ctest --output-on-failure
   ```
+
+## Planning documents
+
+The plan lives in three documents, and they stay three documents:
+
+- [`docs/STRATEGY.md`](docs/STRATEGY.md) — *why*: the three pillars that shape
+  the design.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — *sequence and status*: the milestones
+  and where each stands.
+- [`docs/SHIPPING_QUEUE.md`](docs/SHIPPING_QUEUE.md) — *what next*: the ordered
+  backlog the daily automation works through.
+
+Each answers a different question and is read on its own. **Never merge them into
+one file.** They were merged once into a single `docs/PLAN.md` and split back out
+because it grew too large to read; the split is the standing decision, and a test
+(`planning_docs`) fails if the three are ever merged again.
 
 ## Pull request process
 

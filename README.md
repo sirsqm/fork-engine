@@ -24,13 +24,17 @@ eventually features:
   [ADR-0032](docs/adr/0032-near-term-platform-scope.md) for why the wider claim
   is sequenced rather than asserted.
 The plan for all of this — the pillars, the milestone order, and the shipping
-queue the daily automation works through — is in [`docs/PLAN.md`](docs/PLAN.md).
+queue the daily automation works through — is in
+[`docs/STRATEGY.md`](docs/STRATEGY.md) (why the work is ordered this way),
+[`docs/ROADMAP.md`](docs/ROADMAP.md) (what each milestone contains and where it
+stands), and [`docs/SHIPPING_QUEUE.md`](docs/SHIPPING_QUEUE.md) (the ordered
+backlog of what to do next).
 
 The project is young and honest about it. The repository currently contains the
 engine core through its first several milestones: a buildable library, working
 2D and 3D renderers, a scene/resource/serialization/reflection core, 2D and 3D
 physics, audio, an editor foundation, and a runnable example, all covered by
-tests. Everything else is planned in [`docs/PLAN.md`](docs/PLAN.md).
+tests. Everything else is planned in those three documents.
 
 ## Status
 
@@ -55,10 +59,10 @@ tests. Everything else is planned in [`docs/PLAN.md`](docs/PLAN.md).
 | Project file (settings, asset root, startup scene) | Working |
 | Runtime frame loop + sandbox example | Working |
 | A complete example game (breakout, the M2.5 vertical slice) | Working (see [ADR-0036](docs/adr/0036-breakout-vertical-slice.md)) |
-| Scripting (C++ native modules first, language-agnostic seam) | Not started (see [the plan](docs/PLAN.md)) |
-| Build/export | Not started (see [the plan](docs/PLAN.md)) |
+| Scripting (C++ native modules first, language-agnostic seam) | Not started (see roadmap) |
+| Build/export | Not started (see roadmap) |
 | Performance tooling (profiler, benchmark, CI regression gate) | Working (see [ADR-0033](docs/adr/0033-performance-regression-gate.md)) |
-| Extra platforms | Planned (see [the plan](docs/PLAN.md)) |
+| Extra platforms | Planned (see roadmap) |
 
 Unit, editor, and graphics tests pass locally; see [Building and testing](#building-and-testing).
 
