@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/sirsqm/fork-engine/security/advisories/new
+    about: Report a vulnerability privately. Please do not open a public issue for it.
+  - name: How to contribute
+    url: https://github.com/sirsqm/fork-engine/blob/main/CONTRIBUTING.md
+    about: Build instructions, coding conventions, and the pull request process.

@@ -268,6 +268,9 @@ interface changes, and never claim something works without having run it.
 
 By participating you agree to the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
+To report a security vulnerability, follow [`SECURITY.md`](SECURITY.md) — please
+do not open a public issue for one.
+
 ## License
 
 Fork Engine is released under the [MIT License](LICENSE). Vendored third-party

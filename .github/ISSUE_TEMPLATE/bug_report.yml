@@ -1,0 +1,77 @@
+name: Bug report
+description: Report something that is broken in Fork Engine.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. A minimal reproduction is the
+        single most useful thing you can include — it turns "it breaks" into a
+        fix. For a security issue, please do **not** use this form; see
+        [SECURITY.md](https://github.com/sirsqm/fork-engine/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows the problem. Code, a scene file, or exact steps.
+      placeholder: |
+        1. Build with ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The commit you are on (`git rev-parse --short HEAD`) or a release tag.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Web (Emscripten)
+        - Other (say which in the description)
+    validations:
+      required: true
+
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler and version
+      description: For example, GCC 13.2, Clang 17, MSVC 19.38, or the Emscripten version.
+    validations:
+      required: false
+
+  - type: textarea
+    id: cmake-options
+    attributes:
+      label: CMake options
+      description: Any non-default options you configured with, e.g. `-DFE_ENABLE_ASAN=ON`.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Any error output, a crash backtrace, or the failing test output.
+      render: shell
+    validations:
+      required: false
