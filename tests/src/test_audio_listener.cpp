@@ -23,6 +23,7 @@
 #include "fe/systems/FrameContext.h"
 #include "fe/systems/SceneSchedule.h"
 
+#include <cmath>
 #include <memory>
 #include <ostream>
 
@@ -168,6 +169,74 @@ TEST_CASE("the system reports a stable name and can be re-pointed at an audio sy
     camera_node->transform().position = Vec3{2.0f, 3.0f, 4.0f};
     listener.update(step(0.016f), scene);
     CHECK(audio.listener_position().x == doctest::Approx(2.0f));
+}
+
+TEST_CASE("the listener takes its facing from a 3D camera's rotation") {
+    // A 3D camera supplies the ear direction as well as the position, which is
+    // what turns on stereo panning. The camera looks down its local -Z, so a
+    // camera with no rotation faces -Z with world up.
+    audio::AudioSystem audio(nullptr);
+    AudioListenerSystem listener(&audio);
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->add_component<Camera3D>();
+
+    listener.update(step(0.016f), scene);
+    CHECK(audio.has_listener_orientation());
+    CHECK(audio.listener_forward().x == doctest::Approx(0.0f));
+    CHECK(audio.listener_forward().y == doctest::Approx(0.0f));
+    CHECK(audio.listener_forward().z == doctest::Approx(-1.0f));
+    CHECK(audio.listener_up().y == doctest::Approx(1.0f));
+
+    // Rotating the camera turns the ear: a camera yawed 90 degrees about Y now
+    // faces along the world X axis, and the listener's forward follows. The
+    // exact axis is read back through `forward()` rather than recomputed, so this
+    // stays a check on the plumbing.
+    camera_node->transform().rotation = Vec3{0.0f, kPi * 0.5f, 0.0f};
+    listener.update(step(0.016f), scene);
+    const Vec3 expected_forward = camera_node->get_component<Camera3D>()->forward();
+    CHECK(audio.listener_forward().x == doctest::Approx(expected_forward.x));
+    CHECK(audio.listener_forward().z == doctest::Approx(expected_forward.z));
+    CHECK(std::abs(audio.listener_forward().z) < 0.01f); // turned off the -Z axis
+}
+
+TEST_CASE("the listener takes no facing from a 2D camera, so a 2D scene does not pan") {
+    // Panning needs an ear direction a 2D scene does not have. A 2D camera sets
+    // the position and leaves the orientation off, so a 2D game mixes exactly as
+    // it did before panning existed.
+    audio::AudioSystem audio(nullptr);
+    AudioListenerSystem listener(&audio);
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera2D");
+    camera_node->add_component<Camera2D>();
+    camera_node->transform().position = Vec3{7.0f, -2.0f, 0.0f};
+
+    listener.update(step(0.016f), scene);
+    CHECK(audio.listener_position().x == doctest::Approx(7.0f));
+    CHECK_FALSE(audio.has_listener_orientation());
+}
+
+TEST_CASE("switching a scene from a 3D camera to a 2D one clears the facing") {
+    // The stale-facing case: if the 2D branch left the orientation from an
+    // earlier 3D frame in place, a scene that changed renderers would keep
+    // panning against an axis it no longer has. The two scenes share one audio
+    // system, so the second update sees the first's orientation.
+    audio::AudioSystem audio(nullptr);
+    AudioListenerSystem listener(&audio);
+
+    Scene scene3d;
+    Node* camera3d = scene3d.create_node("Camera3D");
+    camera3d->add_component<Camera3D>();
+    listener.update(step(0.016f), scene3d);
+    REQUIRE(audio.has_listener_orientation());
+
+    Scene scene2d;
+    Node* camera2d = scene2d.create_node("Camera2D");
+    camera2d->add_component<Camera2D>();
+    listener.update(step(0.016f), scene2d);
+    CHECK_FALSE(audio.has_listener_orientation());
 }
 
 TEST_CASE("a schedule drives the listener from a real engine's audio system") {

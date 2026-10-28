@@ -63,6 +63,13 @@ struct Voice {
     // diagnostics and metering. 1 when the voice is non-positional.
     f32 attenuation = 1.0f;
 
+    // The pan the mixer applied on the last call, in [-1, 1]: -1 is hard left,
+    // 0 is centred, +1 is hard right. 0 when the voice is non-positional or the
+    // listener has no orientation (a 2D scene), so the mix is unchanged. Exposed
+    // for the same reason `attenuation` is: a test can assert the pan without
+    // re-deriving the vector maths.
+    f32 pan = 0.0f;
+
     // --- Streaming ---------------------------------------------------------
     // The channel count of the decoded samples for a streaming voice (a voice
     // whose frames come from an AudioStream rather than an AudioClip). Zero for
@@ -100,6 +107,27 @@ struct Voice {
 // pure, so it is called directly by the tests.
 [[nodiscard]] f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept;
 
+// Stereo pan gain for one output channel, from a pan in [-1, 1].
+//
+// A positional voice is panned by where it sits relative to the listener's
+// facing: a sound to the listener's right is louder in the right ear, one to the
+// left louder in the left ear, and one straight ahead equal in both. `channel`
+// selects which ear: 0 is left, 1 is right. Any other channel (a surround
+// layout, or a mono output) is centred, so this cannot silence a channel the
+// pan model has no opinion about.
+//
+// The law is the "constant power" one -3 dB pan law that every mixer uses rather
+// than a linear fade: the two gains are cos and sin of a quarter turn, so
+// `left^2 + right^2 == 1` at every pan. A linear law would dip ~3 dB in the
+// middle, so a sound crossing the listener would audibly duck as it passed the
+// centre; constant power keeps its loudness even across the sweep. At hard left
+// the right gain is exactly 0 and vice versa, so a hard-panned sound is truly in
+// one ear.
+//
+// Total and pure: a pan outside [-1, 1] is clamped, and the function never
+// returns NaN.
+[[nodiscard]] f32 pan_gain(f32 pan, u32 channel) noexcept;
+
 // Everything mix_voices needs that is not on the voices themselves: the
 // listener, the bus table, and the master gain. Grouped so the mixer signature
 // stays readable and a caller can default-construct "no buses, origin listener".
@@ -107,6 +135,36 @@ struct MixParams {
     // Where the listener is, in the same world space as each voice's position.
     // Consulted only for positional voices.
     Vec3 listener_position{};
+
+    // Which way the listener faces, as a unit vector, in the same space as
+    // `listener_position`. Panning is the component of a voice's direction along
+    // the listener's *right* axis, which is derived from this and `listener_up`.
+    //
+    // The default is the zero vector, which means "no facing, so no panning": a
+    // voice is centred and its level is exactly what it was before panning
+    // existed. That keeps the refinement purely additive - every 2D scene and
+    // every existing test, none of which has a facing, mixes byte for byte as it
+    // did. A caller that has an ear direction (the `AudioListenerSystem` reading
+    // a 3D camera) sets a real vector and opts the scene into panning.
+    //
+    // A zero vector is the same degenerate facing `voice_pan` already centres
+    // on, so there is one rule rather than a separate "was it set" flag.
+    Vec3 listener_forward{};
+
+    // The listener's up axis, used with `listener_forward` to build the right
+    // axis. Kept separate from forward because a listener may roll (a camera on a
+    // banking aircraft); deriving right from forward and world-up alone would
+    // make the pan ignore the roll. Ignored while `listener_forward` is zero.
+    Vec3 listener_up{0.0f, 1.0f, 0.0f};
+
+    // Whether panning is active. False while `listener_forward` is zero, which
+    // is the default and every 2D scene: the mixer then applies no per-ear gain,
+    // so a centred voice keeps exactly its authored level rather than the -3 dB
+    // a constant-power law puts at the centre. Only a listener with a real facing
+    // (a 3D camera) opts in, and only then does the pan law apply - which is why
+    // enabling it does not retroactively change a mix that never had an ear
+    // direction.
+    [[nodiscard]] bool has_orientation() const noexcept { return listener_forward.length_squared() > 0.0f; }
 
     // The group-bus table. `buses[voice.bus].gain` scales the voice when its bus
     // index is in range. The master bus is *not* in this table: its gain travels
@@ -144,7 +202,25 @@ struct MixParams {
 // scaled by exactly the same rule, and a change to the rule cannot drift between
 // them. As a side effect it records the attenuation it applied on `voice`, which
 // is the value the diagnostics expose.
+//
+// This is the voice's *level*, not its per-ear gain: panning is applied per
+// output channel on top of it (see pan_gain), because a stereo pan is a different
+// gain for the left and right ears rather than one number for the voice.
 [[nodiscard]] f32 voice_level(Voice& voice, const MixParams& params) noexcept;
+
+// The pan the mixer computes for a voice, in [-1, 1], and records on
+// `voice.pan`. 0 for a non-positional voice, and 0 when the listener has no
+// facing (`params.has_orientation()` is false, or the facing is degenerate: a
+// zero forward vector, or one parallel to `listener_up`), so the voice is
+// centred rather than panned by a right axis that does not exist.
+//
+// The pan is the direction from the listener to the voice projected onto the
+// listener's right axis: a voice to the right is positive, one behind is centred
+// (its right component is zero), and one directly overhead is centred too. This
+// is the standard first-order model and is deliberately not a full HRTF - it
+// gives left/right separation, which is the audible half of spatialisation, and
+// leaves front/back and elevation to a future head-related filter.
+[[nodiscard]] f32 voice_pan(const Voice& voice, const MixParams& params) noexcept;
 
 // Adds one streaming voice's already-decoded interleaved samples to `output`,
 // which is *not* cleared and must already hold the clip voices' contribution:
@@ -187,6 +263,16 @@ struct MixParams {
 // otherwise, and `bus_gain` is the gain of the voice's bus (1 when it is on no
 // bus). A non-positional voice on no bus therefore keeps exactly its authored
 // gain, which is the behaviour that existed before this refinement.
+//
+// A positional voice is additionally panned across the output channels by
+// voice_pan() and pan_gain(): its level is multiplied by a per-ear gain so a
+// sound to the listener's right is louder in the right ear. Panning applies only
+// when the listener has a facing (`params.has_orientation()`), so a 2D scene - a
+// position but no ear direction - mixes exactly as it did before, and only when
+// the output is stereo (`out_channels >= 2`); a mono output is centred. The pan
+// touches channels 0 and 1 only, so a third or later channel (a surround layout)
+// is centred, because the pan model has no opinion about it. A non-positional
+// voice is never panned.
 //
 // Returns the peak absolute sample written, so a caller can report or meter the
 // output without rescanning it.

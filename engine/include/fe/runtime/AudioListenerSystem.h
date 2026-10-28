@@ -37,10 +37,12 @@ class AudioSystem;
 // frame loop that owns the pairing lives.
 //
 // A 2D camera has no ear direction (there is no up vector in a 2D scene) but it
-// does have a position, and that is all the mixer consults: attenuation is
-// distance-only. A 3D camera additionally sets the listener's orientation, which
-// is exposed for a future panner that needs it; the mixer's current curve does
-// not.
+// does have a position, and position is what attenuation consults: attenuation
+// is distance-only. A 3D camera additionally sets the listener's orientation,
+// which drives stereo panning: a source to the player's right is heard in the
+// right ear and one to the left in the left ear. Panning needs a facing a 2D
+// scene does not have, so it stays off there rather than being panned against an
+// invented axis.
 class AudioListenerSystem final : public System {
 public:
     // `audio` may be null, in which case the system is inert. That is the same

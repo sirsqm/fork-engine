@@ -83,6 +83,27 @@ public:
     void set_listener_position(const Vec3& position) noexcept { listener_position_ = position; }
     [[nodiscard]] const Vec3& listener_position() const noexcept { return listener_position_; }
 
+    // Which way the listener faces, for stereo panning. A positional source to
+    // the listener's right is louder in the right ear and one to the left louder
+    // in the left ear (see pan_gain). The default is the zero vector, which turns
+    // panning off: a scene that sets only a position - every 2D game - mixes
+    // exactly as it did before panning existed, so this is opt-in.
+    //
+    // Set with the ear's forward and up axes; the right axis is their cross
+    // product. A 3D camera supplies both from its world rotation
+    // (`Camera3D::forward` and its up axis).
+    void set_listener_orientation(const Vec3& forward, const Vec3& up) noexcept {
+        listener_forward_ = forward;
+        listener_up_ = up;
+    }
+    [[nodiscard]] const Vec3& listener_forward() const noexcept { return listener_forward_; }
+    [[nodiscard]] const Vec3& listener_up() const noexcept { return listener_up_; }
+
+    // Whether a facing has been set, so a caller can tell "panning off" from
+    // "panned against the default". True once set_listener_orientation is given a
+    // non-zero forward vector.
+    [[nodiscard]] bool has_listener_orientation() const noexcept { return listener_forward_.length_squared() > 0.0f; }
+
     // The gain of the master bus, applied to the summed output. 1 is unity.
     void set_master_gain(f32 gain) noexcept { master_gain_ = gain; }
     [[nodiscard]] f32 master_gain() const noexcept { return master_gain_; }
@@ -150,6 +171,8 @@ private:
     u32 stream_block_frames_ = 4096;
 
     Vec3 listener_position_{};
+    Vec3 listener_forward_{};
+    Vec3 listener_up_{0.0f, 1.0f, 0.0f};
     f32 master_gain_ = 1.0f;
     std::vector<AudioBus> buses_;
 

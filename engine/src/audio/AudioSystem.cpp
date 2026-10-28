@@ -231,6 +231,8 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
     if (frames > 0 && (!voices.empty() || !entries_.empty())) {
         MixParams params;
         params.listener_position = listener_position_;
+        params.listener_forward = listener_forward_;
+        params.listener_up = listener_up_;
         params.buses = buses_.empty() ? nullptr : buses_.data();
         params.bus_count = static_cast<u32>(buses_.size());
         params.master_gain = master_gain_;

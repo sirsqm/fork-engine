@@ -26,6 +26,16 @@ Vec3 Camera3D::forward() const noexcept {
     return transform_direction(owner->world_matrix(), Vec3{0.0f, 0.0f, -1.0f}).normalized();
 }
 
+Vec3 Camera3D::up() const noexcept {
+    const Node* owner = node();
+    if (owner == nullptr) {
+        return Vec3{0.0f, 1.0f, 0.0f};
+    }
+    // The camera's local up is +Y; rotating it by the world matrix gives the
+    // world-space up, roll included.
+    return transform_direction(owner->world_matrix(), Vec3{0.0f, 1.0f, 0.0f}).normalized();
+}
+
 Mat4 Camera3D::view_projection(u32 viewport_width, u32 viewport_height) const noexcept {
     const f32 width = static_cast<f32>(viewport_width);
     const f32 height = static_cast<f32>(viewport_height);

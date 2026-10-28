@@ -453,6 +453,250 @@ TEST_CASE("a non-positional voice ignores the listener and keeps full gain") {
 }
 
 // ---------------------------------------------------------------------------
+// Stereo panning (pure)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the pan law is constant power: the two ear gains square to one") {
+    // The defining property. A linear law would satisfy sum == 1 but dip ~3 dB
+    // at the centre; the constant-power law keeps left^2 + right^2 == 1 so the
+    // loudness is even across a sweep.
+    for (f32 pan = -1.0f; pan <= 1.0f; pan += 0.125f) {
+        const f32 left = audio::pan_gain(pan, 0);
+        const f32 right = audio::pan_gain(pan, 1);
+        CHECK(left * left + right * right == doctest::Approx(1.0f));
+    }
+}
+
+TEST_CASE("the pan law is hard in one ear and even at the centre") {
+    // Hard left: all left, no right. Hard right: the mirror.
+    CHECK(audio::pan_gain(-1.0f, 0) == doctest::Approx(1.0f));
+    CHECK(audio::pan_gain(-1.0f, 1) == doctest::Approx(0.0f));
+    CHECK(audio::pan_gain(1.0f, 0) == doctest::Approx(0.0f));
+    CHECK(audio::pan_gain(1.0f, 1) == doctest::Approx(1.0f));
+
+    // Centre: both ears equal, at the -3 dB point (sqrt(1/2)), not at 1.
+    const f32 centre = std::sqrt(0.5f);
+    CHECK(audio::pan_gain(0.0f, 0) == doctest::Approx(centre));
+    CHECK(audio::pan_gain(0.0f, 1) == doctest::Approx(centre));
+}
+
+TEST_CASE("the pan law is monotonic: right gain rises and left falls with pan") {
+    f32 previous_left = audio::pan_gain(-1.0f, 0);
+    f32 previous_right = audio::pan_gain(-1.0f, 1);
+    for (f32 pan = -1.0f; pan <= 1.0f; pan += 0.125f) {
+        const f32 left = audio::pan_gain(pan, 0);
+        const f32 right = audio::pan_gain(pan, 1);
+        CHECK(left <= previous_left + 1e-6f);   // left never increases
+        CHECK(right >= previous_right - 1e-6f); // right never decreases
+        previous_left = left;
+        previous_right = right;
+    }
+}
+
+TEST_CASE("the pan law clamps out-of-range pans and centres a non-stereo channel") {
+    // A rounding error that pushes a normalised direction just past 1 must hard
+    // pan, not run cos/sin outside the first quadrant.
+    CHECK(audio::pan_gain(2.0f, 0) == doctest::Approx(0.0f));
+    CHECK(audio::pan_gain(2.0f, 1) == doctest::Approx(1.0f));
+    CHECK(audio::pan_gain(-2.0f, 0) == doctest::Approx(1.0f));
+    CHECK(audio::pan_gain(-2.0f, 1) == doctest::Approx(0.0f));
+
+    // A third or later channel (a surround layout) has no pan opinion; it is
+    // centred rather than silenced.
+    CHECK(audio::pan_gain(1.0f, 2) == doctest::Approx(1.0f));
+    CHECK(audio::pan_gain(-1.0f, 5) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("voice_pan places a source to the right, left, ahead and behind") {
+    // Listener at the origin looking down -Z with world up. Its right axis is
+    // forward x up = (0,0,-1) x (0,1,0) = (1,0,0): +X is to the right.
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    audio::Voice voice;
+    voice.spatial = true;
+
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f}; // to the right
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(1.0f));
+
+    voice.world_position = Vec3{-5.0f, 0.0f, 0.0f}; // to the left
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(-1.0f));
+
+    voice.world_position = Vec3{0.0f, 0.0f, -5.0f}; // straight ahead
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(0.0f));
+
+    voice.world_position = Vec3{0.0f, 0.0f, 5.0f}; // directly behind
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(0.0f));
+
+    voice.world_position = Vec3{0.0f, 5.0f, 0.0f}; // directly overhead
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("voice_pan follows the listener's facing, not the world axes") {
+    // Turn the listener a quarter turn to the right (now looking down +X). A
+    // source along +X is now straight ahead, so it centres, and the source that
+    // was ahead (-Z) is now to the listener's left.
+    audio::MixParams params;
+    params.listener_forward = Vec3{1.0f, 0.0f, 0.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    audio::Voice voice;
+    voice.spatial = true;
+
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f}; // ahead of the turned listener
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(0.0f));
+
+    // right axis = (1,0,0) x (0,1,0) = (0,0,1), so +Z is to the right now and
+    // -Z is to the left.
+    voice.world_position = Vec3{0.0f, 0.0f, -5.0f};
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(-1.0f));
+
+    voice.world_position = Vec3{0.0f, 0.0f, 5.0f};
+    CHECK(audio::voice_pan(voice, params) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("voice_pan is zero with no orientation, no spatialisation, or a degenerate facing") {
+    audio::Voice voice;
+    voice.spatial = true;
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f};
+
+    // No facing (the default, and every 2D scene): no pan.
+    audio::MixParams no_orientation;
+    CHECK_FALSE(no_orientation.has_orientation());
+    CHECK(audio::voice_pan(voice, no_orientation) == doctest::Approx(0.0f));
+
+    // Non-positional voice: no place in space, so no pan even with a facing.
+    audio::MixParams oriented;
+    oriented.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    oriented.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+    voice.spatial = false;
+    CHECK(audio::voice_pan(voice, oriented) == doctest::Approx(0.0f));
+
+    // Forward parallel to up: no right axis exists, so the answer is centred
+    // rather than a division by a zero-length cross product.
+    voice.spatial = true;
+    audio::MixParams parallel;
+    parallel.listener_forward = Vec3{0.0f, 1.0f, 0.0f};
+    parallel.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+    CHECK(audio::voice_pan(voice, parallel) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a positional voice to the right is louder in the right ear") {
+    // End to end through the mixer: a mono voice at +X, a listener at the origin
+    // facing -Z. The right channel must come out louder than the left, and both
+    // scaled by the same distance attenuation.
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{2.0f, 0.0f, 0.0f};
+    voice.min_distance = 1.0f;
+    voice.max_distance = 20.0f;
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    f32 output[2] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 2, 8000, params));
+
+    const f32 attenuation = 0.45f / 0.95f; // d = 2, min 1, max 20
+    CHECK(voice.pan == doctest::Approx(1.0f));
+    CHECK(output[1] > output[0]); // right louder than left
+    CHECK(output[1] == doctest::Approx(attenuation * audio::pan_gain(1.0f, 1)));
+    CHECK(output[0] == doctest::Approx(attenuation * audio::pan_gain(1.0f, 0)));
+}
+
+TEST_CASE("panning is off for a mono output, so a positional voice is not silenced") {
+    // A one-channel output has no ears. The pan must not be applied (which would
+    // fold the left gain into a single channel and change its level); the voice
+    // keeps its attenuation alone.
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{2.0f, 0.0f, 0.0f};
+
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.45f / 0.95f));
+}
+
+TEST_CASE("a centred positional voice with a facing keeps its un-panned level at the pan law's centre") {
+    // With a facing set, even a centred voice is scaled by the -3 dB centre of
+    // the pan law. This is the price of an even-loudness sweep and is the one
+    // behaviour that changes when a scene opts into panning, so it is pinned
+    // rather than left implicit.
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{0.0f, 0.0f, -5.0f}; // straight ahead
+    voice.min_distance = 10.0f;
+    voice.max_distance = 20.0f;
+
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    f32 output[2] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 2, 8000, params));
+
+    CHECK(voice.pan == doctest::Approx(0.0f));
+    CHECK(output[0] == doctest::Approx(std::sqrt(0.5f))); // attenuation 1 (inside min)
+    CHECK(output[1] == doctest::Approx(std::sqrt(0.5f)));
+}
+
+TEST_CASE("a non-positional voice is never panned even with a facing set") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.gain = 0.5f;
+    voice.spatial = false;
+    voice.world_position = Vec3{1000.0f, 0.0f, 0.0f};
+
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    f32 output[2] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 2, 8000, params));
+
+    CHECK(voice.pan == doctest::Approx(0.0f));
+    CHECK(output[0] == doctest::Approx(0.5f));
+    CHECK(output[1] == doctest::Approx(0.5f));
+}
+
+TEST_CASE("a streamed positional voice pans the same as a clip voice") {
+    // The streamed path applies the same per-ear gains as the clip path, so a
+    // streamed source to the right is louder in the right ear too.
+    audio::Voice voice;
+    voice.spatial = true;
+    voice.world_position = Vec3{2.0f, 0.0f, 0.0f};
+    voice.stream_channels = 1;
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    const f32 samples[1] = {1.0f};
+    f32 output[2] = {};
+    static_cast<void>(audio::add_streamed_voice(voice, samples, 1, 1, output, 2, 1.0, params));
+
+    const f32 attenuation = 0.45f / 0.95f;
+    CHECK(output[1] > output[0]);
+    CHECK(output[1] == doctest::Approx(attenuation * audio::pan_gain(1.0f, 1)));
+    CHECK(output[0] == doctest::Approx(attenuation * audio::pan_gain(1.0f, 0)));
+}
+
+// ---------------------------------------------------------------------------
 // Buses and the master (pure)
 // ---------------------------------------------------------------------------
 

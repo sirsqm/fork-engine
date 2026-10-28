@@ -156,8 +156,10 @@ must not own a second decode of the same clip, and every field that controls
 
 Still out of scope, tracked in the roadmap:
 
-- Listener orientation for a directional panner (the current curve is
-  distance-only).
+- Listener orientation for a directional panner. **Now shipped**:
+  [ADR-0099](0099-stereo-panning-from-listener-orientation.md) adds a
+  constant-power stereo pan driven by the listener's orientation, and a 3D
+  camera supplies the facing this system already had in hand.
 - Doppler shift.
 - An editor inspector field for a camera's "audio listener" role, should a scene
   ever need more than one candidate camera.

@@ -58,6 +58,13 @@ public:
     // without duplicating the maths.
     [[nodiscard]] Vec3 eye() const noexcept;
     [[nodiscard]] Vec3 forward() const noexcept;
+
+    // The camera's world-space up axis (its local +Y rotated by the world
+    // matrix), so a listener can take the ear's up as well as its forward. Like
+    // `forward()` it is derived from the owning node, so a camera on a banking
+    // rig reports a rolled up rather than world up. Falls back to world up when
+    // the camera has no owner.
+    [[nodiscard]] Vec3 up() const noexcept;
 };
 
 } // namespace fe

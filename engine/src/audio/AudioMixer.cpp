@@ -23,6 +23,61 @@ f32 clip_sample(const AudioClip& clip, u64 frame, u32 out_channel) noexcept {
     return samples[static_cast<usize>(index)];
 }
 
+f32 pan_gain(f32 pan, u32 channel) noexcept {
+    // Only the two ears have a pan; a third or later channel (a surround layout)
+    // and a mono output (channel 0 of one channel) are centred. The caller
+    // guards the mono case by only panning when out_channels >= 2, but the
+    // function is total on its own so a direct test cannot reach a surprising
+    // value.
+    if (channel > 1) {
+        return 1.0f;
+    }
+
+    // Clamp so a caller that computed a pan slightly outside [-1, 1] (a rounding
+    // error in a normalised direction) is centred/hard-panned rather than fed to
+    // cos/sin outside the first quadrant.
+    const f32 clamped = pan < -1.0f ? -1.0f : (pan > 1.0f ? 1.0f : pan);
+
+    // Constant-power pan: the pan angle sweeps a quarter turn, and the two gains
+    // are its cosine and sine. `pan = -1` is angle 0 (left = cos 0 = 1, right =
+    // sin 0 = 0); `pan = +1` is angle pi/2 (left = 0, right = 1); `pan = 0` is
+    // pi/4, where both are sqrt(2)/2 and the powers sum to 1.
+    const f32 angle = (clamped + 1.0f) * 0.5f * (kPi * 0.5f);
+    return channel == 0 ? std::cos(angle) : std::sin(angle);
+}
+
+f32 voice_pan(const Voice& voice, const MixParams& params) noexcept {
+    // A non-positional voice has no place in space, so it is never panned. A
+    // listener with no facing (the default, and every 2D scene) has no right
+    // axis, so panning is off entirely rather than relative to an invented ear.
+    if (!voice.spatial || !params.has_orientation()) {
+        return 0.0f;
+    }
+
+    const Vec3 forward = params.listener_forward.normalized();
+    const Vec3 up = params.listener_up.normalized();
+    const Vec3 right = forward.cross(up);
+    const f32 right_len = right.length();
+    if (right_len <= 0.0f) {
+        // forward is parallel to up (or up is zero): no right axis exists.
+        return 0.0f;
+    }
+
+    // Direction from the ear to the sound, normalised so the pan is a pure
+    // direction and does not grow with distance (distance is attenuation's job).
+    const Vec3 offset = voice.world_position - params.listener_position;
+    const f32 distance = offset.length();
+    if (distance <= 0.0f) {
+        // At the ear there is no direction to pan by.
+        return 0.0f;
+    }
+
+    // The pan is the component of the direction along the right axis, which is
+    // already in [-1, 1] because both vectors are unit length. Positive is to the
+    // right.
+    return (offset / distance).dot(right / right_len);
+}
+
 f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept {
     // Full gain at or inside min_distance, silence at or past max_distance. The
     // curve in between is the inverse-distance falloff rescaled so it reaches
@@ -52,9 +107,11 @@ f32 block_sample(const f32* samples, u32 source_channels, u64 frame, u32 out_cha
 
 f32 voice_level(Voice& voice, const MixParams& params) noexcept {
     voice.attenuation = 1.0f;
+    voice.pan = 0.0f;
     if (voice.spatial) {
         const Vec3 offset = voice.world_position - params.listener_position;
         voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
+        voice.pan = voice_pan(voice, params);
     }
     return voice.gain * voice.attenuation * params.bus_gain(voice.bus);
 }
@@ -73,6 +130,13 @@ f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 
         ratio = 1.0;
     }
 
+    // Panning, exactly as mix_voices applies it: the same per-ear gains on the
+    // same two channels, so a streamed spatial voice and a clip spatial voice
+    // pan identically.
+    const bool pan_active = voice.spatial && out_channels >= 2 && params.has_orientation();
+    const f32 left_gain = pan_active ? pan_gain(voice.pan, 0) : 1.0f;
+    const f32 right_gain = pan_active ? pan_gain(voice.pan, 1) : 1.0f;
+
     for (u32 f = 0; f < frames; ++f) {
         const u64 source_frame = static_cast<u64>(static_cast<f64>(f) * ratio);
         if (source_frame >= source_frames) {
@@ -82,7 +146,8 @@ f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 
         }
         const usize base = static_cast<usize>(f) * out_channels;
         for (u32 c = 0; c < out_channels; ++c) {
-            output[base + c] += block_sample(samples, source_channels, source_frame, c) * level;
+            const f32 channel_gain = c == 0 ? left_gain : (c == 1 ? right_gain : 1.0f);
+            output[base + c] += block_sample(samples, source_channels, source_frame, c) * level * channel_gain;
         }
     }
 
@@ -123,6 +188,15 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
         // resumes at the right place rather than replaying from where it stopped.
         const f32 level = voice_level(voice, params);
 
+        // Panning: a per-ear gain applied on top of the level, computed once per
+        // voice because it depends only on the voice and the listener, not on the
+        // frame. `pan_active` is false for a mono output or a listener with no
+        // facing, in which case both gains are 1 and the loop below multiplies by
+        // 1 - the pre-panning path, exactly.
+        const bool pan_active = voice.spatial && out_channels >= 2 && params.has_orientation();
+        const f32 left_gain = pan_active ? pan_gain(voice.pan, 0) : 1.0f;
+        const f32 right_gain = pan_active ? pan_gain(voice.pan, 1) : 1.0f;
+
         const AudioClip& clip = *voice.clip;
         const u64 clip_frames = clip.frame_count();
         if (clip_frames == 0) {
@@ -155,7 +229,11 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
             const u64 read_frame = static_cast<u64>(voice.position);
             const usize base = static_cast<usize>(f) * out_channels;
             for (u32 c = 0; c < out_channels; ++c) {
-                output[base + c] += clip_sample(clip, read_frame, c) * level;
+                // Channels 0 and 1 carry the pan; a third or later channel is
+                // centred (pan_gain returns 1 for it), and a mono output never
+                // reaches here with pan_active true.
+                const f32 channel_gain = c == 0 ? left_gain : (c == 1 ? right_gain : 1.0f);
+                output[base + c] += clip_sample(clip, read_frame, c) * level * channel_gain;
             }
             voice.position += ratio;
             ++voice.frames_played;
