@@ -103,6 +103,102 @@ fe::Node* add_menu_canvas(fe::Scene& scene, std::string_view canvas_name, std::s
     return canvas_node;
 }
 
+// One clickable line of text under `parent`. It is a `UiElement` with text, so it
+// draws like a label and is hit tested like a button: the input system writes
+// `interaction.clicked` on it and the menu reads that, which is what makes a tap
+// and a click both work on a menu (ADR-0086). `align` matches the element's role
+// -- centre for a menu line, an edge for a corner button.
+fe::Node* add_menu_button(fe::Node* parent, std::string_view name, const char* text, fe::ui::UiAnchor anchor,
+                          const fe::Vec2& offset, fe::ui::UiAlign align) {
+    fe::Node* node = parent->create_child<fe::Node>(std::string(name));
+    auto* element = node->add_component<fe::ui::UiElement>();
+    element->width = fe::ui::UiSize::content();
+    element->height = fe::ui::UiSize::content();
+    element->anchor = anchor;
+    element->offset = offset;
+    element->text = text;
+    element->text_align = align;
+    element->text_vertical = fe::ui::UiAlign::Center;
+    return node;
+}
+
+// A labelled line of text that is *not* a button: the value readouts on the
+// settings screen. It is authored empty and MenuSystem fills it from the state,
+// exactly as the HUD's counters are.
+fe::Node* add_menu_value(fe::Node* parent, std::string_view name, fe::ui::UiAnchor anchor, const fe::Vec2& offset,
+                         fe::ui::UiAlign align) {
+    return add_menu_button(parent, name, "", anchor, offset, align);
+}
+
+// One row of the settings screen: a "less" button, the value readout, and a
+// "more" button, laid out left to right. A `Row` container does the placement, so
+// the three parts stay together and centred no matter how wide the value text is.
+//
+// The two buttons are given a fixed, generous size rather than sizing to their
+// single-character text: a "-" the size of its glyph would be a poor tap target
+// on a phone, and the queue item asks for a touch-friendly menu.
+void add_settings_row(fe::Node* column, std::string_view value_name, std::string_view down_name,
+                      std::string_view up_name) {
+    fe::Node* row_node = column->create_child<fe::Node>(std::string(value_name) + "Row");
+    auto* row = row_node->add_component<fe::ui::UiElement>();
+    row->width = fe::ui::UiSize::content();
+    row->height = fe::ui::UiSize::content();
+    row->direction = fe::ui::UiDirection::Row;
+    row->gap = cfg::kSettingsButtonGap;
+    row->align = fe::ui::UiAlign::Center;
+    row->justify = fe::ui::UiJustify::Center;
+
+    const auto add_button = [&](std::string_view name, const char* text) {
+        fe::Node* node =
+            add_menu_button(row_node, name, text, fe::ui::UiAnchor::MiddleLeft, fe::Vec2{}, fe::ui::UiAlign::Center);
+        if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
+            element->width = fe::ui::UiSize::fixed(cfg::kSettingsButtonSize);
+            element->height = fe::ui::UiSize::fixed(cfg::kSettingsButtonSize);
+        }
+    };
+    add_button(down_name, "-");
+    add_menu_value(row_node, value_name, fe::ui::UiAnchor::MiddleCenter, fe::Vec2{}, fe::ui::UiAlign::Center);
+    add_button(up_name, "+");
+}
+
+// The settings screen (`slice-settings`): a title, a volume row and a paddle-speed
+// row, and a back button. Each row is a value readout flanked by a "less" and a
+// "more" button, all laid out by the same UI solver the HUD uses, so a tap lands
+// exactly where the button draws. The canvas is hidden until MenuSystem shows it,
+// like the other menus.
+//
+// It is authored as a `Column` of rows, each row a `Row`, so a new setting is one
+// more row rather than six more coordinates. The text size is smaller than the
+// other menus because the settings screen has more lines to fit.
+void build_settings_canvas(fe::Scene& scene, const std::shared_ptr<fe::Resource>& font) {
+    fe::Node* canvas_node = scene.create_node(std::string(names::kSettingsCanvas));
+    auto* canvas = canvas_node->add_component<fe::ui::UiCanvas>();
+    canvas->design_width = cfg::kViewHalfWidth * 2.0f;
+    canvas->design_height = cfg::kViewHalfHeight * 2.0f;
+    canvas->font = font;
+    canvas->text_size = cfg::kSettingsTextSize;
+    canvas->layer = 20;
+    canvas->visible = false;
+
+    // The column that holds every row, centred on the screen.
+    fe::Node* column_node = canvas_node->create_child<fe::Node>("SettingsRows");
+    auto* column = column_node->add_component<fe::ui::UiElement>();
+    column->width = fe::ui::UiSize::content();
+    column->height = fe::ui::UiSize::content();
+    column->anchor = fe::ui::UiAnchor::MiddleCenter;
+    column->direction = fe::ui::UiDirection::Column;
+    column->gap = cfg::kSettingsRowGap;
+    column->align = fe::ui::UiAlign::Center;
+    column->justify = fe::ui::UiJustify::Center;
+
+    add_menu_button(column_node, names::kSettingsTitleLabel, cfg::kSettingsText, fe::ui::UiAnchor::TopCenter,
+                    fe::Vec2{}, fe::ui::UiAlign::Center);
+    add_settings_row(column_node, names::kSettingsVolumeValue, names::kSettingsVolumeDown, names::kSettingsVolumeUp);
+    add_settings_row(column_node, names::kSettingsSpeedValue, names::kSettingsSpeedDown, names::kSettingsSpeedUp);
+    add_menu_button(column_node, names::kSettingsBack, "BACK", fe::ui::UiAnchor::TopCenter, fe::Vec2{},
+                    fe::ui::UiAlign::Center);
+}
+
 } // namespace
 
 void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
@@ -238,6 +334,21 @@ void build_breakout_scene(fe::Scene& scene, const SceneAssets& assets) {
     add_menu_canvas(scene, names::kTitleCanvas, names::kTitleLabel, assets.font, cfg::kTitleText);
     add_menu_canvas(scene, names::kPauseCanvas, names::kPauseLabel, assets.font, cfg::kPauseText);
     add_menu_canvas(scene, names::kGameOverCanvas, names::kGameOverLabel, assets.font, cfg::kGameOverText);
+
+    // A settings button on the title and the pause screens, so the settings screen
+    // is reachable by a tap. They sit under their own canvas's label; a click on
+    // one is read by MenuSystem exactly like a click on the label.
+    if (fe::Node* title_canvas = scene.find_node_by_name(names::kTitleCanvas); title_canvas != nullptr) {
+        add_menu_button(title_canvas, names::kSettingsButton, cfg::kSettingsButtonText, fe::ui::UiAnchor::BottomCenter,
+                        fe::Vec2{0.0f, -cfg::kHudMargin}, fe::ui::UiAlign::Center);
+    }
+    if (fe::Node* pause_canvas = scene.find_node_by_name(names::kPauseCanvas); pause_canvas != nullptr) {
+        add_menu_button(pause_canvas, names::kPauseSettingsButton, cfg::kSettingsButtonText,
+                        fe::ui::UiAnchor::BottomCenter, fe::Vec2{0.0f, -cfg::kHudMargin}, fe::ui::UiAlign::Center);
+    }
+
+    // The settings screen itself (`slice-settings`).
+    build_settings_canvas(scene, assets.font);
 }
 
 fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& schedule, BreakoutState& state,
@@ -297,6 +408,15 @@ fe::physics2d::Physics2DSystem* install_breakout_systems(fe::SceneSchedule& sche
     menu->set_state(&state);
     menu->set_confirm_action(bindings.launch);
     menu->set_pause_action(bindings.pause);
+
+    // The settings system runs right after the menu, so a click that changed a
+    // setting this frame is applied (the volume onto the mixer, the speed is read
+    // off the state by the paddle) and saved on the same frame. It is placed
+    // before the gameplay systems for the same reason the menu is: what it decides
+    // should be in force for the frame it was decided on.
+    auto* settings = schedule.add_system<SettingsSystem>();
+    settings->set_state(&state);
+    settings->set_key(config::kSettingsKey);
 
     auto* paddle_system = schedule.add_system<PaddleControlSystem>();
     paddle_system->set_autoplay(autoplay);

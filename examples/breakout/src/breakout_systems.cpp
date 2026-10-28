@@ -3,6 +3,7 @@
 #include "breakout_systems.h"
 
 #include "fe/audio/AudioSource.h"
+#include "fe/audio/AudioSystem.h"
 #include "fe/core/Log.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DSystem.h"
@@ -18,6 +19,7 @@
 #include <charconv>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace breakout {
@@ -50,7 +52,7 @@ void PaddleControlSystem::update(const fe::FrameContext& context, fe::Scene& sce
         // run makes progress without a human.
         if (fe::Node* ball = scene.find_node_by_name(names::kBall); ball != nullptr) {
             const fe::f32 dx = ball->transform().position.x - x;
-            const fe::f32 step = controls_.paddle_speed * context.delta_time;
+            const fe::f32 step = paddle_speed() * context.delta_time;
             x += std::clamp(dx, -step, step);
         }
     } else if (const fe::InputState* input = context.input; input != nullptr) {
@@ -73,7 +75,7 @@ void PaddleControlSystem::update(const fe::FrameContext& context, fe::Scene& sce
                 direction += 1.0f;
             }
         }
-        x += direction * controls_.paddle_speed * context.delta_time;
+        x += direction * paddle_speed() * context.delta_time;
     }
 
     paddle->transform().position.x = std::clamp(x, -limit, limit);
@@ -386,9 +388,11 @@ void PersistSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
 
     // The title shows a fresh, unplayed game, so its score is not a result and
     // must not be recorded as a best; only a game that has actually been played
-    // (playing, paused, or ended) counts. That is what keeps a first run's HUD
-    // blank until the player has played.
-    if (screen != BreakoutState::Screen::Title) {
+    // (playing, paused, or ended) counts. The settings screen is the same: it is
+    // reachable from the title before any game has been played, and a visit to it
+    // must not turn a blank best-score line into a misleading "BEST 0". That is
+    // what keeps a first run's HUD blank until the player has played.
+    if (screen != BreakoutState::Screen::Title && screen != BreakoutState::Screen::Settings) {
         // The best score rises with the live score, so the HUD shows a new record
         // the moment it is set rather than only after the game ends.
         if (state_->record_best_score()) {
@@ -415,6 +419,79 @@ void PersistSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
     FE_LOG_INFO("breakout: saved best score %d", state_->best_score());
 }
 
+void SettingsSystem::load_once(fe::UserData& store) {
+    loaded_ = true;
+    const fe::Result<std::string> saved = store.read_text(key_);
+    if (!saved) {
+        // No save yet: a first run. The defaults stand, which is the game exactly
+        // as it was authored.
+        return;
+    }
+
+    Settings parsed = state_->settings();
+    if (!parse_settings(saved.value(), parsed)) {
+        FE_LOG_WARN("breakout: ignoring unreadable settings '%s'", saved.value().c_str());
+        return;
+    }
+    state_->settings() = parsed;
+    FE_LOG_INFO("breakout: loaded settings volume=%.2f paddle_speed=%.0f", static_cast<double>(parsed.volume),
+                static_cast<double>(parsed.paddle_speed));
+}
+
+void SettingsSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
+    (void)scene;
+    if (state_ == nullptr) {
+        return;
+    }
+
+    fe::UserData* store = context.user_data;
+
+    // Load once, on the first frame the store is available, before anything reads
+    // the settings -- so the paddle moves at the saved speed and the mixer uses the
+    // saved volume from the very first frame.
+    if (!loaded_ && store != nullptr) {
+        load_once(*store);
+    }
+
+    // Mirror the volume onto the audio system's master gain. Done every frame, so
+    // a value loaded this frame is in force this frame and a value the player
+    // changed on the menu is heard immediately. A null audio system (a headless
+    // test) is simply nothing to apply it to.
+    if (audio_ != nullptr) {
+        audio_->set_master_gain(state_->settings().volume);
+    }
+
+    // Save on the edge of a change. The first frame primes the baseline without
+    // writing, so opening the game does not rewrite the file it just read; after
+    // that a difference means the player moved a control, and one write per change
+    // is what keeps a held button from writing every frame.
+    const Settings current = state_->settings();
+    if (!primed_) {
+        primed_ = true;
+        last_saved_ = current;
+        return;
+    }
+    if (current == last_saved_) {
+        return;
+    }
+    last_saved_ = current;
+
+    if (store == nullptr) {
+        // No store: the change is live for this run but cannot be saved. Logged
+        // once per change so a run's log says why nothing was persisted.
+        FE_LOG_INFO("breakout: settings changed with no store; not saved");
+        return;
+    }
+
+    const std::string text = serialize_settings(current);
+    if (fe::Error error = store->write(key_, std::string_view(text)); error) {
+        FE_LOG_WARN("breakout: could not save settings: %s", error.message().c_str());
+        return;
+    }
+    FE_LOG_INFO("breakout: saved settings volume=%.2f paddle_speed=%.0f", static_cast<double>(current.volume),
+                static_cast<double>(current.paddle_speed));
+}
+
 void MenuSystem::apply_visibility(fe::Scene& scene, BreakoutState::Screen screen) {
     // One canvas per screen, each shown exactly on its own screen. The HUD
     // counters stay visible only while playing, so the title and the end message
@@ -428,8 +505,37 @@ void MenuSystem::apply_visibility(fe::Scene& scene, BreakoutState::Screen screen
     };
     set_canvas(names::kTitleCanvas, screen == BreakoutState::Screen::Title);
     set_canvas(names::kPauseCanvas, screen == BreakoutState::Screen::Paused);
+    set_canvas(names::kSettingsCanvas, screen == BreakoutState::Screen::Settings);
     set_canvas(names::kGameOverCanvas, screen == BreakoutState::Screen::GameOver);
     set_canvas(names::kHudCanvas, screen == BreakoutState::Screen::Playing);
+}
+
+bool MenuSystem::clicked(const fe::Scene& scene, std::string_view name) {
+    const fe::Node* node = scene.find_node_by_name(name);
+    if (node == nullptr) {
+        return false;
+    }
+    const auto* element = node->get_component<fe::ui::UiElement>();
+    return element != nullptr && element->interaction.clicked;
+}
+
+void MenuSystem::refresh_settings_labels(fe::Scene& scene) {
+    // The value readouts are written here rather than by the settings system, so
+    // the drawing of a value and the value itself are not split across two
+    // systems -- the same split the HUD and PersistSystem keep. The numbers are
+    // rounded to the precision the player can act on: a whole percentage for the
+    // volume and a whole unit for the speed.
+    const auto set_text = [&scene](std::string_view name, std::string text) {
+        if (fe::Node* node = scene.find_node_by_name(name); node != nullptr) {
+            if (auto* element = node->get_component<fe::ui::UiElement>(); element != nullptr) {
+                element->text = std::move(text);
+            }
+        }
+    };
+    const Settings& settings = state_->settings();
+    const int percent = static_cast<int>(settings.volume * 100.0f + 0.5f);
+    set_text(names::kSettingsVolumeValue, "VOLUME " + std::to_string(percent) + "%");
+    set_text(names::kSettingsSpeedValue, "PADDLE " + std::to_string(static_cast<int>(settings.paddle_speed + 0.5f)));
 }
 
 void MenuSystem::save_ball_velocity(fe::Scene& scene) noexcept {
@@ -482,16 +588,14 @@ void MenuSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
     // one is the same as the confirm press. Read from the interaction state
     // UiInputSystem wrote earlier this frame, so the click lands where the button
     // draws.
-    const auto label_clicked = [&scene](std::string_view name) {
-        const fe::Node* node = scene.find_node_by_name(name);
-        if (node == nullptr) {
-            return false;
-        }
-        const auto* element = node->get_component<fe::ui::UiElement>();
-        return element != nullptr && element->interaction.clicked;
-    };
-    confirm = confirm || label_clicked(names::kTitleLabel) || label_clicked(names::kGameOverLabel) ||
-              label_clicked(names::kPauseLabel);
+    confirm = confirm || clicked(scene, names::kTitleLabel) || clicked(scene, names::kGameOverLabel) ||
+              clicked(scene, names::kPauseLabel);
+
+    // The settings button on the title and pause screens opens the settings
+    // screen. It is read separately from `confirm`, so tapping "SETTINGS" does not
+    // also start or resume the game -- the two are different buttons on the same
+    // canvas and a click can only be on one.
+    const bool open_settings = clicked(scene, names::kSettingsButton) || clicked(scene, names::kPauseSettingsButton);
 
     bool pause_toggle = false;
     if (context.actions != nullptr && pause_ != fe::ActionMap::kNone) {
@@ -502,7 +606,9 @@ void MenuSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
 
     switch (state_->screen()) {
     case BreakoutState::Screen::Title:
-        if (confirm) {
+        if (open_settings) {
+            state_->open_settings();
+        } else if (confirm) {
             state_->start_game();
         }
         break;
@@ -515,9 +621,32 @@ void MenuSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
         }
         break;
     case BreakoutState::Screen::Paused:
-        if (pause_toggle || confirm) {
+        if (open_settings) {
+            state_->open_settings();
+        } else if (pause_toggle || confirm) {
             state_->resume();
             restore_ball_velocity(scene);
+        }
+        break;
+    case BreakoutState::Screen::Settings:
+        // Each control is one click on one button. The adjustments clamp, so a
+        // click past an end sticks to it; the settings system saves the change on
+        // the next frame it sees it. "Back" (or the pause key) returns to the
+        // screen the settings were opened from.
+        if (clicked(scene, names::kSettingsVolumeDown)) {
+            state_->settings().adjust_volume(-1);
+        }
+        if (clicked(scene, names::kSettingsVolumeUp)) {
+            state_->settings().adjust_volume(+1);
+        }
+        if (clicked(scene, names::kSettingsSpeedDown)) {
+            state_->settings().adjust_paddle_speed(-1);
+        }
+        if (clicked(scene, names::kSettingsSpeedUp)) {
+            state_->settings().adjust_paddle_speed(+1);
+        }
+        if (clicked(scene, names::kSettingsBack) || pause_toggle) {
+            state_->close_settings();
         }
         break;
     case BreakoutState::Screen::GameOver:
@@ -525,6 +654,12 @@ void MenuSystem::update(const fe::FrameContext& context, fe::Scene& scene) {
             state_->return_to_title();
         }
         break;
+    }
+
+    // The settings screen's readouts follow the values just changed, so a click is
+    // reflected on the same frame it happened.
+    if (state_->is_settings()) {
+        refresh_settings_labels(scene);
     }
 
     // Show the canvas for whatever screen we ended on. Done after the transition

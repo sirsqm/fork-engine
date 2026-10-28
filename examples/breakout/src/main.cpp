@@ -224,6 +224,15 @@ private:
         }
 
         schedule().add_system(std::move(system));
+
+        // The settings system mirrors the volume setting onto the mixer, but the
+        // engine creates its audio system after the schedule is built, so the
+        // pointer is handed over here. A run with no audio (the take returned
+        // nothing) leaves it null and settings still load and save.
+        if (auto* settings = static_cast<breakout::SettingsSystem*>(schedule().find("SettingsSystem"));
+            settings != nullptr) {
+            settings->set_audio(audio_system_);
+        }
     }
 
     // Attaches the decoded cue to the scene's audio node. Only the clip is set

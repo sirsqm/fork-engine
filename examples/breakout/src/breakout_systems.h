@@ -21,7 +21,8 @@ class Physics2DSystem;
 }
 namespace audio {
 class AudioSource;
-}
+class AudioSystem;
+} // namespace audio
 } // namespace fe
 
 // The breakout gameplay systems.
@@ -68,6 +69,25 @@ inline constexpr std::string_view kPauseCanvas = "PauseCanvas";
 inline constexpr std::string_view kPauseLabel = "PauseLabel";
 inline constexpr std::string_view kGameOverCanvas = "GameOverCanvas";
 inline constexpr std::string_view kGameOverLabel = "GameOverLabel";
+// The settings screen (`slice-settings`): a canvas of labelled buttons that
+// change the volume and the paddle's speed. Every control is a hit-tested
+// UiElement, so a tap and a click both work -- the touch-friendly menu the queue
+// item asks for. The value readouts are labels MenuSystem fills from the state.
+inline constexpr std::string_view kSettingsCanvas = "SettingsCanvas";
+inline constexpr std::string_view kSettingsTitleLabel = "SettingsTitleLabel";
+inline constexpr std::string_view kSettingsVolumeDown = "SettingsVolumeDown";
+inline constexpr std::string_view kSettingsVolumeUp = "SettingsVolumeUp";
+inline constexpr std::string_view kSettingsVolumeValue = "SettingsVolumeValue";
+inline constexpr std::string_view kSettingsSpeedDown = "SettingsSpeedDown";
+inline constexpr std::string_view kSettingsSpeedUp = "SettingsSpeedUp";
+inline constexpr std::string_view kSettingsSpeedValue = "SettingsSpeedValue";
+inline constexpr std::string_view kSettingsBack = "SettingsBack";
+// A button on the title and pause screens that opens the settings screen, so the
+// menu is reachable by a tap rather than only by a key. The two screens carry
+// their own node because a scene name is looked up by name, and two nodes cannot
+// share one.
+inline constexpr std::string_view kSettingsButton = "SettingsButton";
+inline constexpr std::string_view kPauseSettingsButton = "PauseSettingsButton";
 } // namespace names
 
 // Shared tuning for the systems that drive the ball and paddle.
@@ -106,7 +126,18 @@ public:
     // The game state, so the paddle is frozen when the game is not playing.
     // Borrowed; the application owns it. Null means "always play", which keeps a
     // schedule built without state behaving as it did before screens existed.
+    //
+    // It is also where the paddle reads the player's speed setting from: the
+    // setting lives on the state (one value for the menu, the save and the
+    // paddle), so holding the state is holding the speed. When the state is null
+    // the authored `controls_` speed applies, which is the headless path.
     void set_state(BreakoutState* state) noexcept { state_ = state; }
+
+    // The speed the paddle moves at: the player's setting when there is a state,
+    // else the authored default.
+    [[nodiscard]] fe::f32 paddle_speed() const noexcept {
+        return state_ != nullptr ? state_->settings().paddle_speed : controls_.paddle_speed;
+    }
 
     // The action handles to read. Zero (the default) means the action is unbound
     // and the keyboard fallback is used instead, so a caller that declares no
@@ -278,6 +309,58 @@ private:
     bool loaded_ = false;
 };
 
+// Loads the player's settings, applies them to the live game, and saves them when
+// they change. This is `slice-settings`: volume and control settings, persisted,
+// with a touch-friendly menu.
+//
+// It is the second system to touch the storage seam, and it takes the store from
+// the FrameContext for the same reason PersistSystem does -- a run handed no store
+// (a headless autoplay run) simply does not save, and the settings it changes last
+// exactly as long as the process. It writes under its own key, so a settings save
+// and a best-score save never overwrite each other.
+//
+// It applies the volume to the audio system's master gain (so the mixer hears it
+// the same frame) and the paddle speed is read straight off the state by the
+// paddle system, so neither value needs a second copy anywhere. It saves on the
+// *edge* of a change rather than every frame, which is what keeps a settings
+// screen from writing a file sixty times a second while a button is held.
+//
+// It reads the save back on the first frame the store is available, so a setting
+// chosen in a previous session is in force before the player touches anything.
+class SettingsSystem final : public fe::System {
+public:
+    [[nodiscard]] std::string_view name() const noexcept override { return "SettingsSystem"; }
+
+    void update(const fe::FrameContext& context, fe::Scene& scene) override;
+
+    void set_state(BreakoutState* state) noexcept { state_ = state; }
+
+    // The audio system whose master gain mirrors the volume setting. Borrowed and
+    // optional: a run with no audio (a headless test) still loads and saves
+    // settings, it just has nothing to apply the volume to. The engine's audio
+    // system is created after the schedule is built, so the application sets this
+    // once it has adopted it.
+    void set_audio(fe::audio::AudioSystem* audio) noexcept { audio_ = audio; }
+
+    // The key the settings are stored under.
+    void set_key(std::string_view key) noexcept { key_ = std::string(key); }
+
+private:
+    // Loads the saved settings into the state once, on the first update. A missing
+    // key (a first run) leaves the defaults, which is the same game as before the
+    // setting existed.
+    void load_once(fe::UserData& store);
+
+    BreakoutState* state_ = nullptr;
+    fe::audio::AudioSystem* audio_ = nullptr;
+    std::string key_ = config::kSettingsKey;
+    // The settings as of the last frame, so a change can be detected and saved
+    // once rather than every frame.
+    Settings last_saved_{};
+    bool loaded_ = false;
+    bool primed_ = false;
+};
+
 // Drives the screen flow: title -> play -> game over -> title, with a pause in
 // between. This is the menu half of `slice-title-and-menus`.
 //
@@ -316,6 +399,15 @@ private:
     // so it is safe to call every frame; the flag write is cheap and keeps the
     // scene honest even if something else cleared it.
     static void apply_visibility(fe::Scene& scene, BreakoutState::Screen screen);
+
+    // Writes the settings screen's value readouts from the state, so the numbers
+    // on the buttons match the settings in force. Called while the settings screen
+    // is current.
+    void refresh_settings_labels(fe::Scene& scene);
+
+    // Reads a click on a named element, false when the element or the scene is not
+    // there. The shared body of every button read, so a new button is one line.
+    [[nodiscard]] static bool clicked(const fe::Scene& scene, std::string_view name);
 
     // Saves and restores the ball's motion around a pause, so a paused rally
     // resumes exactly where it stopped. A no-op when there is no ball.

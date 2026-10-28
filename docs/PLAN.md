@@ -1027,9 +1027,11 @@ desktop and web.
 
 #### `slice-settings`
 
-Volume and control settings, persisted, with a touch-friendly menu.
+Volume and control settings, persisted, with a touch-friendly menu
+([ADR-0098](adr/0098-persisted-settings-and-a-settings-screen.md)).
 
 **Done when** a test changes a setting, reloads, and observes it retained.
+*Met.*
 
 #### `scripting-native-modules`
 

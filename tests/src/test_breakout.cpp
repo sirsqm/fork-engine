@@ -7,6 +7,7 @@
 #include "breakout_systems.h"
 
 #include "fe/audio/AudioSource.h"
+#include "fe/audio/AudioSystem.h"
 #include "fe/audio/AudioTypes.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DSystem.h"
@@ -16,6 +17,10 @@
 #include "fe/platform/InputState.h"
 #include "fe/platform/UserData.h"
 #include "fe/reflect/ComponentTypes.h"
+#include "fe/resources/Font.h"
+#include "fe/resources/Texture2D.h"
+#include "fe/rhi/Device.h"
+#include "fe/rhi/Types.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -23,6 +28,7 @@
 #include "fe/systems/FrameContext.h"
 #include "fe/systems/SceneSchedule.h"
 #include "fe/ui/UiElement.h"
+#include "fe/ui/UiLayout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -367,7 +373,7 @@ TEST_CASE("the game systems are installed in order") {
 
     auto* physics = breakout::install_breakout_systems(schedule, state, /*autoplay=*/false);
     CHECK(physics != nullptr);
-    REQUIRE(schedule.system_count() == 9);
+    REQUIRE(schedule.system_count() == 10);
     // The UI input system runs first: it writes each element's interaction state
     // from this frame's pointer before any gameplay system reads it, so the menu
     // system sees the same frame's clicks.
@@ -375,17 +381,20 @@ TEST_CASE("the game systems are installed in order") {
     // The menu runs next: it decides the screen, and the gameplay systems below
     // read that decision this same frame.
     CHECK(std::string(schedule.system_at(1)->name()) == "MenuSystem");
-    CHECK(std::string(schedule.system_at(2)->name()) == "PaddleControlSystem");
-    CHECK(std::string(schedule.system_at(3)->name()) == "BallLaunchSystem");
-    CHECK(std::string(schedule.system_at(4)->name()) == "Physics2DSystem");
-    CHECK(std::string(schedule.system_at(5)->name()) == "BallContactSystem");
-    CHECK(std::string(schedule.system_at(6)->name()) == "GameStateSystem");
+    // Settings runs right after the menu, so a click that changed a setting this
+    // frame is applied and saved this frame.
+    CHECK(std::string(schedule.system_at(2)->name()) == "SettingsSystem");
+    CHECK(std::string(schedule.system_at(3)->name()) == "PaddleControlSystem");
+    CHECK(std::string(schedule.system_at(4)->name()) == "BallLaunchSystem");
+    CHECK(std::string(schedule.system_at(5)->name()) == "Physics2DSystem");
+    CHECK(std::string(schedule.system_at(6)->name()) == "BallContactSystem");
+    CHECK(std::string(schedule.system_at(7)->name()) == "GameStateSystem");
     // Persistence runs after the rules have settled the screen, so the game-over
     // edge it saves on is the real one, and before the HUD, so a best score set
     // this frame is drawn this frame.
-    CHECK(std::string(schedule.system_at(7)->name()) == "PersistSystem");
+    CHECK(std::string(schedule.system_at(8)->name()) == "PersistSystem");
     // The HUD runs last so it reads the state every system above it produced.
-    CHECK(std::string(schedule.system_at(8)->name()) == "HudSystem");
+    CHECK(std::string(schedule.system_at(9)->name()) == "HudSystem");
 }
 
 TEST_CASE("the field is gravity-free") {
@@ -1394,4 +1403,431 @@ TEST_CASE("a run with no store tracks the best score in memory and persists noth
     auto store = score_store(dir);
     REQUIRE(store != nullptr);
     CHECK_FALSE(store->contains(breakout::config::kBestScoreKey));
+}
+
+// ---------------------------------------------------------------------------
+// Settings: volume and controls, persisted
+// (docs/PLAN.md, `slice-settings`).
+//
+// Two layers again. The rules half is Settings on its own -- the clamping and the
+// text round-trip, with no engine. The shipped half drives the real settings
+// screen and the real schedule, and proves a change survives a *reload*: a fresh
+// state on the same store reads the changed value back.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A store whose root is a temp directory, for the settings tests. The same shape
+// score_store() uses; a settings save and a best-score save are independent keys,
+// so one store can hold both.
+[[nodiscard]] std::unique_ptr<UserData> settings_store(const ScoreDir& dir) {
+    return score_store(dir);
+}
+
+// The null RHI device, kept for the process's lifetime. The atlas below holds a
+// `TextureRef` the device owns, so the device must outlive it -- a device created
+// inside the font's initializer would be destroyed with the texture still holding
+// its handle.
+[[nodiscard]] rhi::Device& null_device() {
+    static std::unique_ptr<rhi::Device> device = [] {
+        auto created = rhi::create_null_device();
+        REQUIRE(created.ok());
+        return std::move(created.value());
+    }();
+    return *device;
+}
+
+// A `Font` with a fixed advance for every printable byte, so a menu button's text
+// has a non-zero extent and therefore a real hit-testable box. The shipped font
+// loader is exercised by the text tests; here the point is a click landing where
+// the button draws, which needs only a measurable width. Built on the same null
+// RHI device the UI tests use.
+[[nodiscard]] std::shared_ptr<Font> test_font() {
+    static std::shared_ptr<Font> font = [] {
+        rhi::TextureDesc desc;
+        desc.name = "breakout-test-atlas";
+        desc.width = 8;
+        desc.height = 8;
+        std::vector<u8> pixels(8 * 8 * 4, 255);
+        desc.pixels = pixels.data();
+        auto texture = null_device().create_texture(desc);
+        REQUIRE(texture.ok());
+        auto atlas = std::make_shared<Texture2D>("tex:breakout-test.png", texture.value());
+
+        std::vector<Font::Glyph> glyphs(128);
+        for (Font::Glyph& glyph : glyphs) {
+            glyph.uv = Vec4{0.0f, 0.0f, 0.5f, 0.5f};
+            glyph.advance = 0.5f;
+            glyph.size = Vec2{0.5f, 1.0f};
+        }
+        return std::make_shared<Font>("breakout-test.fefont", atlas, 1.25f, std::move(glyphs));
+    }();
+    return font;
+}
+
+// The assets a test needs for the menus to be clickable: just the font. The
+// textures stay absent, which the builder treats as optional.
+[[nodiscard]] breakout::SceneAssets test_assets() {
+    breakout::SceneAssets assets;
+    assets.font = test_font();
+    return assets;
+}
+
+// Runs one frame of the shipped schedule with the given context fields, *without*
+// touching the input snapshot. The caller has already advanced the input edges
+// (begin_frame + the on_* calls) and evaluated the actions, so a press or release
+// it just injected is still live for this frame -- which is exactly what
+// UiInputSystem reads.
+void run_settings_frame_after_input(SceneSchedule& schedule, Scene& scene, InputState& input, ActionMap& actions,
+                                    UserData& store) {
+    actions.update(input, Vec2{1280.0f, 720.0f});
+    FrameContext context = step(1.0f / 60.0f);
+    context.input = &input;
+    context.actions = &actions;
+    context.viewport = Vec2{1280.0f, 720.0f};
+    context.user_data = &store;
+    schedule.update(context, scene);
+}
+
+// One idle frame: advance the input edges (no new events) and run the schedule.
+void run_settings_frame(SceneSchedule& schedule, Scene& scene, InputState& input, ActionMap& actions, UserData& store) {
+    input.begin_frame();
+    run_settings_frame_after_input(schedule, scene, input, actions, store);
+}
+
+// The viewport-space centre of a named UI element, from the shipped layout, so a
+// test clicks where the button actually draws. Returns false when the element is
+// not laid out this frame (e.g. its canvas is hidden).
+[[nodiscard]] bool element_centre(const Scene& scene, std::string_view name, Vec2& out) {
+    ui::UiLayoutResult layout;
+    ui::layout(scene, 1280, 720, layout);
+    for (const ui::UiResolved& resolved : layout) {
+        if (resolved.node != nullptr && resolved.node->name() == name) {
+            out = resolved.rect.center();
+            return true;
+        }
+    }
+    return false;
+}
+
+// A full press-and-release on a named element: move the pointer to its centre,
+// press on one frame, release on the next, running the schedule each time so the
+// menu sees the click. The two-frame shape is what UiInputSystem needs to call a
+// press and a release on the same element a click.
+void click_element(SceneSchedule& schedule, Scene& scene, InputState& input, ActionMap& actions, UserData& store,
+                   std::string_view name) {
+    Vec2 centre{};
+    REQUIRE(element_centre(scene, name, centre));
+
+    // Frame 1: the pointer arrives and goes down.
+    input.begin_frame();
+    input.on_mouse_move(centre.x, centre.y);
+    input.on_mouse_button(MouseButton::Left, true);
+    run_settings_frame_after_input(schedule, scene, input, actions, store);
+
+    // Frame 2: the pointer comes up over the element: a click.
+    input.begin_frame();
+    input.on_mouse_button(MouseButton::Left, false);
+    run_settings_frame_after_input(schedule, scene, input, actions, store);
+}
+
+} // namespace
+
+TEST_CASE("a setting clamps to its range") {
+    breakout::Settings settings;
+    CHECK(settings.volume == breakout::config::kDefaultVolume);
+    CHECK(settings.paddle_speed == breakout::config::kDefaultPaddleSpeed);
+
+    settings.set_volume(5.0f);
+    CHECK(settings.volume == breakout::config::kMaxVolume);
+    settings.set_volume(-3.0f);
+    CHECK(settings.volume == breakout::config::kMinVolume);
+
+    settings.set_paddle_speed(100000.0f);
+    CHECK(settings.paddle_speed == breakout::config::kMaxPaddleSpeed);
+    settings.set_paddle_speed(0.0f);
+    CHECK(settings.paddle_speed == breakout::config::kMinPaddleSpeed);
+}
+
+TEST_CASE("a setting steps and sticks to its end") {
+    breakout::Settings settings;
+    settings.adjust_volume(-1);
+    CHECK(settings.volume == doctest::Approx(breakout::config::kDefaultVolume - breakout::config::kVolumeStep));
+    // Far past the bottom: it sticks to the minimum rather than going negative.
+    for (int i = 0; i < 100; ++i) {
+        settings.adjust_volume(-1);
+    }
+    CHECK(settings.volume == breakout::config::kMinVolume);
+}
+
+TEST_CASE("settings round-trip through their text form") {
+    breakout::Settings original;
+    original.set_volume(0.4f);
+    original.set_paddle_speed(1020.0f);
+
+    breakout::Settings parsed;
+    REQUIRE(breakout::parse_settings(breakout::serialize_settings(original), parsed));
+    CHECK(parsed.volume == doctest::Approx(0.4f));
+    CHECK(parsed.paddle_speed == doctest::Approx(1020.0f));
+}
+
+TEST_CASE("an unknown or malformed settings line is skipped, not fatal") {
+    // A save from a newer build, or a corrupt one, must not stop the game: a
+    // known key still loads and everything else is ignored.
+    breakout::Settings parsed;
+    parsed.set_volume(0.5f);
+    const std::string text = "volume=0.25\nfuture_setting=42\ngarbage\npaddle_speed=abc\n";
+    REQUIRE(breakout::parse_settings(text, parsed));
+    CHECK(parsed.volume == doctest::Approx(0.25f));
+    // The unreadable paddle_speed line left the current value alone.
+    CHECK(parsed.paddle_speed == breakout::config::kDefaultPaddleSpeed);
+
+    // A text with nothing recognisable reports "nothing read".
+    breakout::Settings untouched;
+    CHECK_FALSE(breakout::parse_settings("nonsense=here\n", untouched));
+}
+
+TEST_CASE("the settings screen opens from the title and returns to it") {
+    breakout::BreakoutState state;
+    state.show_title();
+    REQUIRE(state.is_title());
+    state.open_settings();
+    CHECK(state.is_settings());
+    CHECK(std::string(state.screen_name()) == "settings");
+    state.close_settings();
+    CHECK(state.is_title());
+}
+
+TEST_CASE("the settings screen returns to the pause it was opened from") {
+    // Opening from a pause and closing must not silently abandon the paused game.
+    breakout::BreakoutState state;
+    state.start_game();
+    state.pause();
+    REQUIRE(state.is_paused());
+    state.open_settings();
+    CHECK(state.is_settings());
+    state.close_settings();
+    CHECK(state.is_paused());
+}
+
+TEST_CASE("the settings screen cannot be opened mid-rally or from game over") {
+    breakout::BreakoutState state;
+    state.start_game();
+    state.open_settings();
+    CHECK(state.is_playing()); // no-op while playing
+
+    state.ball_missed();
+    state.ball_missed();
+    state.ball_missed();
+    state.sync_screen();
+    REQUIRE(state.screen() == breakout::BreakoutState::Screen::GameOver);
+    state.open_settings();
+    CHECK(state.screen() == breakout::BreakoutState::Screen::GameOver); // no-op from game over
+}
+
+TEST_CASE("the field builder makes the settings canvas and its controls, hidden") {
+    Scene scene;
+    breakout::build_breakout_scene(scene, test_assets());
+
+    Node* canvas_node = scene.find_node_by_name(breakout::names::kSettingsCanvas);
+    REQUIRE(canvas_node != nullptr);
+    auto* canvas = canvas_node->get_component<ui::UiCanvas>();
+    REQUIRE(canvas != nullptr);
+    CHECK_FALSE(canvas->visible);
+    CHECK(canvas->layer > 10);
+
+    // Every control exists and is a hit-testable UiElement, so a tap and a click
+    // both reach it -- the touch-friendly menu the queue item asks for.
+    const std::string_view controls[] = {
+        breakout::names::kSettingsTitleLabel,  breakout::names::kSettingsVolumeDown, breakout::names::kSettingsVolumeUp,
+        breakout::names::kSettingsVolumeValue, breakout::names::kSettingsSpeedDown,  breakout::names::kSettingsSpeedUp,
+        breakout::names::kSettingsSpeedValue,  breakout::names::kSettingsBack,
+    };
+    for (std::string_view name : controls) {
+        Node* node = scene.find_node_by_name(name);
+        REQUIRE(node != nullptr);
+        auto* element = node->get_component<ui::UiElement>();
+        REQUIRE(element != nullptr);
+        CHECK(element->interactable);
+    }
+
+    // The settings button on the title and the pause screens, so the screen is
+    // reachable by a tap rather than only by a key.
+    CHECK(scene.find_node_by_name(breakout::names::kSettingsButton) != nullptr);
+    CHECK(scene.find_node_by_name(breakout::names::kPauseSettingsButton) != nullptr);
+}
+
+TEST_CASE("a setting changed on the menu is saved and a fresh game reads it back") {
+    // The acceptance test for `slice-settings`: change a setting through the
+    // shipped menu, then a *fresh* state on the same store reads it back. The
+    // second state is the reload the queue item is about -- nothing in memory
+    // carries the value across.
+    ScoreDir dir("settings_roundtrip");
+    auto store = settings_store(dir);
+    REQUIRE(store != nullptr);
+
+    {
+        Scene scene;
+        breakout::build_breakout_scene(scene, test_assets());
+        SceneSchedule schedule;
+        breakout::BreakoutState state;
+        ActionMap actions;
+        const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+        static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+        InputState input;
+        state.show_title();
+
+        // One priming frame: the settings system reads the (empty) store and
+        // establishes its baseline, exactly as the application's first frame does.
+        run_settings_frame(schedule, scene, input, actions, *store);
+        const f32 start_volume = state.settings().volume;
+
+        // Open the settings screen by clicking the title's SETTINGS button.
+        click_element(schedule, scene, input, actions, *store, breakout::names::kSettingsButton);
+        REQUIRE(state.is_settings());
+
+        // Turn the volume down one step and let the settings system save it.
+        click_element(schedule, scene, input, actions, *store, breakout::names::kSettingsVolumeDown);
+        run_settings_frame(schedule, scene, input, actions, *store);
+        CHECK(state.settings().volume < start_volume);
+    }
+
+    // A fresh state and schedule on the same store -- a reload.
+    Scene scene;
+    breakout::build_breakout_scene(scene, test_assets());
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+    ActionMap actions;
+    const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+    InputState input;
+    CHECK(state.settings().volume == breakout::config::kDefaultVolume); // nothing in memory yet
+    run_settings_frame(schedule, scene, input, actions, *store);
+    CHECK(state.settings().volume == doctest::Approx(breakout::config::kDefaultVolume - breakout::config::kVolumeStep));
+}
+
+TEST_CASE("the settings screen shows the values and reflects a click") {
+    ScoreDir dir("settings_labels");
+    auto store = settings_store(dir);
+    REQUIRE(store != nullptr);
+
+    Scene scene;
+    breakout::build_breakout_scene(scene, test_assets());
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+    ActionMap actions;
+    const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+
+    InputState input;
+    state.show_title();
+    // One priming frame so MenuSystem shows the title canvas -- a click can only
+    // land on a laid-out element, and nothing is laid out until a frame has run.
+    run_settings_frame(schedule, scene, input, actions, *store);
+    click_element(schedule, scene, input, actions, *store, breakout::names::kSettingsButton);
+    REQUIRE(state.is_settings());
+
+    // The readouts match the settings in force.
+    Node* volume_value = scene.find_node_by_name(breakout::names::kSettingsVolumeValue);
+    REQUIRE(volume_value != nullptr);
+    auto* volume_element = volume_value->get_component<ui::UiElement>();
+    REQUIRE(volume_element != nullptr);
+    CHECK(volume_element->text == "VOLUME 100%");
+
+    // A click on the "+"/"-" button changes the value and the readout together.
+    click_element(schedule, scene, input, actions, *store, breakout::names::kSettingsVolumeDown);
+    CHECK(volume_element->text == "VOLUME 90%");
+
+    // "BACK" returns to the title and hides the settings canvas.
+    click_element(schedule, scene, input, actions, *store, breakout::names::kSettingsBack);
+    CHECK(state.is_title());
+    CHECK_FALSE(canvas_visible(scene, breakout::names::kSettingsCanvas));
+    CHECK(canvas_visible(scene, breakout::names::kTitleCanvas));
+}
+
+TEST_CASE("the volume setting drives the audio master gain") {
+    // The setting is what the player hears: the settings system mirrors it onto
+    // the mixer's master gain, so a change is audible on the same frame.
+    ScoreDir dir("settings_audio");
+    auto store = settings_store(dir);
+    REQUIRE(store != nullptr);
+
+    Scene scene;
+    breakout::build_breakout_scene(scene, test_assets());
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    audio::AudioSystem audio(nullptr); // no device: the gain is still set
+    auto* settings = static_cast<breakout::SettingsSystem*>(schedule.find("SettingsSystem"));
+    REQUIRE(settings != nullptr);
+    settings->set_audio(&audio);
+
+    state.settings().set_volume(0.5f);
+    FrameContext context = step(1.0f / 60.0f);
+    context.user_data = store.get();
+    schedule.update(context, scene);
+    CHECK(audio.master_gain() == doctest::Approx(0.5f));
+}
+
+TEST_CASE("the paddle speed setting drives the paddle") {
+    // The control setting is not merely stored: the paddle moves at the speed the
+    // player chose, so a slower setting moves it less in the same number of frames.
+    const auto distance_over_frames = [](f32 speed) {
+        Scene scene;
+        breakout::build_breakout_scene(scene, test_assets());
+        SceneSchedule schedule;
+        breakout::BreakoutState state;
+        ActionMap actions;
+        const breakout::BreakoutActions bindings = breakout::declare_breakout_actions(actions);
+        static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false, bindings));
+        state.start_game();
+        state.settings().set_paddle_speed(speed);
+
+        InputState input;
+        input.on_key(Key::Left, true);
+        Node* paddle = scene.find_node_by_name(breakout::names::kPaddle);
+        const f32 start_x = paddle->transform().position.x;
+        for (int i = 0; i < 5; ++i) {
+            input.begin_frame();
+            actions.update(input, Vec2{1280.0f, 720.0f});
+            FrameContext context = step(1.0f / 60.0f);
+            context.input = &input;
+            context.actions = &actions;
+            context.viewport = Vec2{1280.0f, 720.0f};
+            schedule.update(context, scene);
+        }
+        return start_x - paddle->transform().position.x;
+    };
+
+    const f32 slow = distance_over_frames(breakout::config::kMinPaddleSpeed);
+    const f32 fast = distance_over_frames(breakout::config::kMaxPaddleSpeed);
+    CHECK(slow > 0.0f);
+    CHECK(fast > slow);
+}
+
+TEST_CASE("a run with no store keeps settings in memory and persists nothing") {
+    // The context's store is nullable. A run handed none must still apply a
+    // setting (the game is playable) but write nothing to disk, which is what lets
+    // a headless autoplay run avoid touching a real save directory.
+    ScoreDir dir("settings_nostore");
+
+    Scene scene;
+    breakout::build_breakout_scene(scene, test_assets());
+    SceneSchedule schedule;
+    breakout::BreakoutState state;
+    static_cast<void>(breakout::install_breakout_systems(schedule, state, /*autoplay=*/false));
+
+    state.settings().set_volume(0.3f);
+    // No store on the context.
+    schedule.update(step(1.0f / 60.0f), scene);
+
+    // The change is in force...
+    CHECK(state.settings().volume == doctest::Approx(0.3f));
+
+    // ...and nothing was written to the directory the game would have used.
+    auto store = settings_store(dir);
+    REQUIRE(store != nullptr);
+    CHECK_FALSE(store->contains(breakout::config::kSettingsKey));
 }

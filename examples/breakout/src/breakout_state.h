@@ -4,6 +4,9 @@
 
 #include "fe/core/Types.h"
 
+#include <string>
+#include <string_view>
+
 // The breakout game's rules and geometry.
 //
 // Everything in this header is pure: no scene, no physics, no GPU, no
@@ -108,6 +111,19 @@ inline constexpr fe::f32 kHudBestScoreOffsetY = kHudTextSize * 1.3f;
 // a menu line is the only thing on its screen and should read at a glance.
 inline constexpr fe::f32 kMenuTextSize = 72.0f;
 
+// The settings screen (`slice-settings`). Its text is smaller than the other
+// menus because it carries several lines, and the rows are spaced so a tap on one
+// cannot land on the next.
+inline constexpr fe::f32 kSettingsTextSize = 40.0f;
+inline constexpr fe::f32 kSettingsRowGap = 26.0f;
+// The tap target for a "-"/"+" button: a fixed square, so it is comfortably
+// hittable with a thumb even though its text is one glyph. The gap keeps the two
+// buttons off the value readout between them.
+inline constexpr fe::f32 kSettingsButtonSize = 72.0f;
+inline constexpr fe::f32 kSettingsButtonGap = 40.0f;
+inline constexpr const char* kSettingsText = "SETTINGS";
+inline constexpr const char* kSettingsButtonText = "SETTINGS";
+
 // The menu strings, authored in one place next to the layout they belong to.
 inline constexpr const char* kTitleText = "BREAKOUT";
 inline constexpr const char* kPauseText = "PAUSED";
@@ -119,7 +135,66 @@ inline constexpr const char* kGameOverText = "GAME OVER";
 inline constexpr const char* kBestScoreKey = "best_score";
 inline constexpr const char* kAppId = "breakout";
 
+// The player's settings (`slice-settings`). Persisted under their own key, so a
+// setting and a record are independent saves: a settings write never disturbs
+// the best score and vice versa.
+inline constexpr const char* kSettingsKey = "settings";
+
+// Master volume, 0..1. The audio system's master gain is this value directly, so
+// 1 is the clip at its recorded level and 0 is silence.
+inline constexpr fe::f32 kDefaultVolume = 1.0f;
+inline constexpr fe::f32 kMinVolume = 0.0f;
+inline constexpr fe::f32 kMaxVolume = 1.0f;
+inline constexpr fe::f32 kVolumeStep = 0.1f;
+
+// The paddle's top speed, in world units per second. This is the control
+// setting: a slower paddle is easier to place, a faster one reaches a fast ball.
+// The default matches Controls::paddle_speed, so a player who changes nothing
+// gets exactly the game as authored.
+inline constexpr fe::f32 kDefaultPaddleSpeed = 780.0f;
+inline constexpr fe::f32 kMinPaddleSpeed = 300.0f;
+inline constexpr fe::f32 kMaxPaddleSpeed = 1500.0f;
+inline constexpr fe::f32 kPaddleSpeedStep = 120.0f;
+
 } // namespace config
+
+// The player's settings: what they can change about how the game *feels*, as
+// opposed to how it plays. Two knobs today -- the master volume and the paddle's
+// speed -- and the shape is a plain value so a third is one field.
+//
+// It is pure and free of the engine, like BreakoutState, so the clamping and the
+// text round-trip are unit-testable with no scene and no store. Persisting it is
+// the SettingsSystem's job; this type only knows what a valid setting is.
+struct Settings {
+    fe::f32 volume = config::kDefaultVolume;
+    fe::f32 paddle_speed = config::kDefaultPaddleSpeed;
+
+    // Clamped, so a caller cannot author an inaudible-but-nonzero volume or a
+    // paddle so fast the ball cannot be tracked. Every write goes through one of
+    // these, which is what keeps a loaded save honest.
+    void set_volume(fe::f32 value) noexcept;
+    void set_paddle_speed(fe::f32 value) noexcept;
+
+    // One step louder/quieter or faster/slower. `steps` is signed, so a button
+    // press is +1 or -1 and a test can move several at once. Clamping happens in
+    // the setters, so a step past an end simply sticks to it.
+    void adjust_volume(int steps) noexcept;
+    void adjust_paddle_speed(int steps) noexcept;
+
+    [[nodiscard]] bool operator==(const Settings&) const noexcept = default;
+};
+
+// The settings as a stable, line-oriented text form ("volume=1.000"), the shape
+// the storage seam keeps. One key per line so a future field is a new line and an
+// unknown line is ignored rather than fatal -- a save written by a newer build
+// must not stop an older one from starting.
+[[nodiscard]] std::string serialize_settings(const Settings& settings);
+
+// Parses `text` into `out`, leaving any field it does not mention at its current
+// value and clamping every field it does. Returns false when nothing recognisable
+// was read, so a caller can tell "a save from another version" from "a save that
+// is corrupt" if it ever needs to. A malformed line is skipped, not fatal.
+bool parse_settings(std::string_view text, Settings& out) noexcept;
 
 // The score, the lives, and the win/lose transition.
 //
@@ -157,6 +232,7 @@ public:
         Title,    // the game has not started; the field sits idle behind the title
         Playing,  // the ball is live and the paddle responds
         Paused,   // the player stopped the clock; the field is frozen
+        Settings, // the player is changing volume and controls
         GameOver, // the game ended; the result is shown and a press returns to title
     };
 
@@ -191,6 +267,15 @@ public:
     [[nodiscard]] bool is_title() const noexcept { return screen_ == Screen::Title; }
     [[nodiscard]] bool is_playing() const noexcept { return screen_ == Screen::Playing; }
     [[nodiscard]] bool is_paused() const noexcept { return screen_ == Screen::Paused; }
+    [[nodiscard]] bool is_settings() const noexcept { return screen_ == Screen::Settings; }
+
+    // The player's settings (`slice-settings`): what they can change about how the
+    // game feels. They live on the state rather than in a system so the menu, the
+    // paddle and the save all read one value, exactly as the score does. The
+    // returned reference is mutable because a menu writes it in place; the setter
+    // clamps, so a caller cannot store an out-of-range value through it.
+    [[nodiscard]] Settings& settings() noexcept { return settings_; }
+    [[nodiscard]] const Settings& settings() const noexcept { return settings_; }
 
     // The best score ever reached, and whether there is one. A fresh state has no
     // best score: "no save yet" is distinct from "the best score is zero", so the
@@ -238,6 +323,15 @@ public:
     // finished game.
     void pause() noexcept;
     void resume() noexcept;
+
+    // Opens and closes the settings screen (`slice-settings`). Opening is allowed
+    // from the title and a pause -- the two screens that carry a settings button,
+    // and neither of which is a live game, so a setting cannot be changed
+    // mid-rally. Closing returns to whichever of those it was opened from, so the
+    // player lands back where they were rather than always on the title. Both are
+    // no-ops on the wrong screen, matching pause()/resume().
+    void open_settings() noexcept;
+    void close_settings() noexcept;
 
     // Reconciles the screen with the rules after a transition that ends the game
     // (a brick hit that wins, a missed ball that loses). A system calls it after
@@ -303,6 +397,10 @@ private:
     bool has_best_score_ = false;
     Result result_ = Result::Playing;
     Screen screen_ = Screen::Playing;
+    // The screen the settings screen was opened from, so closing it returns there
+    // rather than always to the title.
+    Screen settings_return_ = Screen::Title;
+    Settings settings_{};
     bool restart_requested_ = false;
     bool level_change_requested_ = false;
 };

@@ -103,6 +103,7 @@ rather than editing it.
 | [0095](0095-web-gl-error-verification.md) | Verifying a web run for GL errors, not just pixels | Accepted |
 | [0096](0096-writable-user-data-storage.md) | Writable user-data storage (a store per application id, durable on desktop and web) | Accepted |
 | [0097](0097-audio-listener-from-camera.md) | Driving the audio listener from the active camera | Accepted |
+| [0098](0098-persisted-settings-and-a-settings-screen.md) | Persisted settings and a settings screen | Accepted |
 
 ## Format
 

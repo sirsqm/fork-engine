@@ -3,8 +3,98 @@
 #include "breakout_state.h"
 
 #include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <cstdio>
 
 namespace breakout {
+
+namespace {
+
+fe::f32 clampf(fe::f32 value, fe::f32 low, fe::f32 high) noexcept {
+    return std::min(std::max(value, low), high);
+}
+
+// Parses one "key=value" line's value as a float. A value that is not a finite
+// number is rejected rather than clamped, because clamping a NaN would be
+// meaningless and clamping an infinity would silently pick an end.
+bool parse_float(std::string_view text, fe::f32& out) noexcept {
+    if (text.empty()) {
+        return false;
+    }
+    fe::f32 value = 0.0f;
+    const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (ec != std::errc{} || ptr != text.data() + text.size() || !std::isfinite(value)) {
+        return false;
+    }
+    out = value;
+    return true;
+}
+
+} // namespace
+
+void Settings::set_volume(fe::f32 value) noexcept {
+    volume = clampf(value, config::kMinVolume, config::kMaxVolume);
+}
+
+void Settings::set_paddle_speed(fe::f32 value) noexcept {
+    paddle_speed = clampf(value, config::kMinPaddleSpeed, config::kMaxPaddleSpeed);
+}
+
+void Settings::adjust_volume(int steps) noexcept {
+    set_volume(volume + config::kVolumeStep * static_cast<fe::f32>(steps));
+}
+
+void Settings::adjust_paddle_speed(int steps) noexcept {
+    set_paddle_speed(paddle_speed + config::kPaddleSpeedStep * static_cast<fe::f32>(steps));
+}
+
+std::string serialize_settings(const Settings& settings) {
+    // One "key=value" line per field, in a fixed order, with a fixed precision so
+    // a save round-trips through text exactly. Written by hand rather than through
+    // a generic writer because the format is two numbers and a reader that trusts
+    // a schema would be more code than the schema.
+    char buffer[64];
+    std::string text;
+    std::snprintf(buffer, sizeof(buffer), "volume=%.3f\n", static_cast<double>(settings.volume));
+    text += buffer;
+    std::snprintf(buffer, sizeof(buffer), "paddle_speed=%.3f\n", static_cast<double>(settings.paddle_speed));
+    text += buffer;
+    return text;
+}
+
+bool parse_settings(std::string_view text, Settings& out) noexcept {
+    bool read_any = false;
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        const std::size_t newline = text.find('\n', pos);
+        const std::size_t end = newline == std::string_view::npos ? text.size() : newline;
+        const std::string_view line = text.substr(pos, end - pos);
+        pos = end + 1;
+
+        const std::size_t eq = line.find('=');
+        if (eq == std::string_view::npos) {
+            continue; // not a key=value line: skip it rather than fail
+        }
+        const std::string_view key = line.substr(0, eq);
+        const std::string_view value_text = line.substr(eq + 1);
+
+        fe::f32 value = 0.0f;
+        if (!parse_float(value_text, value)) {
+            continue;
+        }
+        if (key == "volume") {
+            out.set_volume(value);
+            read_any = true;
+        } else if (key == "paddle_speed") {
+            out.set_paddle_speed(value);
+            read_any = true;
+        }
+        // An unknown key is ignored, not fatal: a save from a newer build that
+        // added a setting must still load here.
+    }
+    return read_any;
+}
 
 BreakoutState::BreakoutState(int brick_count, int lives, int level_count) noexcept
     : bricks_total_(std::max(brick_count, 0)), bricks_remaining_(std::max(brick_count, 0)), lives_(std::max(lives, 0)),
@@ -38,6 +128,8 @@ const char* BreakoutState::screen_name() const noexcept {
         return "playing";
     case Screen::Paused:
         return "paused";
+    case Screen::Settings:
+        return "settings";
     case Screen::GameOver:
         return "gameover";
     }
@@ -81,6 +173,28 @@ void BreakoutState::resume() noexcept {
     if (screen_ == Screen::Paused) {
         screen_ = Screen::Playing;
     }
+}
+
+void BreakoutState::open_settings() noexcept {
+    // Allowed from the title and a pause -- the two screens that carry a settings
+    // button -- and nowhere else, so a setting cannot be changed mid-rally or from
+    // the game-over screen (whose result would immediately re-assert itself over
+    // the settings screen). A screen that is already the settings screen keeps the
+    // return it recorded, so re-opening is idempotent rather than a second push.
+    if (screen_ == Screen::Title || screen_ == Screen::Paused) {
+        settings_return_ = screen_;
+        screen_ = Screen::Settings;
+    }
+}
+
+void BreakoutState::close_settings() noexcept {
+    if (screen_ != Screen::Settings) {
+        return;
+    }
+    // Back to where the screen was opened from. A game that was paused stays
+    // paused; a title stays a title. The alternative -- always the title -- would
+    // silently abandon a paused game.
+    screen_ = settings_return_;
 }
 
 void BreakoutState::set_best_score(int value) noexcept {
