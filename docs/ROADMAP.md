@@ -45,7 +45,7 @@ many of its items are checked.
 | M6 | Animation and audio | M4 | mostly done (skeletal open) |
 | M7 | Scripting | M2, M5 | core done (debugging open) |
 | M8 | Ship anywhere | M2.5, M3 | partly done (web done, mobile open) |
-| M9 | Performance | M1 | mostly done (render graph open) |
+| M9 | Performance | M1 | mostly done (3D instancing open) |
 
 The dependencies are real: M4 needs the asset pipeline from M3 to load a mesh,
 and M7 needs a scene with gameplay systems (M5) before a script has anything to
@@ -201,11 +201,12 @@ and hot-reloaded without restarting the editor. *Met.*
 - [x] A spatial hierarchy (BVH) over static geometry — `SpatialBvh` in `core` builds a binned-SAH binary BVH over world-space AABBs and answers frustum and box queries, reusing `Frustum::intersects_aabb` as its leaf test, with the query checked against a brute-force reference ([ADR-0053](adr/0053-spatial-bvh.md)); `Renderer3D` now culls through a cached tree, rebuilt only when an instance's world bounds change, and the tree path is pinned to the flat reference `cull_flat` by a test that asserts an identical visible set and order ([ADR-0056](adr/0056-renderer3d-spatial-cull.md))
 - [x] Environment rendering and a post-processing chain — a camera-driven full-screen gradient background, and an opt-in exposure/tonemap/vignette chain over an off-screen colour target; see [ADR-0057](adr/0057-environment-and-post-processing.md)
 - [x] A glTF importer — `GltfLoader` decodes `.gltf` (JSON) and `.glb` (binary) into a `Mesh` per primitive, reading through `ResourceSource` so a mounted pack works unchanged; metallic-roughness materials resolve relative to the file; see [ADR-0040](adr/0040-gltf-importer.md)
-- [ ] **A render-graph seam** for passes and post-processing — today the 3D pass order is fixed in code. The seam is what lets passes be reordered, culled, and profiled as a unit, and it is shared with M9's remaining work.
+- [~] **A render-graph seam** for passes and post-processing — `render::RenderGraph` makes pass order data: passes are declared by name with their dependencies, `order()` returns a stable run order (declaration-order ties, cycles refused with the passes named), and `run()` invokes each pass in a profiler scope named `pass/<name>`. `Renderer2D::render_frame` drives the world and UI passes through it. See [ADR-0100](adr/0100-render-graph-seam.md). Still open: the graph schedules passes but does not own render targets or drop a pass whose output is unread, and `Renderer3D`'s shadow/main/post sequence is not yet driven by it.
 - [ ] **Instanced 3D draws** — `Renderer2D` instances; `Renderer3D` still draws per mesh. Needed before a scene with many repeated meshes holds a frame budget.
 
 **Done when** a lit, shadowed 3D scene draws with culling, and the draw path is
-extractable and measurable. *Met except the render graph and 3D instancing.*
+extractable and measurable. *Met except pass culling / resource tracking in the
+render graph and 3D instancing.*
 
 ## M5 — Physics
 
@@ -305,8 +306,9 @@ it and protect it. Plan and trade-offs: the [strategy](STRATEGY.md) and
 [ADR-0017](adr/0017-performance-strategy.md).
 
 **Where this stands:** measurement, extraction, the job system, parallel
-extraction/culling, the frame arena, and 2D instancing are all done and guarded
-by CI. The remaining work is the render graph and 3D instancing.
+extraction/culling, the frame arena, 2D instancing, and the render-graph seam's
+scheduler are all done and guarded by CI. The remaining work is pass culling and
+resource tracking in the graph, and 3D instancing.
 
 - [x] Profiler: `Profiler` + `ProfileScope` in `core` ([ADR-0022](adr/0022-profiler-and-frame-timing.md)), recording named scopes and counters into a fixed frame ring
 - [x] Profiler instrumentation and runtime integration ([ADR-0024](adr/0024-profiler-instrumentation.md)): `FE_PROFILE_SCOPE`/`FE_PROFILE_FUNCTION` macros with a free disabled build; `Application` brackets `frame`/`frame/update`/`frame/render` and `SceneSchedule` times each system as `system/<name>`; a by-value `FrameReport` (per-name totals, counters, summary/`to_string`) is the stats surface
@@ -318,12 +320,12 @@ by CI. The remaining work is the render graph and 3D instancing.
 - [x] Parallel physics broad phase: the uniform-grid insert is chunked across the job pool (count-then-write, so the entry buffer and the resulting pair set are byte-identical to the serial build), above a measured threshold ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md))
 - [x] GPU efficiency: instancing — `Renderer2D` uploads the unit-square corners once and a per-instance transform/UV/colour record per sprite, and issues one indexed instanced draw per texture batch, with the per-vertex UV convention preserved so the image is unchanged. Material batching is part of the batch key already.
 - [x] An in-editor profiler panel fed by the profiler data — `ProfilerPanel` + `ProfilerPanelViewModel` in `editor`; the editor owns an optional `core::Profiler`, brackets its own frame with it, and the panel draws the latest `FrameReport` ([ADR-0055](adr/0055-editor-profiler-panel.md))
-- [ ] **A render-graph seam** for passes and post-processing — the last open item here and the one M4 also needs. Passes are currently ordered in code; the seam lets them be reordered, culled, and profiled as a unit.
+- [~] **A render-graph seam** for passes and post-processing — the scheduler landed with M4: `render::RenderGraph` orders passes by declared dependency and profiles each as `pass/<name>` ([ADR-0100](adr/0100-render-graph-seam.md)). Pass culling (dropping a pass whose output nobody reads) and render-target ownership remain; they need passes to describe their resources.
 - [ ] **3D instancing** — `Renderer3D` still issues per-mesh draws, so a scene with repeated meshes pays a draw call each. The 2D path already instances; this is the 3D half.
 
 **Done when** a real scene holds its frame budget, the benchmark guards it, and
-the sanitizers are green. *Met for 2D; the render graph and 3D instancing are
-open.*
+the sanitizers are green. *Met for 2D; render-graph pass culling and 3D
+instancing are open.*
 
 ## Not planned
 

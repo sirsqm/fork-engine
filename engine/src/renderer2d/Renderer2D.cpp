@@ -452,4 +452,46 @@ Result<usize> Renderer2D::render_ui(rhi::Device& device, const Scene& scene, u32
                   /*sort_by_texture=*/false);
 }
 
+Error Renderer2D::render_frame(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                               usize& world_drawn, usize& ui_quads_drawn, FrameArena* arena, JobSystem* jobs) {
+    // The frame's two passes as a graph (ADR-0100): the UI is declared to run
+    // after the world, so the ordering the class used to express by calling
+    // render() and then render_ui() is now data. The graph is rebuilt per call
+    // because it is cheap (two names) and a long-lived one would have to be
+    // guarded against concurrent frames for no gain.
+    render::RenderGraph graph;
+    if (Result<void> added = graph.add_pass("world"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_pass("ui"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_dependency("ui", "world"); !added) {
+        return added.error();
+    }
+
+    world_drawn = 0;
+    ui_quads_drawn = 0;
+    return graph.run([&](std::string_view pass) -> Error {
+        if (pass == "world") {
+            Result<usize> drawn = arena != nullptr
+                                      ? render(device, scene, viewport_width, viewport_height, *arena, jobs)
+                                      : render(device, scene, viewport_width, viewport_height, jobs);
+            if (!drawn) {
+                return drawn.error();
+            }
+            world_drawn = drawn.value();
+            return Error::none();
+        }
+        // "ui": the graph guarantees this is the only other pass.
+        Result<usize> drawn = arena != nullptr ? render_ui(device, scene, viewport_width, viewport_height, *arena, jobs)
+                                               : render_ui(device, scene, viewport_width, viewport_height, jobs);
+        if (!drawn) {
+            return drawn.error();
+        }
+        ui_quads_drawn = drawn.value();
+        return Error::none();
+    });
+}
+
 } // namespace fe::renderer2d

@@ -166,6 +166,7 @@ set(FE_ENGINE_SOURCES
     src/net/SessionServer.cpp
     src/net/SessionClient.cpp
     src/render/RenderExtract.cpp
+    src/render/RenderGraph.cpp
     src/renderer2d/Renderer2D.cpp
     src/renderer3d/PostProcess.cpp
     src/renderer3d/Renderer3D.cpp

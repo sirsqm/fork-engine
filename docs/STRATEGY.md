@@ -106,10 +106,11 @@ not a claim.
   ([ADR-0051](adr/0051-frame-arena.md), [ADR-0054](adr/0054-frame-loop-arena.md),
   [ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md)).
 - **P6 — GPU efficiency.** Instancing and material batching are landed
-  ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md)). A
-  **render-graph seam** for passes and post-processing remains open; it is the
-  next step that matters, because it is what lets passes be reordered, culled,
-  and measured as a unit.
+  ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md)), and
+  the **render-graph seam**'s scheduler landed
+  ([ADR-0100](adr/0100-render-graph-seam.md)): pass order is data, and each pass
+  is profiled as `pass/<name>`. Pass culling and render-target ownership remain
+  open, and are what turn the scheduler into an optimizer.
 
 ### Verification
 

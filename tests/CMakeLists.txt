@@ -55,6 +55,7 @@ add_executable(fork_engine_tests
     src/test_net.cpp
     src/test_render_extract.cpp
     src/test_render_parallel.cpp
+    src/test_render_graph.cpp
     src/test_text.cpp
     src/test_ui_layout.cpp
     src/test_ui.cpp

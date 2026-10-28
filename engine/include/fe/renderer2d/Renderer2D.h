@@ -6,6 +6,7 @@
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/render/RenderExtract.h"
+#include "fe/render/RenderGraph.h"
 #include "fe/rhi/Device.h"
 
 #include <memory>
@@ -112,6 +113,23 @@ public:
     // profile differs. That keeps the optimisation invisible to correctness.
     [[nodiscard]] Result<usize> render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
                                        FrameArena& arena, JobSystem* jobs = nullptr);
+
+    // --- The frame as a graph (ADR-0100) -----------------------------------
+    // Runs the 2D frame's passes in a declared order rather than as a fixed
+    // sequence of calls: the world pass, then the UI pass over it. The two passes
+    // are declared as a `render::RenderGraph` (`ui` after `world`) and run in the
+    // order the graph returns, so the frame's ordering is data a caller can
+    // extend or reorder instead of the order of two statements in this class.
+    //
+    // Output is identical to calling `render()` then `render_ui()`.
+    // `world_drawn` and `ui_quads_drawn` receive each pass's count, so the two
+    // figures stay separate even though `last_draw_calls()` is overwritten by
+    // whichever pass ran last.
+    //
+    // Returns the first error either pass reports.
+    [[nodiscard]] Error render_frame(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                     usize& world_drawn, usize& ui_quads_drawn, FrameArena* arena = nullptr,
+                                     JobSystem* jobs = nullptr);
 
     // Number of draw calls issued by the most recent pass -- render() or
     // render_ui(), whichever ran last. Exposed for the example's on-screen

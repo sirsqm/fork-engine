@@ -27,8 +27,10 @@
 #include "fe/rhi/Device.h"
 #include "fe/rhi/Resources.h"
 #include "fe/rhi/Types.h"
+#include "fe/scene/Camera2D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/Sprite2D.h"
 #include "fe/systems/FrameContext.h"
 #include "fe/ui/UiElement.h"
 #include "fe/ui/UiInputSystem.h"
@@ -329,6 +331,62 @@ TEST_CASE("a UI fill and a UI glyph sharing no texture batch separately") {
     // One fill quad and two glyph quads.
     CHECK(drawn.value() == 3);
     CHECK(renderer.last_draw_calls() == 2);
+}
+
+TEST_CASE("the frame graph runs the world pass then the UI pass") {
+    // The two-pass frame (ADR-0100) driven through the graph must produce the
+    // same output as calling render() then render_ui() by hand, and report each
+    // pass's count separately.
+    rhi::Device& device = null_device();
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    auto* camera = camera_node->add_component<Camera2D>();
+    camera->primary = true;
+    Node* sprite_node = scene.create_node("Sprite");
+    sprite_node->add_component<Sprite2D>()->texture = make_texture(device);
+
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(100.0f), ui::UiSize::fixed(50.0f));
+    panel_node->get_component<ui::UiElement>()->fill = Vec4{1.0f, 1.0f, 1.0f, 1.0f};
+
+    usize world_drawn = 0;
+    usize ui_quads = 0;
+    const Error error = renderer.render_frame(device, scene, 1280, 720, world_drawn, ui_quads);
+    REQUIRE_FALSE(error);
+    // One sprite in the world pass, one UI fill in the UI pass.
+    CHECK(world_drawn == 1);
+    CHECK(ui_quads == 1);
+}
+
+TEST_CASE("the arena frame graph reproduces the heap frame graph") {
+    rhi::Device& device = null_device();
+    renderer2d::Renderer2D heap_renderer;
+    renderer2d::Renderer2D arena_renderer;
+    REQUIRE(heap_renderer.initialize(device).ok());
+    REQUIRE(arena_renderer.initialize(device).ok());
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->add_component<Camera2D>()->primary = true;
+    scene.create_node("Sprite")->add_component<Sprite2D>()->texture = make_texture(device);
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(100.0f), ui::UiSize::fixed(50.0f));
+    panel_node->get_component<ui::UiElement>()->fill = Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+
+    usize heap_world = 0;
+    usize heap_ui = 0;
+    REQUIRE_FALSE(heap_renderer.render_frame(device, scene, 1280, 720, heap_world, heap_ui));
+
+    FrameArena arena(1 << 16);
+    usize arena_world = 0;
+    usize arena_ui = 0;
+    REQUIRE_FALSE(arena_renderer.render_frame(device, scene, 1280, 720, arena_world, arena_ui, &arena));
+
+    CHECK(arena_world == heap_world);
+    CHECK(arena_ui == heap_ui);
 }
 
 TEST_CASE("the arena UI pass reproduces the heap UI pass") {

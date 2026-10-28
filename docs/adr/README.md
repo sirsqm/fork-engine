@@ -105,6 +105,7 @@ rather than editing it.
 | [0097](0097-audio-listener-from-camera.md) | Driving the audio listener from the active camera | Accepted |
 | [0098](0098-persisted-settings-and-a-settings-screen.md) | Persisted settings and a settings screen | Accepted |
 | [0099](0099-stereo-panning-from-listener-orientation.md) | Stereo panning from the listener's orientation | Accepted |
+| [0100](0100-render-graph-seam.md) | A render-graph seam | Accepted |
 
 ## Format
 
