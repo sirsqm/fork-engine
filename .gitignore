@@ -4,6 +4,9 @@ build/
 build-*/
 cmake-build-*/
 out/
+# Release archives written by packaging/package_release.cmake. They are build
+# output, not source: a release is produced from a tag, never committed.
+/dist/
 # An installed tree written into the checkout (cmake --install with a prefix
 # under the source root). Anchored, so it does not swallow a source directory
 # named "install" such as tests/install/.

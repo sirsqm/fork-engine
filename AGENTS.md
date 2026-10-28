@@ -174,6 +174,25 @@ defect, not noise.
 
 ## Portability traps seen before
 
+- `cmake -E tar cf out.tar.gz` writes an **uncompressed** tar even though the name
+  says `.tar.gz`, and `cmake -E tar xf` reads it back anyway because it sniffs the
+  format. A packaging smoke test that only round-trips through CMake therefore
+  passes, and the file is rejected by a downloader's `tar xzf`. Use `czf` for a
+  gzipped archive, and assert the gzip magic bytes (`1f 8b`) so the mistake fails
+  where it is made.
+- A multi-config generator (Visual Studio, Xcode, Ninja Multi-Config) writes
+  artifacts to `bin/<config>/`, not `bin/`, and `cmake --install` needs
+  `--config <config>` to know which tree to install. A packaging script that
+  hardcodes `bin/` and omits `--config` works on Linux CI and fails on the Windows
+  release. The generator is recorded in the build tree's `CMakeCache.txt` as
+  `CMAKE_GENERATOR:INTERNAL=`, so derive the layout from it rather than from
+  `WIN32` (a MinGW or Ninja build on Windows is single-config and has no
+  `bin/Release/`).
+- `install(DIRECTORY dir DESTINATION include)` installs `dir` *itself* as
+  `include/dir`, one level too deep; the trailing slash (`DIRECTORY dir/`) installs
+  its *contents*. Installing the engine's own headers and a dependency's headers
+  need opposite forms, and the wrong one produces `include/include/nlohmann/...`,
+  which fails only for a consumer of an installed tree.
 - Two agents commit to `main` in parallel, so `git fetch` before starting and
   before pushing. A local `git log` is not the remote: the other agent may have
   pushed ADRs and code that your tree has never seen. Rebase (`git pull

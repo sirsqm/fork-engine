@@ -152,6 +152,32 @@ add_test(
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_planning_docs.cmake
 )
 
+# The release path fires only on a version tag, so a mistake in it is invisible
+# until a release is cut and the download is broken. This checks the workflow and
+# the packaging script it drives the same way ci.yml is checked: by reading them
+# and asserting the decisions they have to make.
+add_test(
+  NAME release_workflow
+  COMMAND
+    ${CMAKE_COMMAND}
+    -DRELEASE_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/release.yml
+    -DPACKAGE_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/package_release.cmake -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_release_workflow.cmake
+)
+
+# ADR-0084 installed a tree that was runnable but not linkable, and ADR-0102
+# closed that gap. This guards the pieces that make an installed tree consumable:
+# the dependency payload and the package config, checked here so a refactor that
+# drops one fails with a clear message instead of a link error in the smoke test.
+add_test(
+  NAME sdk_consumable
+  COMMAND
+    ${CMAKE_COMMAND}
+    -DDEP_INSTALL=${CMAKE_SOURCE_DIR}/cmake/FEInstallDependencies.cmake
+    -DENGINE_CMAKE=${CMAKE_SOURCE_DIR}/CMakeLists.txt -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_sdk_consumable.cmake
+)
+
 # ---------------------------------------------------------------------------
 # Editor tests.
 #

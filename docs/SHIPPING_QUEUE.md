@@ -414,6 +414,20 @@ Script the packaging for all three desktop targets behind one command.
 **Done when** each packaging step is scripted, reproducible in CI, and produces
 an artifact that runs on a clean machine.
 
+Landed as `packaging/package_release.cmake`: one script produces a game archive
+and an SDK archive per platform, checksums them, and unpacks the game archive and
+plays it, so the artifact is exercised the way a download is. It runs from the
+ordinary CI job as well as from the release workflow, because the release path
+only fires on a tag and a mistake in it would otherwise reach a downloader before
+anyone saw it. The SDK archive was made genuinely consumable in the same change:
+it carries the third-party headers and archives a link needs, plus a CMake package
+config, so `find_package(ForkEngine)` works against an unpacked archive. See
+[ADR-0102](adr/0102-downloadable-release-builds.md).
+
+What the queue still owes: the per-OS wrappers a downloader expects — an AppImage,
+a `.app` bundle, a signed installer — are separate items below; this produces the
+archives they wrap.
+
 ### `release-version-stamping`
 
 A downloadable build must say which version it is. Stamp the engine version into

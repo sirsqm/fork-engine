@@ -1,0 +1,202 @@
+# Fork Engine release.
+#
+# Turns a version tag into downloadable per-OS artifacts: a playable build of the
+# breakout slice, an SDK tree a developer can build against, and a checksum file,
+# attached to a GitHub Release. This is the mechanism behind the "Download" section
+# of the README, so a person can get a runnable engine without a toolchain.
+#
+# Why a tag triggers it and not a branch push: a release is a statement that a
+# version exists, and the version has one source of truth (the root project()
+# call). Tagging `v0.1.0` and having CI verify the tag matches the version the
+# binary was built with keeps the download, the manifest, and the source from
+# disagreeing about what the artifact is.
+#
+# The packaging itself lives in packaging/package_release.cmake, not in these
+# steps, so a maintainer can produce the same archives locally with one command
+# and the workflow is a thin caller. See ADR-0102.
+#
+# The workflow is also runnable by hand (workflow_dispatch) with dry_run on, which
+# builds and packages every platform and uploads the artifacts *without* creating
+# a Release. That is how a change to the packaging is verified before it is
+# trusted with a tag.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and upload artifacts, but do not create a Release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build and package on each desktop target.
+  #
+  # Each job produces the two archives for its platform through the one packaging
+  # script, smoke-runs the packaged game, and uploads the result. Nothing is
+  # published here: a Release is only created once every platform has succeeded,
+  # so a partially-built release is never visible.
+  # ---------------------------------------------------------------------------
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux / x86_64
+            os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            # Xvfb plus Mesa's software driver gives the packaged game the GL 3.3
+            # context it needs, so Linux is where the artifact is actually played.
+            smoke_prefix: "xvfb-run;-a;-s;-screen 0 640x480x24"
+            smoke_game: "ON"
+          - name: Windows / x86_64
+            os: windows-latest
+            platform: windows
+            arch: x86_64
+            # No GL 3.3 context on a headless runner, so the artifact is checked
+            # and started but not played (see the smoke section of the script).
+            smoke_prefix: ""
+            smoke_game: "OFF"
+          - name: macOS / arm64
+            os: macos-latest
+            platform: macos
+            arch: aarch64
+            smoke_prefix: ""
+            smoke_game: "OFF"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # GLFW (fetched by CMake) needs the X11/Wayland development headers, and the
+      # packaged game opens a GL context, which the virtual display and Mesa's
+      # software driver supply. This matches the dependency list the test job uses.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            xvfb \
+            mesa-utils
+
+      # Release, warnings as errors. Tests and benchmarks are off: this job ships
+      # binaries, and the test matrix already gates correctness on every push.
+      # Examples are on because the shipping tools and the playable game live
+      # behind that switch.
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DFE_WARNINGS_AS_ERRORS=ON
+          -DFE_BUILD_TESTS=OFF
+          -DFE_BUILD_BENCHMARKS=OFF
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # The tag is checked against the version the binary was built with. The
+      # packaging script stamps the archives with the build tree's version, so a
+      # tag that disagrees with it would publish `v0.2.0` artifacts containing
+      # 0.1.0. On a manual run there is no tag to check.
+      - name: Check the tag matches the engine version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt | head -1)
+          tag="${GITHUB_REF_NAME#v}"
+          echo "tag=$tag engine=$version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag v$tag does not match the engine version $version"
+            exit 1
+          fi
+
+      # One script, both archives, the checksums, and a smoke run of the unpacked
+      # game. The prefix (empty off Linux) supplies the virtual display the game
+      # needs to open a GL context.
+      - name: Package
+        shell: bash
+        run: |
+          cmake \
+            -DFE_BUILD_DIR=build \
+            -DFE_OUT_DIR=dist \
+            -DFE_PLATFORM=${{ matrix.platform }} \
+            -DFE_ARCH=${{ matrix.arch }} \
+            -DFE_CONFIG=Release \
+            -DFE_SMOKE_GAME=${{ matrix.smoke_game }} \
+            -DFE_SMOKE_PREFIX="${{ matrix.smoke_prefix }}" \
+            -P packaging/package_release.cmake
+
+      - name: Upload the packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/
+          # The staging directories are removed by the script, so this is the two
+          # archives and the checksum file; the if-no-files-found default would
+          # pass a job that silently produced nothing.
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Publish.
+  #
+  # Runs only after every platform packaged, so the Release is complete or it
+  # does not exist. The checksums are combined into one file, because a downloader
+  # wants a single list covering every asset.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish the release
+    needs: package
+    runs-on: ubuntu-latest
+    # Only a tag publishes. A manual run stops after the artifacts are uploaded.
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect the artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Flatten the per-platform directories into one and rebuild SHA256SUMS from
+      # the archives themselves, so the published checksum file covers exactly the
+      # published assets. Rebuilding rather than concatenating also drops the
+      # per-platform sum files, which would otherwise ship as assets of their own.
+      - name: Assemble the release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
+          cd release
+          ls -la
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          # A tag like v0.1.0 is a pre-1.0 engine release, so it is marked as a
+          # pre-release: the project is young and the version says so.
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Fork Engine ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --prerelease \
+            release/*

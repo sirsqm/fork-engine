@@ -63,6 +63,10 @@ include(FEWarnings)
 include(FEVersion)
 include(FEDependencies)
 include(FEInstall)
+# The SDK payload: the third-party headers and archives the public API and the
+# link line need, plus a CMake package config. Separate from FEInstall.cmake
+# because it is a dependency payload, not our own targets. See ADR-0102.
+include(FEInstallDependencies)
 
 if(FE_ENABLE_ASAN AND NOT MSVC)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -129,6 +133,11 @@ endif()
 if(FE_INSTALL)
   install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" DESTINATION "${CMAKE_INSTALL_DATADIR}/fork-engine")
   install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION "${CMAKE_INSTALL_DATADIR}/fork-engine")
+
+  # The SDK payload: dependency headers and archives plus a CMake package config,
+  # so an installed tree is linkable and not merely runnable (ADR-0102). Called
+  # here, after every dependency target exists, so it can see them.
+  fe_install_sdk_dependencies()
 endif()
 
 # ---------------------------------------------------------------------------

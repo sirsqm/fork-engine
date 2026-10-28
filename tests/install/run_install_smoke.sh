@@ -34,7 +34,8 @@ fail() {
   fail "no configured build tree at ${BUILD_DIR}; configure one first"
 
 PREFIX="$(mktemp -d)"
-trap 'rm -rf "${PREFIX}"' EXIT
+CONSUMER="$(mktemp -d)"
+trap 'rm -rf "${PREFIX}" "${CONSUMER}"' EXIT
 
 echo "install smoke: installing ${BUILD_DIR} to ${PREFIX}"
 cmake --install "${BUILD_DIR}" --prefix "${PREFIX}" >/dev/null || fail "cmake --install failed"
@@ -75,4 +76,47 @@ run_ok "${PREFIX}/bin/fork_player"
 run_ok "${PREFIX}/bin/fork_export"
 run_ok "${PREFIX}/bin/fork_editor_shell"
 
-echo "install smoke: PASS (bin, lib, include, share; every tool runs from the prefix)"
+# The installed tree must be *linkable*, not only runnable (ADR-0102). A consumer
+# builds against it through find_package, so a missing third-party header or a
+# missing dependency archive is the failure this catches: the public serialization
+# headers include <nlohmann/json.hpp>, and the engine is a static library whose
+# GLFW and miniaudio dependencies still have to appear on the consumer's link
+# line. Compiling a real consumer is the only way to see that, because the build
+# tree supplies all of it by path.
+cat > "${CONSUMER}/main.cpp" <<'CPP'
+#include "fe/platform/Window.h"
+#include "fe/renderer2d/Renderer2D.h"
+#include "fe/scene/Scene.h"
+#include "fe/serialization/Json.h"
+
+#include <cstdio>
+
+int main() {
+  fe::Scene scene;
+  nlohmann::json doc;
+  doc["scene"] = "consumer";
+  fe::WindowDesc desc;
+  std::printf("consumer linked: %s\n", doc["scene"].get<std::string>().c_str());
+  return 0;
+}
+CPP
+
+cat > "${CONSUMER}/CMakeLists.txt" <<'CMAKE'
+cmake_minimum_required(VERSION 3.20)
+project(fe_consumer CXX)
+find_package(ForkEngine REQUIRED)
+add_executable(consumer main.cpp)
+target_link_libraries(consumer PRIVATE ForkEngine::engine)
+target_compile_features(consumer PRIVATE cxx_std_20)
+CMAKE
+
+echo "install smoke: building a consumer against the installed tree"
+cmake -S "${CONSUMER}" -B "${CONSUMER}/build" \
+  -DCMAKE_PREFIX_PATH="${PREFIX}" >/dev/null 2>&1 ||
+  fail "find_package(ForkEngine) failed; the installed tree is not consumable"
+cmake --build "${CONSUMER}/build" >/dev/null 2>&1 ||
+  fail "a consumer failed to compile or link against the installed tree"
+"${CONSUMER}/build/consumer" >/dev/null 2>&1 ||
+  fail "the consumer built against the installed tree but did not run"
+
+echo "install smoke: PASS (bin, lib, include, share; every tool runs; a consumer links)"

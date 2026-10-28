@@ -138,6 +138,26 @@ jobs:
           # tool from that prefix.
           tests/install/run_install_smoke.sh
 
+      - name: Package a release and run the packaged game (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          # The release workflow only runs on a tag, so without this step a change
+          # to the packaging script or to what an archive must contain would not
+          # be caught until a release was cut. This runs the same script the
+          # release runs: it builds the game and SDK archives, asserts each is
+          # really compressed, and unpacks the game archive and plays it from
+          # there, which is what a download does (ADR-0102).
+          cmake \
+            -DFE_BUILD_DIR=build \
+            -DFE_OUT_DIR=/tmp/fork_dist \
+            -DFE_PLATFORM=linux \
+            -DFE_ARCH=x86_64 \
+            -DFE_SMOKE_GAME=ON \
+            -DFE_SMOKE_PREFIX="xvfb-run;-a;-s;-screen 0 640x480x24" \
+            -P packaging/package_release.cmake
+          ls -la /tmp/fork_dist
+          test -f /tmp/fork_dist/SHA256SUMS
+
       - name: Load a gameplay module in the editor (Linux smoke test)
         if: runner.os == 'Linux'
         run: |
