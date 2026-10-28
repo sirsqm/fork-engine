@@ -131,7 +131,11 @@ tests/web/run_web_game.sh       # exports the 2D demo and the playable 3D game, 
   two headless Chromes that share the default profile race on its singleton lock
   and the loser exits at once without loading the page — the retry would then
   fail the same way three times. `timeout` bounds a browser that hangs; where
-  `timeout` is missing (stock macOS) the scripts run without it.
+  `timeout` is missing (stock macOS) the scripts run without it. Even so, a run
+  can still report "the page reported nothing" on all three attempts — a slow or
+  loaded runner where the game has not painted by the time the page is read — and
+  that is a flake, not a defect: confirm locally, then rerun the job
+  (`gh run rerun <id> --failed`) rather than changing code to chase it.
 - `clang-format` must never be allowed to see an `EM_ASM` body containing `===`:
   it parses the body as C++, rewrites `a === b` to `a == = b`, and the result is
   a JavaScript syntax error that breaks the module at run time with no build
