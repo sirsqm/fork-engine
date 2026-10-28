@@ -246,6 +246,14 @@ std::string web_shell_js() {
     js += "      insets.bottom + ',' + insets.left);\n";
     js += "  }\n";
     js += "  reportLayout(insets);\n";
+    // The window's CSS box is not fixed: a phone rotates, a browser chrome bar
+    // slides away, and the insets move with the notch. The report is the shell's
+    // own measurement of that box, so it is re-taken on every change; a one-shot
+    // report would be stale exactly when the phone-shaped check runs a rotated
+    // window (docs/PLAN.md, `mobile-viewport-meta`).
+    js += "  const remeasure = () => reportLayout(safeAreaInsets());\n";
+    js += "  window.addEventListener('resize', remeasure);\n";
+    js += "  window.addEventListener('orientationchange', remeasure);\n";
     js += "  const frames = new URLSearchParams(location.search).get('frames');\n";
     js += "  if (frames && /^[0-9]+$/.test(frames)) {\n";
     js += "    runtimeArguments.push('--frames', frames);\n";

@@ -326,6 +326,12 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
     const std::string js = web_shell_js();
     CHECK(js.find("FE_SHELL_LAYOUT") != std::string::npos);
     CHECK(js.find("env(safe-area-inset-top") != std::string::npos);
+    // The report must be re-taken when the window's CSS box changes, not written
+    // once at startup: a phone rotates and a browser bar moves, and a stale
+    // measurement would report the wrong canvas box exactly when the
+    // phone-shaped check reads it.
+    CHECK(js.find("addEventListener('resize'") != std::string::npos);
+    CHECK(js.find("addEventListener('orientationchange'") != std::string::npos);
     // The insets reach the runtime as the direct-form flag, and the flag exists on
     // the player. A shell that measured them and never passed them would be the
     // same silent failure as the bindings drop this queue started from.
