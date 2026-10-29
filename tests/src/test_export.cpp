@@ -346,11 +346,46 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
     // value would be read as a fraction and could clamp the whole axis away.
     CHECK(js.find("/ h") != std::string::npos);
     CHECK(js.find("/ w") != std::string::npos);
-    // A phone game wants the whole screen, so the shell asks for fullscreen from
-    // the first touch and swallows a refusal: a browser that declines leaves the
-    // game playable, so a rejection must not surface as an error.
+}
+
+TEST_CASE("the web shell asks for fullscreen from the first touch and swallows a refusal") {
+    // The acceptance test for `touch-fullscreen-prompt`. A phone browser's window
+    // is not the whole screen: the address bar and tab strip take a band above a
+    // full-bleed canvas, and a landscape thumb can hit that band instead of the
+    // game. The browser only grants fullscreen from a user gesture, so the shell
+    // asks on the earliest one a game reliably gets and treats every refusal as a
+    // no-op: the game is already playable in the frame it has.
+    //
+    // A headless Chromium in CI cannot grant fullscreen to a synthetic event, so
+    // the behaviour is proved by asserting the shell asks from the gesture and
+    // that each failure path is caught rather than surfaced as an error.
+    const std::string js = web_shell_js();
+
+    // The request is a named function that resolves the canvas the backend binds
+    // its own listeners to, so the gesture is taken on the element a touch that
+    // reaches gameplay also reaches.
+    CHECK(js.find("function requestFullscreenOnFirstTouch()") != std::string::npos);
+    CHECK(js.find("document.getElementById(CANVAS_ID)") != std::string::npos);
+    // The standard API and its `webkit`-prefixed spelling, because an older
+    // WebKit-based mobile browser reports only the latter.
     CHECK(js.find("requestFullscreen") != std::string::npos);
-    CHECK(js.find("'touchstart'") != std::string::npos);
+    CHECK(js.find("webkitRequestFullscreen") != std::string::npos);
+
+    // The gesture binding: the first `touchstart` and the first `pointerdown` on
+    // the canvas, each `{ once: true }` so the request happens at most once, and
+    // passive so the listener cannot delay the first frame's input.
+    CHECK(js.find("canvas.addEventListener('touchstart'") != std::string::npos);
+    CHECK(js.find("canvas.addEventListener('pointerdown'") != std::string::npos);
+    CHECK(js.find("{ once: true, passive: true }") != std::string::npos);
+    // The function must actually run at load, or the listener is never bound.
+    CHECK(js.find("requestFullscreenOnFirstTouch();") != std::string::npos);
+
+    // Each refusal path is caught. A missing API is a guard rather than a throw;
+    // a rejected promise (the common desktop case) is caught on the result; a
+    // synchronous throw is caught by the try. None of them reaches `fail`.
+    CHECK(js.find("typeof request !== 'function'") != std::string::npos);
+    CHECK(js.find(".catch(") != std::string::npos);
+    CHECK(js.find("catch (error)") != std::string::npos);
 }
 
 TEST_CASE("writing the web shell produces the page and its loader") {
