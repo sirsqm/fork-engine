@@ -271,6 +271,22 @@ defect, not noise.
   `std::filesystem::temp_directory_path()`, join with `std::filesystem::path`
   `/` rather than string `+ "/"`, and compare resolved paths through
   `fs::normalize` so a forward-slash expectation matches a backslash result.
+- A GPU vertex layout and the C++ struct it describes are two independent
+  declarations that must agree byte for byte, and nothing checks them against
+  each other. `SkinnedVertex3D` stored its joint indices as `u16` (56 bytes)
+  while `VertexLayout::skinned_position_normal_uv()` described a 64-byte stride
+  with the joints as float; the renderer sizes the buffer from `sizeof(struct)`,
+  so the upload overran the allocation and the draw read out of bounds -- a
+  `GL_INVALID_VALUE` and a black frame, not a compile error. Keep a
+  `static_assert(sizeof(T) == layout.stride)` next to the struct and a CPU test
+  that compares every attribute offset against `offsetof` the member it names.
+- A downloaded artifact's glibc floor is its *build host's*, so `ubuntu-latest`
+  in a packaging job silently raises it every time the runner image rotates, and
+  the artifact outruns the older machine it exists to help. The Linux build jobs
+  in CI and the release workflow are pinned to `ubuntu-24.04` (matching the
+  container smoke test); a guard test fails if either drifts back to
+  `ubuntu-latest`. This fired for real when the runner rotated to 26.04 (glibc
+  2.43) against a pinned `ubuntu:24.04` (glibc 2.39) smoke container.
 
 ## Commit identity
 
