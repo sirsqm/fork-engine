@@ -30,6 +30,10 @@ class DirectionalLight3D;
 class PointLight3D;
 class SpotLight3D;
 
+namespace anim {
+class SkinnedMesh;
+} // namespace anim
+
 namespace renderer3d {
 
 // Draws a Scene's 3D content through the RHI.
@@ -187,6 +191,20 @@ public:
     // prove the depth pass ran without inspecting GPU state.
     [[nodiscard]] u32 last_shadow_casters() const noexcept { return last_shadow_casters_; }
 
+    // The number of skinned instances drawn in the last frame, and the number
+    // culled. Skinned draws are counted separately from the static `last_draw_calls_`
+    // because they are a separate pass with a separate shader, and a test proving
+    // "a skinned character drew" must be able to read a number that a static
+    // instance cannot inflate.
+    [[nodiscard]] u32 last_skinned_draw_calls() const noexcept { return last_skinned_draw_calls_; }
+    [[nodiscard]] u32 last_skinned_culled() const noexcept { return last_skinned_culled_; }
+
+    // The largest palette this renderer will upload, in joints. A rig larger than
+    // this is drawn with the first kMaxPaletteJoints joints; the shader's
+    // `u_palette` array is declared at this size, so a larger rig is a shader
+    // change (chunk the palette across draws), not a data-model one.
+    static constexpr u32 kMaxPaletteJoints = 128;
+
     // Selects the camera that should drive rendering for `scene`: the first
     // camera with `primary` set, or the first camera found if none is primary,
     // or nullptr if the scene has no 3D camera. Mirrors
@@ -304,6 +322,55 @@ private:
     // Returns the GPU buffers for `mesh`, uploading on first use.
     [[nodiscard]] Result<const GpuMesh*> acquire_mesh(rhi::Device& device, const Mesh& mesh);
 
+    // The skinned counterpart of `acquire_mesh`: same cache and same `GpuMesh`
+    // record, but uploaded with `VertexLayout::skinned_position_normal_uv()` so
+    // the vertex buffer's stride and attributes match the skinned shader. Keyed by
+    // the `SkinnedMesh`'s address, which is a different object from any `Mesh`, so
+    // the two caches never alias.
+    [[nodiscard]] Result<const GpuMesh*> acquire_skinned_mesh(rhi::Device& device, const anim::SkinnedMesh& mesh);
+
+    // The frame's resolved lighting, captured by draw() so the skinned pass can
+    // set the identical uniforms on its own shader without a second scene walk.
+    // The packed point/spot arrays are members already (point_light_data_ etc.),
+    // so only the scalar frame constants and the light-space matrix live here.
+    struct FrameLighting {
+        Vec3 direction{0.0f, -1.0f, 0.0f};
+        Vec3 color{1.0f, 1.0f, 1.0f};
+        f32 intensity = 1.0f;
+        f32 ambient = 0.15f;
+        Mat4 light_view_projection = Mat4::identity();
+        bool shadows_enabled = false;
+    };
+
+    // The per-instance record for a skinned draw: the model and normal matrices,
+    // the same shape as `Instance` but uploaded into a buffer created with
+    // `VertexLayout::skinned_instance()`, whose attribute locations differ from the
+    // static layout's. A distinct buffer, not a reinterpretation of the static
+    // one, because the two layouts declare the same matrix at different locations.
+    //
+    // `lighting` carries the frame constants draw() already resolved, so the
+    // skinned pass is lit by exactly the same light as the static pass it follows.
+    [[nodiscard]] Result<usize> draw_skinned(rhi::Device& device, const Mat4& view_projection,
+                                             const Vec3& camera_position,
+                                             std::vector<render::SkinnedInstance>& instances,
+                                             const FrameLighting& lighting);
+
+    // Ensures the skinned instance buffer can hold `count` records, growing it on
+    // demand. Mirrors `ensure_instance_capacity`.
+    void ensure_skinned_instance_capacity(rhi::Device& device, u32 count);
+
+    // Fills `frame_skinned_instance_data_` with one record per skinned instance:
+    // the model matrix and its normal matrix, in the order the instances appear.
+    // Shared by the shadow pass and the lit pass so the two upload identical
+    // transforms, and called once before the shadow pass so the lit pass does not
+    // rebuild it.
+    void build_skinned_instance_stream();
+
+    // Sets every lighting and shadow uniform a lit pass needs, on `shader`. Shared
+    // by the static and skinned passes so a character is lit by exactly the same
+    // frame constants a prop is; the only per-pass difference is the vertex stage.
+    void set_lighting_uniforms(rhi::Shader& shader, const Vec3& camera_position, const FrameLighting& lighting);
+
     // Resolves a material texture reference ("tex:assets/hero.png") to a loaded
     // Texture2D, or nullptr when it cannot be loaded. The result is memoised per
     // frame so a material shared by many instances resolves once; a reference
@@ -323,6 +390,19 @@ private:
     rhi::ShaderRef shadow_shader_;
     rhi::RenderTargetRef shadow_target_;
     bool shadow_target_attempted_ = false;
+
+    // The skinned pass' shaders. Created alongside the static ones so a shader
+    // error is reported at initialize() rather than mid-frame. The fragment stage
+    // is shared with the static path.
+    rhi::ShaderRef skinned_shader_;
+    rhi::ShaderRef skinned_shadow_shader_;
+
+    // The skinned instance stream's buffer and capacity, and the reused record
+    // vector, mirroring `instance_buffer_` / `instance_capacity_` /
+    // `frame_instance_data_` for the skinned layout.
+    rhi::BufferRef skinned_instance_buffer_;
+    u32 skinned_instance_capacity_ = 0;
+    std::vector<Instance> frame_skinned_instance_data_;
 
     // Bound for untextured meshes so the sampler always reads a valid object.
     // A white texel makes the shader's albedo equal to the base colour, which
@@ -462,6 +542,22 @@ private:
     // sweep does not allocate. Rebuilt from frame_meshes_seen_ each frame; see
     // the sweep at the end of draw().
     std::unordered_set<const Mesh*> live_meshes_;
+
+    // The same, for the skinned pass: the extracted skinned instances, the
+    // skinned meshes seen for the buffer sweep, and the skinned buffer cache.
+    // Keyed by the `SkinnedMesh`'s address, a distinct key space from `buffers_`.
+    std::vector<render::SkinnedInstance> frame_skinned_instances_;
+    std::vector<const anim::SkinnedMesh*> frame_skinned_meshes_seen_;
+    std::unordered_map<const anim::SkinnedMesh*, GpuMesh> skinned_buffers_;
+    std::unordered_set<const anim::SkinnedMesh*> live_skinned_meshes_;
+
+    // The palette upload buffer, one `Mat4` per joint, reused across frames and
+    // grown to the largest rig drawn so far. Uploading a sub-range of a bigger
+    // buffer avoids a reallocation for every rig size in a scene.
+    std::vector<Mat4> palette_upload_;
+
+    u32 last_skinned_draw_calls_ = 0;
+    u32 last_skinned_culled_ = 0;
 };
 
 } // namespace renderer3d

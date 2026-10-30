@@ -616,11 +616,14 @@ read_skinned_vertices(const json& doc, const std::vector<std::vector<u8>>& buffe
             vertex.uv = texcoords[i];
         }
         for (usize c = 0; c < 4; ++c) {
-            // A joint index past 65535 cannot be represented by the vertex type;
-            // clamp rather than wrap, so a bad index reads as the last joint
-            // instead of a small, plausible-looking one.
+            // The joint index is stored as a float to match the vertex layout
+            // (VertexLayout has no integer kind, so the attribute is a float and
+            // the shader truncates it back to an int). A negative index reads as
+            // joint zero here and in the shader, which is the same "clamp rather
+            // than wrap" rule the u16 form used; an index past the rig is skipped
+            // by the skinner because no palette has it.
             const f32 joint = joint_floats.value()[i * 4 + c];
-            vertex.joints[c] = joint < 0.0f ? 0 : static_cast<u16>(joint > 65535.0f ? 65535.0f : joint);
+            vertex.joints[c] = joint < 0.0f ? 0.0f : joint;
             vertex.weights[c] = weights.value()[i * 4 + c];
         }
         vertices.push_back(vertex);

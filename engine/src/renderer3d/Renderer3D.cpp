@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #include "fe/renderer3d/Renderer3D.h"
 
+#include "fe/anim/SkinnedMesh.h"
+#include "fe/anim/SkinnedMeshRenderer3D.h"
 #include "fe/core/Assert.h"
 #include "fe/core/Frustum.h"
 #include "fe/core/Log.h"
@@ -236,6 +238,129 @@ void main() {
 }
 )glsl";
 
+// The skinned lit vertex shader. It shares `kFragmentShaderSource` with the
+// static path -- a skinned character and a static prop are lit by one material
+// model, so the fragment stage is byte-identical and only the vertex stage
+// differs.
+//
+// What differs, and why it is a second shader rather than a branch in the first:
+//
+//   * The vertex carries four joint indices and four weights (attributes 3 and
+//     4). The indices arrive as floats because `VertexFormat` has no integer
+//     kind; the shader converts, which is exact for any rig short of 2^24 joints.
+//   * The palette is a `mat4` array uniform indexed by those joint indices, not
+//     a per-instance attribute. A forty-joint rig would need forty attribute
+//     slots, past every backend's limit; a uniform array is bounded by the
+//     uniform budget instead. See `VertexLayout::skinned_instance`.
+//   * The model matrix arrives in the per-instance stream at locations 5-11 (the
+//     static path's 3-9 are taken by the joint attributes), so the two instance
+//     layouts do not collide on a shared attribute slot.
+//
+// The skin is the standard linear blend: transform the vertex by each influencing
+// joint's palette matrix, weight the results, and sum. The weights are normalised
+// in the shader as well as on the CPU, so an asset whose weights do not sum to
+// one renders at the right size rather than shrinking towards the origin, and a
+// vertex with no usable influence falls back to its bind position.
+constexpr const char* kSkinnedVertexShaderSource = R"glsl(
+#version 330 core
+
+layout(location = 0) in vec3 a_position;
+layout(location = 1) in vec3 a_normal;
+layout(location = 2) in vec2 a_uv;
+layout(location = 3) in vec4 a_joints;   // joint indices, as floats
+layout(location = 4) in vec4 a_weights;
+
+layout(location = 5) in vec4 a_model_0;
+layout(location = 6) in vec4 a_model_1;
+layout(location = 7) in vec4 a_model_2;
+layout(location = 8) in vec4 a_model_3;
+layout(location = 9) in vec4 a_normal_0;
+layout(location = 10) in vec4 a_normal_1;
+layout(location = 11) in vec4 a_normal_2;
+
+// The skinning palette: world * inverse_bind per joint, uploaded once per
+// instance. The cap matches Renderer3D::kMaxPaletteJoints; a rig larger than the
+// cap is a shader change (chunk the palette across draws), not a data-model one.
+uniform mat4 u_palette[128];
+
+uniform mat4 u_view_projection;
+
+out vec3 v_world_position;
+out vec3 v_normal;
+out vec2 v_uv;
+
+void main() {
+    mat4 model = mat4(a_model_0, a_model_1, a_model_2, a_model_3);
+    mat3 normal_matrix = mat3(a_normal_0.xyz, a_normal_1.xyz, a_normal_2.xyz);
+
+    // Sum the weights so a vertex whose authored weights do not sum to one is
+    // normalised rather than scaled. A zero sum means no usable influence: the
+    // vertex stays where the bind pose put it.
+    float weight_sum = a_weights.x + a_weights.y + a_weights.z + a_weights.w;
+    vec4 skin_position = vec4(0.0);
+    vec3 skin_normal = vec3(0.0);
+    if (weight_sum > 0.0) {
+        ivec4 joints = ivec4(a_joints + 0.5); // round-to-nearest; the values are exact integers
+        for (int i = 0; i < 4; ++i) {
+            float weight = a_weights[i] / weight_sum;
+            if (weight == 0.0) {
+                continue;
+            }
+            mat4 skin = u_palette[joints[i]];
+            skin_position += weight * (skin * vec4(a_position, 1.0));
+            skin_normal += weight * (mat3(skin) * a_normal);
+        }
+    } else {
+        skin_position = vec4(a_position, 1.0);
+        skin_normal = a_normal;
+    }
+
+    vec4 world = model * skin_position;
+    v_world_position = world.xyz;
+    v_normal = normal_matrix * skin_normal;
+    v_uv = a_uv;
+    gl_Position = u_view_projection * world;
+}
+)glsl";
+
+// The skinned depth-only vertex shader, for the shadow pass. It applies the same
+// linear blend skinning as the lit pass so a character casts the shadow of its
+// pose rather than of its bind shape.
+constexpr const char* kSkinnedShadowVertexShaderSource = R"glsl(
+#version 330 core
+
+layout(location = 0) in vec3 a_position;
+layout(location = 3) in vec4 a_joints;
+layout(location = 4) in vec4 a_weights;
+
+layout(location = 5) in vec4 a_model_0;
+layout(location = 6) in vec4 a_model_1;
+layout(location = 7) in vec4 a_model_2;
+layout(location = 8) in vec4 a_model_3;
+
+uniform mat4 u_palette[128];
+uniform mat4 u_light_view_projection;
+
+void main() {
+    mat4 model = mat4(a_model_0, a_model_1, a_model_2, a_model_3);
+    float weight_sum = a_weights.x + a_weights.y + a_weights.z + a_weights.w;
+    vec4 skin_position = vec4(0.0);
+    if (weight_sum > 0.0) {
+        ivec4 joints = ivec4(a_joints + 0.5);
+        for (int i = 0; i < 4; ++i) {
+            float weight = a_weights[i] / weight_sum;
+            if (weight == 0.0) {
+                continue;
+            }
+            skin_position += weight * (u_palette[joints[i]] * vec4(a_position, 1.0));
+        }
+    } else {
+        skin_position = vec4(a_position, 1.0);
+    }
+    gl_Position = u_light_view_projection * model * skin_position;
+}
+)glsl";
+
 // The environment background: a full-screen quad whose fragment colour is a
 // vertical gradient from `u_bottom_color` at the bottom of the frame to
 // `u_top_color` at the top. The quad's position is already in clip space, so no
@@ -359,6 +484,26 @@ Error Renderer3D::initialize(rhi::Device& device) {
     }
     shadow_shader_ = shadow_shader.value();
 
+    rhi::ShaderDesc skinned_desc;
+    skinned_desc.name = "renderer3d_skinned";
+    skinned_desc.vertex_source = kSkinnedVertexShaderSource;
+    skinned_desc.fragment_source = kFragmentShaderSource;
+    auto skinned_shader = device.create_shader(skinned_desc);
+    if (!skinned_shader) {
+        return skinned_shader.error();
+    }
+    skinned_shader_ = skinned_shader.value();
+
+    rhi::ShaderDesc skinned_shadow_desc;
+    skinned_shadow_desc.name = "renderer3d_skinned_shadow";
+    skinned_shadow_desc.vertex_source = kSkinnedShadowVertexShaderSource;
+    skinned_shadow_desc.fragment_source = kShadowFragmentShaderSource;
+    auto skinned_shadow_shader = device.create_shader(skinned_shadow_desc);
+    if (!skinned_shadow_shader) {
+        return skinned_shadow_shader.error();
+    }
+    skinned_shadow_shader_ = skinned_shadow_shader.value();
+
     const u8 white[4] = {255, 255, 255, 255};
     rhi::TextureDesc white_desc;
     white_desc.name = "renderer3d_white";
@@ -422,6 +567,171 @@ Result<const Renderer3D::GpuMesh*> Renderer3D::acquire_mesh(rhi::Device& device,
 
     const auto [inserted, _] = buffers_.emplace(&mesh, std::move(gpu));
     return &inserted->second;
+}
+
+Result<const Renderer3D::GpuMesh*> Renderer3D::acquire_skinned_mesh(rhi::Device& device,
+                                                                    const anim::SkinnedMesh& mesh) {
+    const auto it = skinned_buffers_.find(&mesh);
+    if (it != skinned_buffers_.end()) {
+        return &it->second;
+    }
+
+    if (mesh.vertex_count() == 0 || mesh.index_count() == 0) {
+        return Error("renderer3d: skinned mesh has no geometry");
+    }
+
+    // The skinned layout: the same position/normal/uv triple at locations 0-2,
+    // then the joint indices and weights at 3 and 4. The stride is
+    // sizeof(SkinnedVertex3D), which the layout's static_assert pins.
+    auto vertex_buffer = device.create_vertex_buffer(rhi::VertexLayout::skinned_position_normal_uv(),
+                                                     static_cast<u32>(mesh.vertex_count() * sizeof(SkinnedVertex3D)));
+    if (!vertex_buffer) {
+        return vertex_buffer.error();
+    }
+    auto index_buffer = device.create_index_buffer(static_cast<u32>(mesh.index_count()));
+    if (!index_buffer) {
+        return index_buffer.error();
+    }
+
+    GpuMesh gpu{};
+    gpu.vertex_buffer = vertex_buffer.value();
+    gpu.index_buffer = index_buffer.value();
+    gpu.index_count = static_cast<u32>(mesh.index_count());
+
+    gpu.vertex_buffer->update(std::span<const u8>(reinterpret_cast<const u8*>(mesh.vertices().data()),
+                                                  mesh.vertices().size() * sizeof(SkinnedVertex3D)));
+    gpu.index_buffer->update(
+        std::span<const u8>(reinterpret_cast<const u8*>(mesh.indices().data()), mesh.indices().size() * sizeof(u32)));
+
+    const auto [inserted, _] = skinned_buffers_.emplace(&mesh, std::move(gpu));
+    return &inserted->second;
+}
+
+void Renderer3D::ensure_skinned_instance_capacity(rhi::Device& device, u32 count) {
+    // Same rule as the static path: the record must match the layout's stride, or
+    // every instance after the first reads its transform shifted. The skinned
+    // record is the same `Instance` struct, so the size check is shared; only the
+    // buffer's layout differs (attribute locations 5-11 rather than 3-9).
+    static_assert(sizeof(Instance) == 7 * 16, "Instance must match VertexLayout::skinned_instance()'s stride");
+
+    if (count <= skinned_instance_capacity_) {
+        return;
+    }
+    const u32 new_capacity = std::max(count, skinned_instance_capacity_ * 2);
+    auto buffer = device.create_vertex_buffer(rhi::VertexLayout::skinned_instance(),
+                                              new_capacity * static_cast<u32>(sizeof(Instance)));
+    if (!buffer) {
+        FE_LOG_ERROR("renderer3d: could not grow skinned instance buffer: %s", buffer.error().message().c_str());
+        return;
+    }
+    skinned_instance_buffer_ = buffer.value();
+    skinned_instance_capacity_ = new_capacity;
+}
+
+void Renderer3D::build_skinned_instance_stream() {
+    std::vector<Instance>& records = frame_skinned_instance_data_;
+    records.clear();
+    records.reserve(frame_skinned_instances_.size());
+    for (const render::SkinnedInstance& instance : frame_skinned_instances_) {
+        Instance record{};
+        for (usize col = 0; col < 4; ++col) {
+            record.model[col] = Vec4{instance.model.at(0, col), instance.model.at(1, col), instance.model.at(2, col),
+                                     instance.model.at(3, col)};
+        }
+        const std::array<f32, 9> normal = normal_matrix(instance.model);
+        record.normal[0] = Vec4{normal[0], normal[1], normal[2], 0.0f};
+        record.normal[1] = Vec4{normal[3], normal[4], normal[5], 0.0f};
+        record.normal[2] = Vec4{normal[6], normal[7], normal[8], 0.0f};
+        records.push_back(record);
+    }
+}
+
+Result<usize> Renderer3D::draw_skinned(rhi::Device& device, const Mat4& view_projection, const Vec3& camera_position,
+                                       std::vector<render::SkinnedInstance>& instances, const FrameLighting& lighting) {
+    FE_CHECK(skinned_shader_ != nullptr);
+
+    last_skinned_draw_calls_ = 0;
+    if (instances.empty()) {
+        return usize{0};
+    }
+
+    // The per-instance transform stream. The shadow pass already built it when
+    // this frame cast a skinned shadow; rebuilding is idempotent and cheap, and it
+    // is the only path that guarantees the stream matches `instances` when the
+    // shadow pass did not run.
+    build_skinned_instance_stream();
+
+    ensure_skinned_instance_capacity(device, static_cast<u32>(frame_skinned_instance_data_.size()));
+    if (skinned_instance_buffer_ == nullptr) {
+        return Error("renderer3d: skinned instance buffer unavailable");
+    }
+    skinned_instance_buffer_->update(
+        std::span<const u8>(reinterpret_cast<const u8*>(frame_skinned_instance_data_.data()),
+                            frame_skinned_instance_data_.size() * sizeof(Instance)));
+
+    device.bind_shader(*skinned_shader_);
+    skinned_shader_->set_mat4("u_view_projection", view_projection);
+    set_lighting_uniforms(*skinned_shader_, camera_position, lighting);
+    device.bind_texture(
+        1, (lighting.shadows_enabled && shadow_target_ != nullptr && shadow_target_->depth_texture() != nullptr)
+               ? *shadow_target_->depth_texture()
+               : *default_texture_);
+
+    // One draw per instance, because the palette is a uniform array and a uniform
+    // cannot vary within an instanced draw. A rig's palette is uploaded before its
+    // draw; a character and a prop of the same size therefore differ by one draw
+    // call, which is the cost the uniform-palette design (ADR-0104) accepts.
+    for (const render::SkinnedInstance& instance : instances) {
+        auto gpu = acquire_skinned_mesh(device, *instance.mesh);
+        if (!gpu) {
+            FE_LOG_ERROR("renderer3d: %s", gpu.error().message().c_str());
+            continue;
+        }
+
+        // The material, resolved through the same precedence rule the static path
+        // uses (the component's surface, overridden by the mesh's imported
+        // material). A skinned mesh with no material falls back to the component's
+        // or the default white texel, exactly as a static one does.
+        const MeshRenderer3D::Surface surface =
+            instance.renderer != nullptr ? instance.renderer->resolve_surface() : MeshRenderer3D::Surface{};
+        skinned_shader_->set_vec4("u_base_color", surface.material.base_color);
+        skinned_shader_->set_float("u_specular", surface.specular);
+        skinned_shader_->set_float("u_shininess", surface.shininess);
+        skinned_shader_->set_vec3("u_emissive", surface.material.emissive);
+        const Texture2D* base_texture =
+            surface.material.base_color_texture.empty() ? nullptr : load_texture(surface.material.base_color_texture);
+        const Texture2D* emissive_texture =
+            surface.material.emissive_texture.empty() ? nullptr : load_texture(surface.material.emissive_texture);
+        device.bind_texture(0, base_texture != nullptr ? base_texture->texture() : *default_texture_);
+        skinned_shader_->set_float("u_emissive_map_enabled", emissive_texture != nullptr ? 1.0f : 0.0f);
+        device.bind_texture(2, emissive_texture != nullptr ? emissive_texture->texture() : *default_texture_);
+
+        // The palette. A missing palette is the bind pose: the identity, which
+        // leaves the vertex where the bind shape put it. The array is uploaded at
+        // the joint count, never more than the shader's cap; a larger rig is drawn
+        // with its first kMaxPaletteJoints joints rather than reading past the end.
+        const u32 joint_count = instance.palette != nullptr
+                                    ? std::min<u32>(static_cast<u32>(instance.palette->size()), kMaxPaletteJoints)
+                                    : 0;
+        if (joint_count > 0) {
+            skinned_shader_->set_mat4_array("u_palette", instance.palette->data(), joint_count);
+        } else {
+            // A single identity so the uniform array is complete even with no
+            // joints; the shader reads index 0 only if a weight is non-zero, which
+            // a bind-pose vertex's zero weights are not.
+            const Mat4 identity = Mat4::identity();
+            skinned_shader_->set_mat4_array("u_palette", &identity, 1);
+        }
+
+        device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+        device.bind_instance_buffer(*skinned_instance_buffer_, static_cast<u32>(&instance - instances.data()) *
+                                                                   static_cast<u32>(sizeof(Instance)));
+        device.bind_index_buffer(*gpu.value()->index_buffer);
+        device.draw_indexed_instanced(gpu.value()->index_count, 1);
+        ++last_skinned_draw_calls_;
+    }
+
+    return static_cast<usize>(last_skinned_draw_calls_);
 }
 
 const Texture2D* Renderer3D::load_texture(const std::string& reference) {
@@ -556,6 +866,8 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     last_point_lights_ = 0;
     last_spot_lights_ = 0;
     last_shadow_casters_ = 0;
+    last_skinned_draw_calls_ = 0;
+    last_skinned_culled_ = 0;
 
     const Camera3D* camera = find_active_camera(scene);
     if (camera == nullptr) {
@@ -579,6 +891,19 @@ Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 vi
     const Mat4 view_projection = camera->view_projection(viewport_width, viewport_height);
     const Frustum frustum = Frustum::from_view_projection(view_projection);
     last_culled_ = static_cast<u32>(cull(instances, &frustum));
+
+    // --- 2b. Extract and cull skinned instances ----------------------------
+    // A separate pass, because a skinned instance has a different vertex stream
+    // and a palette and cannot be batched with a static one. Extract then cull,
+    // exactly as for static geometry, so a character off screen costs no draw.
+    std::vector<render::SkinnedInstance>& skinned = frame_skinned_instances_;
+    std::vector<const anim::SkinnedMesh*>& skinned_seen = frame_skinned_meshes_seen_;
+    skinned_seen.clear();
+    render::extract_skinned_meshes(scene, skinned, jobs);
+    for (const render::SkinnedInstance& instance : skinned) {
+        skinned_seen.push_back(instance.mesh);
+    }
+    last_skinned_culled_ = static_cast<u32>(render::cull_skinned_meshes(skinned, &frustum, jobs));
 
     // --- 3. Draw -----------------------------------------------------------
     // The camera's background gradient and the post-processing chain are handled
@@ -669,6 +994,48 @@ void Renderer3D::build_batches(const std::vector<render::MeshInstance>& instance
     }
 }
 
+void Renderer3D::set_lighting_uniforms(rhi::Shader& shader, const Vec3& camera_position,
+                                       const FrameLighting& lighting) {
+    // Sampler slots. `u_texture` is the base-colour map (slot 0), `u_emissive_map`
+    // the emissive map (slot 2); the shadow map takes slot 1. The slots are set
+    // once per pass, so the per-batch code below only binds textures to them.
+    shader.set_int("u_texture", 0);
+    shader.set_int("u_emissive_map", 2);
+    shader.set_vec3("u_light_color", lighting.color);
+    shader.set_float("u_light_intensity", lighting.intensity);
+    shader.set_float("u_ambient", lighting.ambient);
+    shader.set_vec3("u_light_direction", lighting.direction);
+    shader.set_vec3("u_camera_position", camera_position);
+
+    // Shadow uniforms. When no shadow map exists (no directional light, or
+    // creation failed) the light-space matrix stays identity and the map is never
+    // sampled usefully, but the sampler still needs a bound texture to be a
+    // complete program, so bind the white texel.
+    shader.set_int("u_shadow_map", 1);
+    shader.set_mat4("u_light_space_matrix", lighting.light_view_projection);
+    shader.set_float("u_shadow_bias", kShadowBias);
+    // The device is reached through the shader's own owner, so the texture
+    // binding is done by the caller; this sets the uniform state only. See the
+    // bind sites in draw() and draw_skinned().
+
+    // Pack and upload the bounded light arrays. Only the first point_count /
+    // spot_count elements are read by the shader, whose loop is bounded by the
+    // count uniforms.
+    const u32 point_count = last_point_lights_;
+    shader.set_int("u_point_light_count", static_cast<i32>(point_count));
+    shader.set_vec4_array("u_point_light_position_range", point_light_data_.data(), point_count);
+    shader.set_vec4_array("u_point_light_color_intensity", point_color_data_.data(), point_count);
+
+    const u32 spot_count = last_spot_lights_;
+    shader.set_int("u_spot_light_count", static_cast<i32>(spot_count));
+    // The direction half of the block must be uploaded even when only the first
+    // few entries are used, so always send the full 2*max block; the shader reads
+    // it only for i < spot_count.
+    shader.set_vec4_array("u_spot_light_data", spot_light_data_.data(), spot_count == 0 ? 0 : kMaxSpotLights * 2);
+    shader.set_vec4_array("u_spot_light_color_intensity", spot_color_data_.data(), spot_count);
+    shader.set_vec4_array("u_spot_light_cone", spot_cone_data_.data(), spot_count);
+}
+
 Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
                                const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
                                const std::vector<const Mesh*>& meshes_seen) {
@@ -683,7 +1050,7 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     // the single lookup.
     texture_cache_.clear();
 
-    if (instances.empty()) {
+    if (instances.empty() && frame_skinned_instances_.empty()) {
         return usize{0};
     }
 
@@ -741,6 +1108,24 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     last_point_lights_ = static_cast<u32>(point_lights.size());
     last_spot_lights_ = static_cast<u32>(spot_lights.size());
 
+    // Pack the bounded light arrays once per frame, before either lit pass, so
+    // the static and skinned passes upload identical lighting. Only the first
+    // point_count / spot_count elements are read by the shader.
+    for (u32 i = 0; i < last_point_lights_; ++i) {
+        const PointLightEntry& entry = point_lights[i];
+        point_light_data_[i] = Vec4{entry.position, entry.range};
+        point_color_data_[i] = Vec4{entry.color, entry.intensity};
+    }
+    for (u32 i = 0; i < last_spot_lights_; ++i) {
+        const SpotLightEntry& entry = spot_lights[i];
+        // The position/direction arrays are uploaded as one 16-element block:
+        // [0, 8) positions + ranges, [8, 16) directions.
+        spot_light_data_[i] = Vec4{entry.position, entry.range};
+        spot_light_data_[i + kMaxSpotLights] = Vec4{entry.direction, 0.0f};
+        spot_color_data_[i] = Vec4{entry.color, entry.intensity};
+        spot_cone_data_[i] = Vec4{entry.cos_inner, entry.cos_outer, 0.0f, 0.0f};
+    }
+
     const Vec3 light_direction = light != nullptr ? light->direction.normalized() : Vec3{0.0f, -1.0f, 0.0f};
     const Vec3 light_color = light != nullptr ? light->color : Vec3{1.0f, 1.0f, 1.0f};
     const f32 light_intensity = light != nullptr ? light->intensity : 1.0f;
@@ -772,13 +1157,31 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     // keeps the map from being spread thin by distant geometry.
     bool shadows_enabled = false;
     Mat4 light_view_projection = Mat4::identity();
-    if (light != nullptr && instancing_ready) {
+    if (light != nullptr && (instancing_ready || !frame_skinned_instances_.empty())) {
         Vec3 scene_min{};
         Vec3 scene_max{};
         bool bounds_valid = false;
         for (const render::MeshInstance& instance : instances) {
             // The world AABB was computed once at extraction; the shadow fit
             // reads it rather than re-expanding the mesh's local bounds.
+            const Vec3& world_min = instance.world_min;
+            const Vec3& world_max = instance.world_max;
+            if (!bounds_valid) {
+                scene_min = world_min;
+                scene_max = world_max;
+                bounds_valid = true;
+            } else {
+                scene_min.x = std::min(scene_min.x, world_min.x);
+                scene_min.y = std::min(scene_min.y, world_min.y);
+                scene_min.z = std::min(scene_min.z, world_min.z);
+                scene_max.x = std::max(scene_max.x, world_max.x);
+                scene_max.y = std::max(scene_max.y, world_max.y);
+                scene_max.z = std::max(scene_max.z, world_max.z);
+            }
+        }
+        // A skinned caster contributes its *posed* bounds, so a character whose
+        // arm swings outside the static geometry still fits the shadow box.
+        for (const render::SkinnedInstance& instance : frame_skinned_instances_) {
             const Vec3& world_min = instance.world_min;
             const Vec3& world_max = instance.world_max;
             if (!bounds_valid) {
@@ -820,6 +1223,46 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
                 last_shadow_casters_ += batch.instance_count;
             }
 
+            // Skinned casters, with the skinned depth shader so a character casts
+            // the shadow of its pose. The instance stream is the skinned one, built
+            // here for the shadow pass and reused by the main skinned pass below;
+            // building it once means the shadow pass and the lit pass agree on the
+            // model matrix without a second upload.
+            if (!frame_skinned_instances_.empty()) {
+                build_skinned_instance_stream();
+                ensure_skinned_instance_capacity(device, static_cast<u32>(frame_skinned_instance_data_.size()));
+                if (skinned_instance_buffer_ != nullptr) {
+                    skinned_instance_buffer_->update(
+                        std::span<const u8>(reinterpret_cast<const u8*>(frame_skinned_instance_data_.data()),
+                                            frame_skinned_instance_data_.size() * sizeof(Instance)));
+                    device.bind_shader(*skinned_shadow_shader_);
+                    skinned_shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
+                    for (usize i = 0; i < frame_skinned_instances_.size(); ++i) {
+                        const render::SkinnedInstance& instance = frame_skinned_instances_[i];
+                        auto gpu = acquire_skinned_mesh(device, *instance.mesh);
+                        if (!gpu) {
+                            continue;
+                        }
+                        const u32 joint_count =
+                            instance.palette != nullptr
+                                ? std::min<u32>(static_cast<u32>(instance.palette->size()), kMaxPaletteJoints)
+                                : 0;
+                        if (joint_count > 0) {
+                            skinned_shadow_shader_->set_mat4_array("u_palette", instance.palette->data(), joint_count);
+                        } else {
+                            const Mat4 identity = Mat4::identity();
+                            skinned_shadow_shader_->set_mat4_array("u_palette", &identity, 1);
+                        }
+                        device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+                        device.bind_instance_buffer(*skinned_instance_buffer_,
+                                                    static_cast<u32>(i) * static_cast<u32>(sizeof(Instance)));
+                        device.bind_index_buffer(*gpu.value()->index_buffer);
+                        device.draw_indexed_instanced(gpu.value()->index_count, 1);
+                        last_shadow_casters_ += 1;
+                    }
+                }
+            }
+
             // Restore whatever the caller had bound (the window, or an editor
             // panel's target) so the main pass draws where it was meant to.
             device.bind_render_target(previous_target);
@@ -833,60 +1276,26 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     device.set_blend_mode(rhi::BlendMode::None);
     device.set_depth_test(true);
 
+    // The frame's resolved lighting, shared by the static and skinned passes so a
+    // character is lit by exactly the same constants a prop is.
+    FrameLighting lighting;
+    lighting.direction = light_direction;
+    lighting.color = light_color;
+    lighting.intensity = light_intensity;
+    lighting.ambient = ambient;
+    lighting.light_view_projection = light_view_projection;
+    lighting.shadows_enabled = shadows_enabled;
+
     if (!instances.empty()) {
         device.bind_shader(*shader_);
         shader_->set_mat4("u_view_projection", view_projection);
-        shader_->set_int("u_texture", 0);
-        shader_->set_int("u_emissive_map", 2);
-        shader_->set_vec3("u_light_color", light_color);
-        shader_->set_float("u_light_intensity", light_intensity);
-        shader_->set_float("u_ambient", ambient);
-        shader_->set_vec3("u_light_direction", light_direction);
-        shader_->set_vec3("u_camera_position", camera_position);
-
-        // Shadow uniforms. When no shadow map exists (no directional light, or
-        // creation failed) the light-space matrix stays identity and the map is
-        // never sampled usefully, but the sampler still needs a bound texture to
-        // be a complete program, so bind the white texel.
-        shader_->set_int("u_shadow_map", 1);
-        shader_->set_mat4("u_light_space_matrix", light_view_projection);
-        shader_->set_float("u_shadow_bias", kShadowBias);
-        if (shadows_enabled && shadow_target_->depth_texture() != nullptr) {
-            device.bind_texture(1, *shadow_target_->depth_texture());
-        } else {
-            device.bind_texture(1, *default_texture_);
-        }
-
-        // Pack and upload the bounded light arrays. Only the first
-        // point_count / spot_count elements are read by the shader, whose loop
-        // is bounded by the count uniforms.
-        const u32 point_count = static_cast<u32>(point_lights.size());
-        for (u32 i = 0; i < point_count; ++i) {
-            const PointLightEntry& entry = point_lights[i];
-            point_light_data_[i] = Vec4{entry.position, entry.range};
-            point_color_data_[i] = Vec4{entry.color, entry.intensity};
-        }
-        shader_->set_int("u_point_light_count", static_cast<i32>(point_count));
-        shader_->set_vec4_array("u_point_light_position_range", point_light_data_.data(), point_count);
-        shader_->set_vec4_array("u_point_light_color_intensity", point_color_data_.data(), point_count);
-
-        const u32 spot_count = static_cast<u32>(spot_lights.size());
-        for (u32 i = 0; i < spot_count; ++i) {
-            const SpotLightEntry& entry = spot_lights[i];
-            // The position/direction arrays are uploaded as one 16-element
-            // block: [0, 8) positions + ranges, [8, 16) directions.
-            spot_light_data_[i] = Vec4{entry.position, entry.range};
-            spot_light_data_[i + kMaxSpotLights] = Vec4{entry.direction, 0.0f};
-            spot_color_data_[i] = Vec4{entry.color, entry.intensity};
-            spot_cone_data_[i] = Vec4{entry.cos_inner, entry.cos_outer, 0.0f, 0.0f};
-        }
-        shader_->set_int("u_spot_light_count", static_cast<i32>(spot_count));
-        // The direction half of the block must be uploaded even when only the
-        // first few entries are used, so always send the full 2*max block; the
-        // shader reads it only for i < spot_count.
-        shader_->set_vec4_array("u_spot_light_data", spot_light_data_.data(), spot_count == 0 ? 0 : kMaxSpotLights * 2);
-        shader_->set_vec4_array("u_spot_light_color_intensity", spot_color_data_.data(), spot_count);
-        shader_->set_vec4_array("u_spot_light_cone", spot_cone_data_.data(), spot_count);
+        set_lighting_uniforms(*shader_, camera_position, lighting);
+        // The shadow map's texture binding is device state, not a uniform, so it
+        // is bound here beside the sampler uniform the helper set.
+        device.bind_texture(1,
+                            (shadows_enabled && shadow_target_ != nullptr && shadow_target_->depth_texture() != nullptr)
+                                ? *shadow_target_->depth_texture()
+                                : *default_texture_);
     }
 
     // --- 5. Draw ------------------------------------------------------------
@@ -920,6 +1329,21 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
         }
     }
 
+    // --- 5b. Skinned pass ---------------------------------------------------
+    // The same frame, drawn for the skinned instances: a separate shader, a
+    // separate vertex layout, and the palette uploaded per instance. Drawn after
+    // the static pass so the two share the frame's lighting and shadow map, which
+    // were set up above. Nothing here touches the static batching, so a scene
+    // with no skinned character pays only the extract and the empty-array check.
+    last_skinned_draw_calls_ = 0;
+    if (!frame_skinned_instances_.empty()) {
+        const Result<usize> skinned_drawn =
+            draw_skinned(device, view_projection, camera_position, frame_skinned_instances_, lighting);
+        if (!skinned_drawn) {
+            FE_LOG_ERROR("renderer3d: skinned pass failed: %s", skinned_drawn.error().message().c_str());
+        }
+    }
+
     // --- 6. Sweep dead mesh buffers ----------------------------------------
     // A buffer is stale when its mesh is no longer referenced by any renderer in
     // the scene. Liveness is checked against every mesh seen this frame, culled
@@ -934,6 +1358,12 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     live_meshes_.reserve(meshes_seen.size() * 2);
     live_meshes_.insert(meshes_seen.begin(), meshes_seen.end());
     std::erase_if(buffers_, [&](const auto& entry) { return !live_meshes_.contains(entry.first); });
+
+    // The same sweep for the skinned buffers, against the skinned meshes seen.
+    live_skinned_meshes_.clear();
+    live_skinned_meshes_.reserve(frame_skinned_meshes_seen_.size() * 2);
+    live_skinned_meshes_.insert(frame_skinned_meshes_seen_.begin(), frame_skinned_meshes_seen_.end());
+    std::erase_if(skinned_buffers_, [&](const auto& entry) { return !live_skinned_meshes_.contains(entry.first); });
 
     return static_cast<usize>(drawn);
 }

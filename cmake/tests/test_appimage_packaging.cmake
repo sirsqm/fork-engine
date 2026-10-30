@@ -166,4 +166,18 @@ if(NOT _ci MATCHES "package_appimage.cmake")
     "not be caught until a release was cut.")
 endif()
 
+# The Linux build jobs must not track `ubuntu-latest`. The AppImage is built in
+# this job and checked in a container pinned to `ubuntu:24.04`; the artifact's
+# glibc floor is the build host's, so building on a newer runner makes the pinned
+# container -- and every machine older than the runner -- unable to run it. That
+# is exactly the failure this smoke test exists to catch, and it fired for real
+# when the runner image rotated to 26.04. Assert the pin so the rotation is a
+# failed check, not a broken download.
+if(_ci MATCHES "os: ubuntu-latest")
+  message(FATAL_ERROR
+    "a CI build job runs on ubuntu-latest; the AppImage's glibc floor would follow "
+    "the runner image and outrun the pinned ubuntu:24.04 smoke container. Pin the "
+    "Linux build jobs to ubuntu-24.04.")
+endif()
+
 message(STATUS "appimage: the artifact carries the game and the runtime, glibc stays on the host, and CI builds it")

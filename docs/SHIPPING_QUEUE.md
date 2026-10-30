@@ -413,8 +413,11 @@ the *bundled* runtime was used. See
 [ADR-0103](adr/0103-linux-appimage.md).
 
 Remaining: the artifact's glibc floor is the build host's, so a distribution older
-than the runner still cannot run it; building against an older glibc needs a
-container build image, which is separate work.
+than the host still cannot run it; building against an older glibc needs a
+container build image, which is separate work. The build host is pinned
+(`ubuntu-24.04` in CI and the release workflow) so the floor no longer follows a
+runner-image rotation, and both the container smoke test and the workflow guards
+fail if it does.
 
 ### `windows-zip`
 
@@ -558,11 +561,9 @@ with a test covering load and reload.
 ## Backlog — not yet ordered
 
 - Additional graphics backends (Vulkan, Metal, WebGPU) as targets demand.
-- Skeletal animation/skinning, continued (the one open M6 item), needed for
-  animated 3D. The runtime is landed ([ADR-0104](adr/0104-skeletal-animation.md));
-  the remaining work is the asset and draw half: `GltfLoader` reads `skins`,
-  `JOINTS_0`/`WEIGHTS_0`, and `animations`, and `Renderer3D` binds the skinned
-  vertex layout and the palette uniform array.
+- Skeletal animation, continued: blend trees, additive layers, and skeletal
+  state machines, building on the landed runtime, glTF import, and skinned draw
+  ([ADR-0104](adr/0104-skeletal-animation.md)).
 - More example games beyond the breakout slice, once the first one ships.
 
 ## Ongoing

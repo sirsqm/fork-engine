@@ -248,6 +248,7 @@ add_executable(fork_graphics_tests
     src/graphics_main.cpp
     src/test_renderer2d.cpp
     src/test_renderer3d.cpp
+    src/test_renderer3d_skinned.cpp
     src/test_application_profiler.cpp
 )
 target_link_libraries(fork_graphics_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)

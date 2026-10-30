@@ -51,6 +51,17 @@ set(_checks
     "checksums the published assets|sha256sum"
 )
 
+# The Linux packaging job must not track `ubuntu-latest`. The AppImage's glibc
+# floor is the build host's, and this is the job that publishes the one file a
+# Linux player downloads; a runner-image rotation would silently raise that floor
+# until older machines -- and the pinned `ubuntu:24.04` smoke container -- can no
+# longer run the artifact. The pin is the whole defence, so assert it here.
+if(_workflow MATCHES "os: ubuntu-latest")
+  message(FATAL_ERROR
+    "the release workflow builds on ubuntu-latest; the AppImage's glibc floor "
+    "would follow the runner image. Pin the Linux job to ubuntu-24.04.")
+endif()
+
 foreach(_check IN LISTS _checks)
   string(REPLACE "|" ";" _parts "${_check}")
   list(GET _parts 0 _label)

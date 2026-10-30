@@ -64,8 +64,8 @@ SkinnedVertex3D skin_vertex(const SkinnedVertex3D& vertex, const std::vector<Mat
     // a shorter rig than it was authored for keeps the influences it can resolve.
     f32 total = 0.0f;
     for (usize influence = 0; influence < 4; ++influence) {
-        const u16 joint = vertex.joints[influence];
-        if (static_cast<usize>(joint) < palette.size()) {
+        const usize joint = joint_index(vertex.joints[influence]);
+        if (joint < palette.size()) {
             total += vertex.weights[influence];
         }
     }
@@ -83,8 +83,8 @@ SkinnedVertex3D skin_vertex(const SkinnedVertex3D& vertex, const std::vector<Mat
     Vec3 position{};
     Vec3 normal{};
     for (usize influence = 0; influence < 4; ++influence) {
-        const u16 joint = vertex.joints[influence];
-        if (static_cast<usize>(joint) >= palette.size()) {
+        const usize joint = joint_index(vertex.joints[influence]);
+        if (joint >= palette.size()) {
             continue;
         }
         const f32 weight = vertex.weights[influence] * inverse_total;

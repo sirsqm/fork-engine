@@ -22,12 +22,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The Linux jobs are pinned to 24.04, not `ubuntu-latest`. The AppImage
+          # built here is checked in a container pinned to `ubuntu:24.04`, and the
+          # artifact's glibc floor is the build host's (docs/SHIPPING_QUEUE.md,
+          # `linux-appimage`): building on a newer runner raises the floor until the
+          # pinned container -- and every machine older than the runner -- can no
+          # longer run the download. Pinning the host keeps the floor at 24.04's and
+          # keeps a runner-image rotation from silently raising it.
           - name: Linux / GCC / Debug
-            os: ubuntu-latest
+            os: ubuntu-24.04
             compiler: gcc
             build_type: Debug
           - name: Linux / GCC / Release
-            os: ubuntu-latest
+            os: ubuntu-24.04
             compiler: gcc
             build_type: Release
           - name: macOS / Clang / Debug

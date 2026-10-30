@@ -35,15 +35,39 @@ namespace fe {
 // the skinner normalises them, because a hand-authored or hand-edited asset can
 // carry weights that do not, and a vertex whose weights sum to 0.5 would
 // otherwise shrink towards the origin.
+//
+// The joint indices are `f32`, not `u16`, and that is forced by the GPU side:
+// `VertexLayout` has no integer kind, so the attribute the shader reads is a
+// float and the shader converts it (`ivec4(a_joints + 0.5)`). Storing `u16` here
+// would make this struct 56 bytes while the layout's stride is 64, and the
+// renderer sizes the vertex buffer from `sizeof(SkinnedVertex3D)` -- so every
+// mesh would be uploaded 8 bytes per vertex past a buffer sized for fewer
+// vertices, and the draw would read out of bounds. The two must agree, which the
+// static_assert below pins.
 struct SkinnedVertex3D {
     Vec3 position;
     Vec3 normal;
     Vec2 uv;
     // The four joints influencing this vertex, as indices into the skeleton.
-    std::array<u16, 4> joints{0, 0, 0, 0};
+    // Exact integers, held as floats to match the vertex layout.
+    std::array<f32, 4> joints{0.0f, 0.0f, 0.0f, 0.0f};
     // The four weights, one per entry of `joints`.
     std::array<f32, 4> weights{0.0f, 0.0f, 0.0f, 0.0f};
 };
+
+// The interleaved layout's stride, restated so a change to either the struct or
+// the layout fails to compile here rather than at draw time. The matching
+// `VertexLayout::skinned_position_normal_uv()` declares attributes at offsets
+// 0, 12, 24, 32, and 48, which only line up when this is 64.
+static_assert(sizeof(SkinnedVertex3D) == 64, "SkinnedVertex3D must match VertexLayout::skinned_position_normal_uv()");
+
+// A joint index as an array subscript. The field is a float so the vertex layout
+// can describe it (see above); the value is an exact integer, and this is the one
+// place the conversion happens on the CPU side, so a negative or absurd value
+// reads as an index no palette has rather than as a wild subscript.
+[[nodiscard]] inline usize joint_index(f32 joint) noexcept {
+    return joint < 0.0f ? static_cast<usize>(-1) : static_cast<usize>(joint);
+}
 
 // The same vertex with the skinning data dropped, for a caller that wants to
 // compare a skinned mesh against its static form (a test proving a bind-pose

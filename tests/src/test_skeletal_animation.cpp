@@ -30,11 +30,13 @@
 #include "fe/reflect/Registry.h"
 #include "fe/reflect/TypeDesc.h"
 #include "fe/render/RenderExtract.h"
+#include "fe/rhi/Types.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/systems/FrameContext.h"
 
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -80,12 +82,12 @@ constexpr f32 kTolerance = 1e-4f;
 }
 
 // A one-vertex mesh bound entirely to `joint`.
-[[nodiscard]] std::shared_ptr<SkinnedMesh> make_single_vertex_mesh(std::shared_ptr<Skeleton> skeleton, u16 joint) {
+[[nodiscard]] std::shared_ptr<SkinnedMesh> make_single_vertex_mesh(std::shared_ptr<Skeleton> skeleton, f32 joint) {
     SkinnedVertex3D vertex;
     vertex.position = Vec3{0.0f, 0.0f, 0.0f};
     vertex.normal = Vec3{0.0f, 1.0f, 0.0f};
     vertex.uv = Vec2{0.0f, 0.0f};
-    vertex.joints = {joint, 0, 0, 0};
+    vertex.joints = {joint, 0.0f, 0.0f, 0.0f};
     vertex.weights = {1.0f, 0.0f, 0.0f, 0.0f};
     return std::make_shared<SkinnedMesh>("mesh:dot", std::vector<SkinnedVertex3D>{vertex}, std::vector<u32>{0},
                                          std::move(skeleton));
@@ -347,6 +349,25 @@ TEST_CASE("blending two poses lerps translations and slerps rotations") {
 // Skinning
 // ---------------------------------------------------------------------------
 
+// The vertex buffer is sized from `sizeof(SkinnedVertex3D)` and the attributes
+// are described by `VertexLayout::skinned_position_normal_uv()`. If the two
+// disagree on the stride the upload overruns the buffer the device allocated and
+// the draw reads out of bounds -- a GL_INVALID_VALUE and a black frame, not a
+// compile error. They agreed when this test was written and must keep agreeing.
+TEST_CASE("the skinned vertex struct matches its GPU layout") {
+    const rhi::VertexLayout layout = rhi::VertexLayout::skinned_position_normal_uv();
+    CHECK(sizeof(SkinnedVertex3D) == layout.stride);
+
+    // Each attribute must land on the member it names: position, normal, uv, the
+    // four joints, the four weights.
+    REQUIRE(layout.attributes.size() == 5);
+    CHECK(layout.attributes[0].offset == offsetof(SkinnedVertex3D, position));
+    CHECK(layout.attributes[1].offset == offsetof(SkinnedVertex3D, normal));
+    CHECK(layout.attributes[2].offset == offsetof(SkinnedVertex3D, uv));
+    CHECK(layout.attributes[3].offset == offsetof(SkinnedVertex3D, joints));
+    CHECK(layout.attributes[4].offset == offsetof(SkinnedVertex3D, weights));
+}
+
 TEST_CASE("skinning by the bind-pose palette leaves every vertex where it was") {
     auto skeleton = make_chain_skeleton();
     auto mesh = make_single_vertex_mesh(skeleton, 0);
@@ -370,7 +391,7 @@ TEST_CASE("a joint rotation moves the vertices weighted to it") {
     SkinnedVertex3D vertex;
     vertex.position = Vec3{0.0f, 2.0f, 0.0f};
     vertex.normal = Vec3{0.0f, 1.0f, 0.0f};
-    vertex.joints = {2, 0, 0, 0};
+    vertex.joints = {2.0f, 0.0f, 0.0f, 0.0f};
     vertex.weights = {1.0f, 0.0f, 0.0f, 0.0f};
     SkinnedMesh mesh("mesh:tip", std::vector<SkinnedVertex3D>{vertex}, std::vector<u32>{0}, skeleton);
 
@@ -390,7 +411,7 @@ TEST_CASE("weights that do not sum to one are normalised") {
 
     SkinnedVertex3D vertex;
     vertex.position = Vec3{1.0f, 0.0f, 0.0f};
-    vertex.joints = {0, 0, 0, 0};
+    vertex.joints = {0.0f, 0.0f, 0.0f, 0.0f};
     // Sums to 0.5. Without normalisation the vertex would shrink towards the
     // origin by half.
     vertex.weights = {0.25f, 0.25f, 0.0f, 0.0f};
@@ -409,7 +430,7 @@ TEST_CASE("a vertex with no usable influence stays at its bind position") {
 
     SkinnedVertex3D vertex;
     vertex.position = Vec3{3.0f, 4.0f, 5.0f};
-    vertex.joints = {99, 99, 99, 99}; // Past the end of any palette here.
+    vertex.joints = {99.0f, 99.0f, 99.0f, 99.0f}; // Past the end of any palette here.
     vertex.weights = {0.5f, 0.5f, 0.0f, 0.0f};
 
     std::vector<Mat4> palette; // Empty: nothing resolves.
@@ -422,7 +443,7 @@ TEST_CASE("skinned bounds grow when a pose reaches outside the bind box") {
 
     SkinnedVertex3D vertex;
     vertex.position = Vec3{0.0f, 2.0f, 0.0f};
-    vertex.joints = {2, 0, 0, 0};
+    vertex.joints = {2.0f, 0.0f, 0.0f, 0.0f};
     vertex.weights = {1.0f, 0.0f, 0.0f, 0.0f};
     SkinnedMesh mesh("mesh:arm", std::vector<SkinnedVertex3D>{vertex}, std::vector<u32>{0}, skeleton);
 
@@ -454,8 +475,8 @@ TEST_CASE("skinned bounds grow when a pose reaches outside the bind box") {
 TEST_CASE("an animator with no skeleton or clip reports zero durations") {
     Animator animator;
     CHECK(animator.clip_duration() == doctest::Approx(0.0f));
-    CHECK(animator.skeleton_resource() == nullptr);
-    CHECK(animator.clip_resource() == nullptr);
+    CHECK((animator.skeleton_resource() == nullptr));
+    CHECK((animator.clip_resource() == nullptr));
     CHECK_FALSE(animator.has_palette());
 }
 
@@ -478,7 +499,7 @@ TEST_CASE("play restarts the clip and clears any fade in flight") {
 
     animator.play(clip, LoopMode::Loop);
     CHECK(animator.time == doctest::Approx(0.0f));
-    CHECK(animator.blend_clip == nullptr);
+    CHECK((animator.blend_clip == nullptr));
     CHECK(animator.blend_weight == doctest::Approx(0.0f));
     CHECK(animator.clip_duration() == doctest::Approx(2.0f));
 }
@@ -507,8 +528,8 @@ TEST_CASE("a cross-fade ramps its weight to zero and retires the outgoing clip")
     animator.time = 0.5f;
 
     animator.cross_fade_to(walk, 1.0f);
-    CHECK(animator.blend_clip == idle);
-    CHECK(animator.clip == walk);
+    CHECK((animator.blend_clip == idle));
+    CHECK((animator.clip == walk));
     CHECK(animator.blend_weight == doctest::Approx(1.0f));
     CHECK(animator.blend_time() == doctest::Approx(0.5f));
     CHECK(animator.blend_remaining() == doctest::Approx(1.0f));
@@ -519,7 +540,7 @@ TEST_CASE("a cross-fade ramps its weight to zero and retires the outgoing clip")
 
     animator.advance_blend(0.5f);
     // The fade is over: the outgoing clip is released rather than held at zero.
-    CHECK(animator.blend_clip == nullptr);
+    CHECK((animator.blend_clip == nullptr));
     CHECK(animator.blend_weight == doctest::Approx(0.0f));
 }
 
@@ -536,7 +557,7 @@ TEST_CASE("a zero-duration cross-fade is a cut") {
     Animator animator;
     animator.play(clip);
     animator.cross_fade_to(clip, 0.0f);
-    CHECK(animator.blend_clip == nullptr);
+    CHECK((animator.blend_clip == nullptr));
     CHECK(animator.blend_weight == doctest::Approx(0.0f));
 }
 
@@ -559,7 +580,7 @@ TEST_CASE("the system advances an animator and publishes a palette") {
     Scene scene;
     Node* node_ptr = scene.create_node("character");
     auto* animator = node_ptr->add_component<Animator>();
-    REQUIRE(animator != nullptr);
+    REQUIRE((animator != nullptr));
     animator->skeleton = skeleton;
     animator->play(clip);
 
@@ -702,7 +723,7 @@ TEST_CASE("extraction collects a skinned instance and uses the posed bounds") {
     SkinnedVertex3D vertex;
     vertex.position = Vec3{0.0f, 2.0f, 0.0f};
     vertex.normal = Vec3{0.0f, 1.0f, 0.0f};
-    vertex.joints = {2, 0, 0, 0};
+    vertex.joints = {2.0f, 0.0f, 0.0f, 0.0f};
     vertex.weights = {1.0f, 0.0f, 0.0f, 0.0f};
     auto mesh =
         std::make_shared<SkinnedMesh>("mesh:arm", std::vector<SkinnedVertex3D>{vertex}, std::vector<u32>{0}, skeleton);
@@ -718,7 +739,7 @@ TEST_CASE("extraction collects a skinned instance and uses the posed bounds") {
     std::vector<render::SkinnedInstance> instances;
     render::extract_skinned_meshes(scene, instances);
     REQUIRE(instances.size() == 1);
-    CHECK(instances[0].palette == nullptr);
+    CHECK((instances[0].palette == nullptr));
     CHECK(nearly_equal(instances[0].world_min, Vec3{0.0f, 2.0f, 0.0f}));
     CHECK(nearly_equal(instances[0].world_max, Vec3{0.0f, 2.0f, 0.0f}));
 
@@ -737,7 +758,7 @@ TEST_CASE("extraction collects a skinned instance and uses the posed bounds") {
     instances.clear();
     render::extract_skinned_meshes(scene, instances);
     REQUIRE(instances.size() == 1);
-    REQUIRE(instances[0].palette != nullptr);
+    REQUIRE((instances[0].palette != nullptr));
     CHECK(instances[0].palette->size() == skeleton->joint_count());
     // The vertex was at (0,2,0) in the bind pose and the pose put it at (0,1,1),
     // so the extracted world box is that point rather than the bind-pose one.
@@ -781,11 +802,11 @@ TEST_CASE("the skeletal animation components are registered for reflection") {
     reflect::register_skeletal_animation_types();
 
     const reflect::TypeDesc* animator = reflect::Registry::instance().find(Animator::kTypeName);
-    REQUIRE(animator != nullptr);
+    REQUIRE((animator != nullptr));
     CHECK(animator->properties.size() >= 8);
 
     const reflect::TypeDesc* renderer = reflect::Registry::instance().find(SkinnedMeshRenderer3D::kTypeName);
-    REQUIRE(renderer != nullptr);
+    REQUIRE((renderer != nullptr));
     CHECK_FALSE(renderer->properties.empty());
 }
 
@@ -793,7 +814,7 @@ TEST_CASE("a reflected animator round-trips its authored state") {
     reflect::register_skeletal_animation_types();
 
     const reflect::TypeDesc* desc = reflect::Registry::instance().find(Animator::kTypeName);
-    REQUIRE(desc != nullptr);
+    REQUIRE((desc != nullptr));
 
     Animator animator;
     animator.speed = 2.5f;
@@ -802,7 +823,7 @@ TEST_CASE("a reflected animator round-trips its authored state") {
     animator.apply_root_motion = true;
 
     const reflect::Property* speed = find_property(*desc, "speed");
-    REQUIRE(speed != nullptr);
+    REQUIRE((speed != nullptr));
     CHECK(std::get<f64>(speed->getter(&animator)) == doctest::Approx(2.5f));
 
     // The setter writes through to the component.
@@ -811,7 +832,7 @@ TEST_CASE("a reflected animator round-trips its authored state") {
 
     // An out-of-range loop value is clamped, not written through.
     const reflect::Property* loop = find_property(*desc, "loop");
-    REQUIRE(loop != nullptr);
+    REQUIRE((loop != nullptr));
     REQUIRE(loop->setter(&animator, i64{99}));
     CHECK(animator.loop == LoopMode::PingPong);
 }

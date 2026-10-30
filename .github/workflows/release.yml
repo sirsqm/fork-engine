@@ -53,7 +53,12 @@ jobs:
       matrix:
         include:
           - name: Linux / x86_64
-            os: ubuntu-latest
+            # Pinned, not `ubuntu-latest`: the AppImage's glibc floor is the build
+            # host's, and this job publishes the one file a Linux player downloads.
+            # Building on a newer runner raises the floor above what older machines
+            # -- and the `ubuntu:24.04` smoke container -- can run. See the note in
+            # .github/workflows/ci.yml and docs/SHIPPING_QUEUE.md (`linux-appimage`).
+            os: ubuntu-24.04
             platform: linux
             arch: x86_64
             # Xvfb plus Mesa's software driver gives the packaged game the GL 3.3
