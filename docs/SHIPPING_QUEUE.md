@@ -393,6 +393,29 @@ engine's shared libraries.
 **Done when** the AppImage builds reproducibly in CI and launches the game on a
 clean container.
 
+Landed as `packaging/package_appimage.cmake`: one script assembles an AppDir from
+a build tree and runs `appimagetool` over it, producing
+`fork-engine-<version>-<arch>.AppImage`. The AppDir carries the game, its content,
+and the C++ runtime, and deliberately *not* glibc or the graphics driver — the
+AppImage runtime runs the host's loader, so a bundled libc cannot work, and the
+game must use the player's driver. Each bundled library is written by resolving
+its symlink, because copying `libstdc++.so.6` as a symlink leaves a dangling link
+and the loader silently falls back to the host's copy; the script asserts every
+bundled file is a real, non-empty file so that mistake cannot pass. The build is
+reproducible (`SOURCE_DATE_EPOCH` is pinned), which is what makes a published
+checksum meaningful, and `appimagetool` is fetched and SHA-256-checked rather than
+vendored. It runs from the Linux CI job as well as the release workflow, and the
+release publishes it beside the archives. The acceptance test is
+`tests/appimage/run_appimage_container_smoke.sh`, which runs the artifact in a
+container with none of the engine's libraries: `--help` first, then a headless
+play under a virtual display and Mesa, checking the loader's own report to confirm
+the *bundled* runtime was used. See
+[ADR-0103](adr/0103-linux-appimage.md).
+
+Remaining: the artifact's glibc floor is the build host's, so a distribution older
+than the runner still cannot run it; building against an older glibc needs a
+container build image, which is separate work.
+
 ### `windows-zip`
 
 Produce a Windows artifact a player can unzip and run.

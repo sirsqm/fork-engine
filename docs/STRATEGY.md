@@ -200,8 +200,11 @@ demonstrate costs more than it buys.
   app packaging. **Open** — the queue's Phase 2.
 - **S6 — Desktop packaging.** Per-OS runtimes, cross-compilation, and app bundles
   (`.app`, MSI, AppImage). **Partly landed** — install rules are done
-  ([ADR-0084](adr/0084-install-rules.md)); per-OS artifacts are the queue's
-  Phase 3.
+  ([ADR-0084](adr/0084-install-rules.md)) and per-OS release archives with an
+  installed SDK ship from a tag ([ADR-0102](adr/0102-downloadable-release-builds.md));
+  the Linux single-file download is an AppImage
+  ([ADR-0103](adr/0103-linux-appimage.md)). The `.app` bundle and the Windows
+  installer are still the queue's Phase 3.
 - **S7 — Backends as needed.** Vulkan/Metal/WebGPU, chosen by what S5 and desktop
   parity actually require.
 - **S8 — Consoles.** Architecture-ready; implementation only when SDK access

@@ -158,6 +158,51 @@ jobs:
           ls -la /tmp/fork_dist
           test -f /tmp/fork_dist/SHA256SUMS
 
+      - name: Package an AppImage and run it (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          # The single-file Linux download (ADR-0103). It is built only on a
+          # release tag, so without this step a break in the packaging script --
+          # a missing content directory, a library bundled as a dangling symlink,
+          # a glibc copy -- would not be caught until a release was cut. The tool
+          # is fetched and checksummed, and the script runs the artifact it built.
+          tool=$(packaging/fetch_appimagetool.sh /tmp/appimagetool)
+          cmake \
+            -DFE_BUILD_DIR=build \
+            -DFE_OUT_DIR=/tmp/fork_appimage \
+            -DFE_ARCH=x86_64 \
+            -DFE_APPIMAGETOOL="$tool" \
+            -DFE_SMOKE_GAME=ON \
+            -DFE_SMOKE_PREFIX="xvfb-run;-a;-s;-screen 0 640x480x24" \
+            -P packaging/package_appimage.cmake
+          ls -la /tmp/fork_appimage
+          # The AppImage must launch on a machine that has never seen the engine,
+          # which the build machine is not: the container has no engine libraries
+          # and no C++ runtime, so a bundle that silently does nothing fails here.
+          tests/appimage/run_appimage_container_smoke.sh \
+            /tmp/fork_appimage/fork-engine-*-x86_64.AppImage
+
+      - name: Check the AppImage is reproducible (Linux smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          # A published checksum is only meaningful if the bytes are
+          # deterministic (ADR-0103). Packaging the same build tree twice and
+          # comparing the digests is what proves SOURCE_DATE_EPOCH is actually
+          # pinning everything the squashfs and the runtime would otherwise
+          # stamp with the wall clock.
+          tool=$(packaging/fetch_appimagetool.sh /tmp/appimagetool)
+          cmake \
+            -DFE_BUILD_DIR=build \
+            -DFE_OUT_DIR=/tmp/fork_appimage_repro \
+            -DFE_ARCH=x86_64 \
+            -DFE_APPIMAGETOOL="$tool" \
+            -DFE_SMOKE=OFF \
+            -P packaging/package_appimage.cmake
+          a=$(sha256sum /tmp/fork_appimage/fork-engine-*-x86_64.AppImage | cut -d' ' -f1)
+          b=$(sha256sum /tmp/fork_appimage_repro/fork-engine-*-x86_64.AppImage | cut -d' ' -f1)
+          echo "first=$a second=$b"
+          test "$a" = "$b"
+
       - name: Load a gameplay module in the editor (Linux smoke test)
         if: runner.os == 'Linux'
         run: |

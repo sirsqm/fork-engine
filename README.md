@@ -156,6 +156,31 @@ tools/            small development scripts
 docs/             the architecture and plan documents, and the ADRs
 ```
 
+## Download
+
+Prebuilt artifacts are attached to the [releases](https://github.com/sirsqm/fork-engine/releases).
+Nothing here needs a compiler.
+
+**Linux** — one file, `fork-engine-<version>-x86_64.AppImage`. Make it executable
+and run it; there is no unpack step and no library to install:
+
+```bash
+chmod +x fork-engine-0.1.0-x86_64.AppImage
+./fork-engine-0.1.0-x86_64.AppImage
+```
+
+It carries the C++ runtime with it, so a distribution older than the one that
+built it still runs. It does *not* carry glibc or a graphics driver: those come
+from your system, because the AppImage runtime uses your loader and the game must
+use your GPU's driver. On a machine with no display it runs headless with
+`--headless 300`, and it accepts the same flags as the sandbox.
+
+**Other platforms** — `fork-engine-<version>-<platform>-<arch>-game.tar.gz` (or
+`.zip`) is a directory holding the game, a launcher, and the example's content;
+unpack it and run the launcher from inside the directory. The matching `-sdk`
+archive is the installed engine for building against, and `SHA256SUMS` covers
+every published file.
+
 ## Building and testing
 
 Requirements:

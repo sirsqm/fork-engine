@@ -141,14 +141,34 @@ jobs:
             -DFE_SMOKE_PREFIX="${{ matrix.smoke_prefix }}" \
             -P packaging/package_release.cmake
 
+      # The single-file Linux download (ADR-0103). appimagetool is fetched and
+      # checksummed rather than vendored (packaging/fetch_appimagetool.sh), and
+      # the script runs the AppImage it built, so a packaging break fails here
+      # rather than at a downloader. Only Linux has an AppImage. It is written
+      # into dist/ *before* the upload, so it travels with the other artifacts.
+      - name: Package an AppImage (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          tool=$(packaging/fetch_appimagetool.sh /tmp/appimagetool)
+          cmake \
+            -DFE_BUILD_DIR=build \
+            -DFE_OUT_DIR=dist \
+            -DFE_ARCH=${{ matrix.arch }} \
+            -DFE_CONFIG=Release \
+            -DFE_APPIMAGETOOL="$tool" \
+            -DFE_SMOKE_GAME=${{ matrix.smoke_game }} \
+            -DFE_SMOKE_PREFIX="${{ matrix.smoke_prefix }}" \
+            -P packaging/package_appimage.cmake
+
       - name: Upload the packaged artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/
           # The staging directories are removed by the script, so this is the two
-          # archives and the checksum file; the if-no-files-found default would
-          # pass a job that silently produced nothing.
+          # archives, the AppImage, and the checksum file; the if-no-files-found
+          # default would pass a job that silently produced nothing.
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
@@ -182,7 +202,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.AppImage' \) -exec cp {} release/ \;
           cd release
           ls -la
           sha256sum * > SHA256SUMS

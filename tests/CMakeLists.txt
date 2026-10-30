@@ -178,6 +178,24 @@ add_test(
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_sdk_consumable.cmake
 )
 
+# The Linux AppImage is built only on a release tag and in one CI job, so the
+# desktop suite cannot observe it by building. Like the other workflow guards it
+# is checked by reading the script and asserting the decisions it has to make:
+# the content it stages, the libraries it bundles (and the ones it must not), the
+# reproducibility pin, and the wiring in the release and CI workflows.
+# (docs/SHIPPING_QUEUE.md, `linux-appimage`).
+add_test(
+  NAME appimage_packaging
+  COMMAND
+    ${CMAKE_COMMAND}
+    -DAPPIMAGE_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/package_appimage.cmake
+    -DFETCH_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/fetch_appimagetool.sh
+    -DRELEASE_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/release.yml
+    -DCI_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/ci.yml
+    -DICON=${CMAKE_SOURCE_DIR}/packaging/fork-engine.png -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_appimage_packaging.cmake
+)
+
 # ---------------------------------------------------------------------------
 # Editor tests.
 #
