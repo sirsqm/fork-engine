@@ -144,6 +144,7 @@ set(FE_ENGINE_SOURCES
     src/mesh/Mesh.cpp
     src/mesh/ObjLoader.cpp
     src/mesh/GltfLoader.cpp
+    src/mesh/GltfScene.cpp
     src/scene3d/Camera3D.cpp
     src/scene3d/Scene3DTypes.cpp
     src/debugdraw/DebugDraw.cpp

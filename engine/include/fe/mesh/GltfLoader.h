@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/anim/AnimationClip.h"
+#include "fe/anim/Skeleton.h"
+#include "fe/anim/SkinnedMesh.h"
 #include "fe/resources/Resource.h"
 #include "fe/resources/ResourceManager.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -53,6 +57,40 @@ public:
     [[nodiscard]] static Result<std::vector<std::shared_ptr<Resource>>> parse(std::string_view path,
                                                                               std::string_view bytes);
 
+    // Everything a glTF document carries, decoded: its meshes (static or
+    // skinned), its skins as `anim::Skeleton` resources, and its animations as
+    // `anim::AnimationClip` resources.
+    //
+    // Why one call rather than three loaders. glTF's `meshes`, `skins`, and
+    // `animations` are top-level arrays in one document, and a primitive's
+    // `skin` names an entry of `skins` by index — a relationship that only
+    // exists inside the parsed document. Splitting them across three loaders
+    // would mean three parses of the same JSON and a way to re-join them by
+    // index afterwards, which is a second, weaker source of truth. One parse
+    // produces every resource and wires them together while the indices are
+    // still meaningful.
+    //
+    // A skinned primitive yields an `anim::SkinnedMesh` (holding a shared
+    // `anim::Skeleton`) instead of a `Mesh`; a static primitive yields a `Mesh`.
+    // A clip's tracks carry joint *names* and are bound to the skin's skeleton
+    // here, so a clip is ready to sample the moment it is returned. A clip whose
+    // channel names a node that is not a joint of its skin binds zero tracks and
+    // is reported as a warning rather than dropped, because "the file names a
+    // node the skin does not contain" is a real asset defect a caller wants to
+    // see.
+    struct Scene {
+        std::vector<std::shared_ptr<Resource>> meshes;
+        std::vector<std::shared_ptr<anim::Skeleton>> skeletons;
+        std::vector<std::shared_ptr<anim::AnimationClip>> animations;
+    };
+
+    [[nodiscard]] static Result<Scene> parse_scene(std::string_view path, std::string_view bytes);
+
+    // Loads `path` through the resource source (a pack or the filesystem) and
+    // decodes everything it carries. The counterpart of `parse_scene` for a file
+    // on disk; `load()` and `load_all()` are the mesh-only convenience over it.
+    [[nodiscard]] Result<Scene> load_scene(std::string_view path);
+
     // The files a glTF names besides itself, as paths relative to the glTF's own
     // directory: its external buffers (`.bin`) and its image sources. Data URIs
     // and the GLB binary chunk are self-contained and contribute nothing. An
@@ -71,6 +109,14 @@ public:
     // decode, or a material whose maps never resolve.
     [[nodiscard]] static std::function<std::vector<std::string>(std::string_view, std::string_view)>
     dependency_reader();
+
+private:
+    // The shared body of `parse_scene` and `load_scene`: `read_uri` supplies the
+    // bytes for an external buffer URI, which differs between a direct parse (the
+    // filesystem) and a load (the mounted resource source, i.e. a pack).
+    [[nodiscard]] static Result<Scene>
+    parse_scene_impl(std::string_view path, std::string_view bytes,
+                     const std::function<Result<std::vector<u8>>(std::string_view)>& read_uri);
 };
 
 } // namespace fe

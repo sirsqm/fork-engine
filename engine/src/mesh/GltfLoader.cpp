@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/mesh/GltfLoader.h"
 
+#include "GltfInternal.h"
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/mesh/Mesh.h"
@@ -20,312 +21,24 @@
 namespace fe {
 namespace {
 
+using gltf_detail::AccessorView;
+using gltf_detail::decode_base64;
+using gltf_detail::is_gltf_extension;
+using gltf_detail::kGlbBinChunk;
+using gltf_detail::kGlbJsonChunk;
+using gltf_detail::kGlbMagic;
+using gltf_detail::kModeTriangles;
+using gltf_detail::parse_glb;
+using gltf_detail::read_accessor_floats;
+using gltf_detail::read_accessor_indices;
+using gltf_detail::read_buffer_uri;
+using gltf_detail::read_u32_le;
+using gltf_detail::read_vec3;
+using gltf_detail::read_vec4;
+using gltf_detail::resolve_accessor;
+using gltf_detail::texture_key_from_slot;
 using json = nlohmann::json;
 
-constexpr u32 kGlbMagic = 0x46546C67u;     // "glTF"
-constexpr u32 kGlbJsonChunk = 0x4E4F534Au; // "JSON"
-constexpr u32 kGlbBinChunk = 0x004E4942u;  // "BIN\0"
-
-constexpr u32 kComponentI8 = 5120;
-constexpr u32 kComponentU8 = 5121;
-constexpr u32 kComponentI16 = 5122;
-constexpr u32 kComponentU16 = 5123;
-constexpr u32 kComponentU32 = 5125;
-constexpr u32 kComponentF32 = 5126;
-
-constexpr u32 kModeTriangles = 4;
-
-// Reads a little-endian integer from raw bytes. glTF is little-endian on every
-// platform, so assembling from bytes rather than reinterpreting is correct
-// everywhere and avoids a host-endian assumption.
-[[nodiscard]] u16 read_u16_le(const u8* p) noexcept {
-    return static_cast<u16>(p[0]) | static_cast<u16>(static_cast<u16>(p[1]) << 8);
-}
-
-[[nodiscard]] u32 read_u32_le(const u8* p) noexcept {
-    return static_cast<u32>(p[0]) | (static_cast<u32>(p[1]) << 8) | (static_cast<u32>(p[2]) << 16) |
-           (static_cast<u32>(p[3]) << 24);
-}
-
-[[nodiscard]] bool is_gltf_extension(std::string_view extension) noexcept {
-    return extension == ".gltf" || extension == ".glb";
-}
-
-// The number of components in an accessor type, or 0 for a type this loader does
-// not decode. Only the vertex-attribute types are needed.
-[[nodiscard]] int type_components(std::string_view type) noexcept {
-    if (type == "SCALAR") {
-        return 1;
-    }
-    if (type == "VEC2") {
-        return 2;
-    }
-    if (type == "VEC3") {
-        return 3;
-    }
-    if (type == "VEC4") {
-        return 4;
-    }
-    return 0;
-}
-
-[[nodiscard]] usize component_size(u32 component_type) noexcept {
-    switch (component_type) {
-    case kComponentI8:
-    case kComponentU8:
-        return 1;
-    case kComponentI16:
-    case kComponentU16:
-        return 2;
-    case kComponentU32:
-    case kComponentF32:
-        return 4;
-    default:
-        return 0;
-    }
-}
-
-[[nodiscard]] bool read_component_as_f32(const u8* p, u32 component_type, bool normalized, f32& out) noexcept {
-    switch (component_type) {
-    case kComponentF32: {
-        const u32 bits = read_u32_le(p);
-        std::memcpy(&out, &bits, sizeof(f32));
-        return true;
-    }
-    case kComponentI8: {
-        const auto value = static_cast<i8>(p[0]);
-        out = normalized ? std::max(static_cast<f32>(value) / 127.0f, -1.0f) : static_cast<f32>(value);
-        return true;
-    }
-    case kComponentU8:
-        out = normalized ? static_cast<f32>(p[0]) / 255.0f : static_cast<f32>(p[0]);
-        return true;
-    case kComponentI16: {
-        const auto value = static_cast<i16>(read_u16_le(p));
-        out = normalized ? std::max(static_cast<f32>(value) / 32767.0f, -1.0f) : static_cast<f32>(value);
-        return true;
-    }
-    case kComponentU16:
-        out = normalized ? static_cast<f32>(read_u16_le(p)) / 65535.0f : static_cast<f32>(read_u16_le(p));
-        return true;
-    case kComponentU32:
-        out = static_cast<f32>(read_u32_le(p));
-        return true;
-    default:
-        return false;
-    }
-}
-
-[[nodiscard]] bool read_component_as_u32(const u8* p, u32 component_type, u32& out) noexcept {
-    switch (component_type) {
-    case kComponentU8:
-        out = p[0];
-        return true;
-    case kComponentU16:
-        out = read_u16_le(p);
-        return true;
-    case kComponentU32:
-        out = read_u32_le(p);
-        return true;
-    default:
-        return false;
-    }
-}
-
-// Decodes a standard base64 string (with or without padding) into bytes.
-[[nodiscard]] Result<std::vector<u8>> decode_base64(std::string_view text) {
-    auto value_of = [](char c) -> int {
-        if (c >= 'A' && c <= 'Z') {
-            return c - 'A';
-        }
-        if (c >= 'a' && c <= 'z') {
-            return c - 'a' + 26;
-        }
-        if (c >= '0' && c <= '9') {
-            return c - '0' + 52;
-        }
-        if (c == '+') {
-            return 62;
-        }
-        if (c == '/') {
-            return 63;
-        }
-        return -1;
-    };
-
-    std::vector<u8> out;
-    out.reserve(text.size() / 4 * 3);
-    u32 buffer = 0;
-    int bits = 0;
-    for (const char c : text) {
-        if (c == '=') {
-            break; // Padding: everything after is ignored.
-        }
-        if (c == '\n' || c == '\r' || c == ' ' || c == '\t') {
-            continue; // Tolerate wrapped base64.
-        }
-        const int value = value_of(c);
-        if (value < 0) {
-            return Error("glTF data URI: invalid base64 character");
-        }
-        buffer = (buffer << 6) | static_cast<u32>(value);
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out.push_back(static_cast<u8>((buffer >> bits) & 0xFFu));
-        }
-    }
-    return out;
-}
-
-// Reads the bytes a glTF buffer URI refers to. A data URI is decoded here; any
-// other URI is a relative path handed to `read_uri`.
-[[nodiscard]] Result<std::vector<u8>>
-read_buffer_uri(std::string_view uri, const std::function<Result<std::vector<u8>>(std::string_view)>& read_uri) {
-    constexpr std::string_view prefix = "data:";
-    if (uri.rfind(prefix, 0) == 0) {
-        const usize comma = uri.find(',');
-        if (comma == std::string_view::npos) {
-            return Error("glTF data URI has no comma");
-        }
-        const std::string_view meta = uri.substr(prefix.size(), comma - prefix.size());
-        const std::string_view payload = uri.substr(comma + 1);
-        if (meta.find(";base64") == std::string_view::npos) {
-            return Error("glTF data URI is not base64 (only base64 buffer data is supported)");
-        }
-        return decode_base64(payload);
-    }
-    return read_uri(uri);
-}
-
-// A buffer view and accessor resolved to a byte range inside a decoded buffer.
-struct AccessorView {
-    const std::vector<u8>* bytes = nullptr;
-    usize base = 0;   // bufferView.byteOffset + accessor.byteOffset
-    usize stride = 0; // Element stride in bytes.
-    usize count = 0;
-    usize element_size = 0;
-    u32 component_type = 0;
-    int components = 0;
-    bool normalized = false;
-};
-
-[[nodiscard]] Result<AccessorView> resolve_accessor(const json& doc, const std::vector<std::vector<u8>>& buffers,
-                                                    usize accessor_index) {
-    if (!doc.contains("accessors") || accessor_index >= doc.at("accessors").size()) {
-        return Error("glTF accessor index " + std::to_string(accessor_index) + " is out of range");
-    }
-    const json& accessor = doc.at("accessors").at(accessor_index);
-
-    if (!accessor.contains("bufferView")) {
-        return Error("glTF accessor has no bufferView (sparse and zero-filled accessors are not supported)");
-    }
-    const usize buffer_view_index = accessor.at("bufferView").get<usize>();
-    if (!doc.contains("bufferViews") || buffer_view_index >= doc.at("bufferViews").size()) {
-        return Error("glTF bufferView index " + std::to_string(buffer_view_index) + " is out of range");
-    }
-    const json& view = doc.at("bufferViews").at(buffer_view_index);
-
-    const usize buffer_index = view.at("buffer").get<usize>();
-    if (buffer_index >= buffers.size()) {
-        return Error("glTF bufferView refers to buffer " + std::to_string(buffer_index) + " which does not exist");
-    }
-
-    AccessorView resolved;
-    resolved.bytes = &buffers[buffer_index];
-    resolved.component_type = accessor.at("componentType").get<u32>();
-    resolved.components = type_components(accessor.at("type").get<std::string>());
-    resolved.normalized = accessor.value("normalized", false);
-    resolved.count = accessor.at("count").get<usize>();
-
-    if (resolved.components == 0) {
-        return Error("glTF accessor type is not a vertex-attribute type");
-    }
-    const usize component = component_size(resolved.component_type);
-    if (component == 0) {
-        return Error("glTF accessor has an unsupported componentType");
-    }
-
-    const usize view_offset = view.value("byteOffset", static_cast<usize>(0));
-    const usize view_length = view.at("byteLength").get<usize>();
-    const usize accessor_offset = accessor.value("byteOffset", static_cast<usize>(0));
-    resolved.element_size = component * static_cast<usize>(resolved.components);
-    resolved.stride = view.contains("byteStride") ? view.at("byteStride").get<usize>() : resolved.element_size;
-    if (resolved.stride == 0) {
-        resolved.stride = resolved.element_size;
-    }
-    resolved.base = view_offset + accessor_offset;
-
-    if (resolved.bytes->size() < view_offset + view_length) {
-        return Error("glTF bufferView reads past the end of its buffer");
-    }
-    // The last element must fit inside the view.
-    if (resolved.count > 0) {
-        const usize last = resolved.base + (resolved.count - 1) * resolved.stride + resolved.element_size;
-        if (last > view_offset + view_length || last > resolved.bytes->size()) {
-            return Error("glTF accessor reads past the end of its bufferView");
-        }
-    }
-    return resolved;
-}
-
-// Flattens an accessor into `count * components` floats.
-[[nodiscard]] Result<std::vector<f32>> read_accessor_floats(const json& doc,
-                                                            const std::vector<std::vector<u8>>& buffers,
-                                                            usize accessor_index, int expected_components) {
-    auto view = resolve_accessor(doc, buffers, accessor_index);
-    if (!view) {
-        return view.error();
-    }
-    const AccessorView& resolved = view.value();
-    if (resolved.components != expected_components) {
-        return Error("glTF accessor has " + std::to_string(resolved.components) + " components, expected " +
-                     std::to_string(expected_components));
-    }
-
-    std::vector<f32> out;
-    out.reserve(resolved.count * static_cast<usize>(expected_components));
-    for (usize i = 0; i < resolved.count; ++i) {
-        const u8* element = resolved.bytes->data() + resolved.base + i * resolved.stride;
-        for (int c = 0; c < expected_components; ++c) {
-            f32 value = 0.0f;
-            if (!read_component_as_f32(element + static_cast<usize>(c) * component_size(resolved.component_type),
-                                       resolved.component_type, resolved.normalized, value)) {
-                return Error("glTF accessor componentType cannot be decoded");
-            }
-            out.push_back(value);
-        }
-    }
-    return out;
-}
-
-// Flattens an index accessor into `count` u32 indices.
-[[nodiscard]] Result<std::vector<u32>>
-read_accessor_indices(const json& doc, const std::vector<std::vector<u8>>& buffers, usize accessor_index) {
-    auto view = resolve_accessor(doc, buffers, accessor_index);
-    if (!view) {
-        return view.error();
-    }
-    const AccessorView& resolved = view.value();
-    if (resolved.components != 1) {
-        return Error("glTF index accessor must be SCALAR");
-    }
-
-    std::vector<u32> out;
-    out.reserve(resolved.count);
-    for (usize i = 0; i < resolved.count; ++i) {
-        const u8* element = resolved.bytes->data() + resolved.base + i * resolved.stride;
-        u32 value = 0;
-        if (!read_component_as_u32(element, resolved.component_type, value)) {
-            return Error("glTF index accessor componentType must be UNSIGNED_BYTE, UNSIGNED_SHORT, or UNSIGNED_INT");
-        }
-        out.push_back(value);
-    }
-    return out;
-}
-
-// Fills a flat normal for every triangle whose vertices arrived without one,
-// matching the OBJ loader's fallback so an unlit-looking asset still shades.
 void apply_flat_normals(std::vector<Vertex3D>& vertices, const std::vector<u32>& indices) {
     for (usize i = 0; i + 2 < indices.size(); i += 3) {
         const u32 a = indices[i];
@@ -344,42 +57,6 @@ void apply_flat_normals(std::vector<Vertex3D>& vertices, const std::vector<u32>&
             }
         }
     }
-}
-
-// Reads a JSON array of `count` numbers into a Vec, or returns `fallback` when
-// the key is absent or the array is the wrong length. glTF writes these as
-// [r, g, b] / [r, g, b, a] number arrays, and a malformed one is treated as
-// absent rather than failing the whole import: a colour is decoration, and
-// refusing an otherwise-valid mesh over it would make the loader useless
-// against a slightly-off exporter.
-[[nodiscard]] Vec3 read_vec3(const json& object, const char* key, const Vec3& fallback) {
-    if (!object.contains(key) || !object.at(key).is_array() || object.at(key).size() != 3) {
-        return fallback;
-    }
-    return Vec3{object.at(key).at(0).get<f32>(), object.at(key).at(1).get<f32>(), object.at(key).at(2).get<f32>()};
-}
-
-[[nodiscard]] Vec4 read_vec4(const json& object, const char* key, const Vec4& fallback) {
-    if (!object.contains(key) || !object.at(key).is_array() || object.at(key).size() != 4) {
-        return fallback;
-    }
-    return Vec4{object.at(key).at(0).get<f32>(), object.at(key).at(1).get<f32>(), object.at(key).at(2).get<f32>(),
-                object.at(key).at(3).get<f32>()};
-}
-
-// The texture key a glTF texture slot refers to, or "" when the slot is absent
-// or names a texture this loader cannot resolve. `slot` is a glTF textureInfo
-// object (`{"index": 0, "texCoord": 0}`); only `index` matters here.
-[[nodiscard]] std::string texture_key_from_slot(const json& holder, const char* key,
-                                                const std::function<std::string(usize)>& texture_uri) {
-    if (!holder.contains(key) || !holder.at(key).is_object()) {
-        return {};
-    }
-    const json& info = holder.at(key);
-    if (!info.contains("index")) {
-        return {};
-    }
-    return texture_uri(info.at("index").get<usize>());
 }
 
 // Decodes a glTF material into the engine's `Material`.
@@ -524,48 +201,6 @@ void apply_flat_normals(std::vector<Vertex3D>& vertices, const std::vector<u32>&
         mesh->set_material(std::move(material));
     }
     return Result<std::shared_ptr<Mesh>>(std::move(mesh));
-}
-
-// Splits a GLB container into its JSON text and (optional) binary chunk.
-[[nodiscard]] Error parse_glb(std::string_view bytes, std::string& json_text, std::string& bin_chunk) {
-    if (bytes.size() < 12) {
-        return Error("glTF: GLB file is shorter than its 12-byte header");
-    }
-    const auto* base = reinterpret_cast<const u8*>(bytes.data());
-    if (read_u32_le(base) != kGlbMagic) {
-        return Error("glTF: not a GLB file (bad magic)");
-    }
-    const u32 version = read_u32_le(base + 4);
-    if (version != 2) {
-        return Error("glTF: unsupported GLB version " + std::to_string(version) + " (expected 2)");
-    }
-    const u32 declared_length = read_u32_le(base + 8);
-    if (declared_length > bytes.size()) {
-        return Error("glTF: GLB declares a length longer than the file");
-    }
-
-    usize offset = 12;
-    bool found_json = false;
-    while (offset + 8 <= bytes.size()) {
-        const u32 chunk_length = read_u32_le(base + offset);
-        const u32 chunk_type = read_u32_le(base + offset + 4);
-        offset += 8;
-        if (offset + chunk_length > bytes.size()) {
-            return Error("glTF: GLB chunk runs past the end of the file");
-        }
-        if (chunk_type == kGlbJsonChunk) {
-            json_text.assign(bytes.substr(offset, chunk_length));
-            found_json = true;
-        } else if (chunk_type == kGlbBinChunk) {
-            bin_chunk.assign(bytes.substr(offset, chunk_length));
-        }
-        offset += chunk_length;
-    }
-
-    if (!found_json) {
-        return Error("glTF: GLB file has no JSON chunk");
-    }
-    return Error::none();
 }
 
 [[nodiscard]] Result<std::vector<std::shared_ptr<Resource>>>
