@@ -251,6 +251,55 @@ TEST_CASE("safe-area insets are clamped so the usable area is never empty") {
     CHECK(actions.is_down(jump));
 }
 
+TEST_CASE("safe-area insets offset a declared region rather than only shrinking it") {
+    // The acceptance test's second half: a region must be *offset* by the insets,
+    // not merely have touches in the band rejected. The same declared region is
+    // checked at the same screen point under two different inset reports, and the
+    // action must flip: the point that fires with no inset must stop firing once
+    // the band is reserved, which is the offset and cannot happen if the insets
+    // were ignored or only used to reject touches.
+    ActionMap actions;
+    const auto move_left = actions.add("MoveLeft");
+    // A region covering the left half of the usable area.
+    actions.bind_touch_region(move_left, 0.0f, 0.0f, 0.5f, 1.0f);
+
+    // x = 0.2 is inside the left half of the whole viewport with no inset.
+    InputState before;
+    before.on_touch(TouchPhase::Began, 1, 0.2f * kViewport.x, 0.5f * kViewport.y);
+    actions.update(before, kViewport);
+    CHECK(actions.is_down(move_left));
+
+    // A 20% left band moves the usable area's left edge to 0.2, so x = 0.2 is now
+    // the usable area's own left edge and still inside the left half of it...
+    actions.set_safe_area_insets(0.0f, 0.0f, 0.0f, 0.2f);
+    InputState at_edge;
+    at_edge.on_touch(TouchPhase::Began, 1, 0.2f * kViewport.x, 0.5f * kViewport.y);
+    actions.update(at_edge, kViewport);
+    CHECK(actions.is_down(move_left));
+
+    // ...while the same point that used to fire for a wider region now does not,
+    // because the region's left half is measured from 0.2: a point at 0.2 is the
+    // edge and a point at 0.3 is 0.125 into the usable area, still inside the
+    // half. The point that proves the offset is one just inside the old region
+    // but now past its remapped right edge.
+    ActionMap narrow;
+    const auto narrow_left = narrow.add("MoveLeft");
+    narrow.bind_touch_region(narrow_left, 0.0f, 0.0f, 0.25f, 1.0f);
+    // With no inset, x = 0.3 is outside the left quarter.
+    InputState outside_before;
+    outside_before.on_touch(TouchPhase::Began, 1, 0.3f * kViewport.x, 0.5f * kViewport.y);
+    narrow.update(outside_before, kViewport);
+    CHECK_FALSE(narrow.is_down(narrow_left));
+    // With the 20% band, the quarter is now 0.2..0.4 of the viewport, so x = 0.3
+    // is inside it: the region moved right by exactly the inset, which is the
+    // offset the item requires.
+    narrow.set_safe_area_insets(0.0f, 0.0f, 0.0f, 0.2f);
+    InputState inside_after;
+    inside_after.on_touch(TouchPhase::Began, 1, 0.3f * kViewport.x, 0.5f * kViewport.y);
+    narrow.update(inside_after, kViewport);
+    CHECK(narrow.is_down(narrow_left));
+}
+
 TEST_CASE("an unknown action handle fails safe") {
     ActionMap actions;
     const auto known = actions.add("Known");
