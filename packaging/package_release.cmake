@@ -218,6 +218,13 @@ file(WRITE "${FE_GAME_STAGE}/run.sh"
 cd \"$(dirname \"$0\")\" || exit 1
 exec ./${FE_GAME_BINARY} \"$@\"
 ")
+# `file(WRITE)` creates the file 0644, and the mode travels into the archive: a
+# player who unpacks the tarball and runs the documented `./run.sh` gets
+# "Permission denied". The smoke test below runs the binary directly, so it never
+# saw this; the launcher has to be executable where it is written, not where it
+# is run.
+file(CHMOD "${FE_GAME_STAGE}/run.sh"
+     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 file(WRITE "${FE_GAME_STAGE}/run.bat"
 "@echo off
 rem Run Fork Engine's breakout from the directory it resolves its content against.
@@ -306,9 +313,20 @@ if(FE_SMOKE)
   endforeach()
   message(STATUS "release: the game archive carries its scene, assets, and launcher")
 
-  # Run the binary from the archive root through the launcher, so the launcher's
-  # `cd` and the game's relative paths are both exercised.
-  execute_process(COMMAND ${FE_SMOKE_PREFIX} "${FE_SMOKE_ROOT}/${FE_GAME_BINARY}" --help
+  # Run the launcher a player runs, not the binary beside it, so the launcher's
+  # `cd`, its executable bit (which travels in the archive), and the game's
+  # relative paths are all exercised. Running `${FE_GAME_BINARY}` directly would
+  # pass even when `run.sh` shipped mode 0644 and failed for a player.
+  #
+  # On Windows the launcher is a `.bat`, which `execute_process` does not launch
+  # reliably without a shell, and there is no executable bit to lose in a zip; so
+  # Windows runs the binary directly. The failure this guards against is
+  # POSIX-only.
+  set(FE_SMOKE_RUNNER "${FE_SMOKE_ROOT}/run.sh")
+  if(FE_PLATFORM STREQUAL "windows")
+    set(FE_SMOKE_RUNNER "${FE_SMOKE_ROOT}/${FE_GAME_BINARY}")
+  endif()
+  execute_process(COMMAND ${FE_SMOKE_PREFIX} "${FE_SMOKE_RUNNER}" --help
                   WORKING_DIRECTORY "${FE_SMOKE_ROOT}"
                   RESULT_VARIABLE _help_rc)
   if(NOT _help_rc EQUAL 0)
@@ -319,8 +337,7 @@ if(FE_SMOKE)
   # Level two: actually play it. Needs a GL context, so the caller turns it on
   # where one exists.
   if(FE_SMOKE_GAME)
-    execute_process(COMMAND ${FE_SMOKE_PREFIX}
-                            "${FE_SMOKE_ROOT}/${FE_GAME_BINARY}" --headless "${FE_SMOKE_FRAMES}"
+    execute_process(COMMAND ${FE_SMOKE_PREFIX} "${FE_SMOKE_RUNNER}" --headless "${FE_SMOKE_FRAMES}"
                     WORKING_DIRECTORY "${FE_SMOKE_ROOT}"
                     RESULT_VARIABLE _smoke_rc)
     if(NOT _smoke_rc EQUAL 0)

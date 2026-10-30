@@ -123,4 +123,21 @@ foreach(_needle "examples/breakout" "foreach(_dir assets scenes)")
   endif()
 endforeach()
 
+# The launcher a player is told to run must be executable *in the archive*.
+# `file(WRITE)` creates it 0644, the mode travels into the tarball, and a player
+# who unpacks and runs the documented `./run.sh` gets "Permission denied". The
+# smoke run does not catch this on its own if it invokes the binary directly, so
+# assert the CHMOD is there.
+if(NOT _package MATCHES "file\\(CHMOD \"\\$\\{FE_GAME_STAGE\\}/run\\.sh\"")
+  message(FATAL_ERROR
+    "the packaging script writes run.sh without making it executable; an "
+    "unpacked tarball then fails on the documented './run.sh' with "
+    "'Permission denied'.")
+endif()
+if(NOT _package MATCHES "FE_SMOKE_RUNNER")
+  message(FATAL_ERROR
+    "the packaging smoke run no longer goes through the launcher; running the "
+    "binary directly hides a launcher that ships non-executable.")
+endif()
+
 message(STATUS "release: every platform packages, the tag is checked, and the archives are compressed")
