@@ -174,6 +174,14 @@ defect, not noise.
 
 ## Portability traps seen before
 
+- `file(WRITE)` writes a file mode 0644, and that mode travels into the archive.
+  A launcher script a player is told to run (`./run.sh`) then fails with
+  "Permission denied" after unpacking, and a smoke test that runs the *binary*
+  instead of the launcher never sees it. Make the launcher executable where it is
+  written (`file(CHMOD ... PERMISSIONS ... OWNER_EXECUTE ...)`), and have the
+  packaging smoke run go through the launcher so the mode is what the run
+  exercises. `package_appimage.cmake` already did this for `AppRun`; the tarball
+  path did not.
 - `cmake -E tar cf out.tar.gz` writes an **uncompressed** tar even though the name
   says `.tar.gz`, and `cmake -E tar xf` reads it back anyway because it sniffs the
   format. A packaging smoke test that only round-trips through CMake therefore
