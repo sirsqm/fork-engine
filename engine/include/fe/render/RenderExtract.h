@@ -20,6 +20,12 @@ class Sprite2D;
 class TextLabel;
 class Tilemap;
 
+namespace anim {
+class Animator;
+class SkinnedMesh;
+class SkinnedMeshRenderer3D;
+} // namespace anim
+
 namespace rhi {
 class Texture;
 } // namespace rhi
@@ -139,6 +145,43 @@ struct MeshInstanceKey {
     Vec3 world_max{};
 
     [[nodiscard]] constexpr bool operator==(const MeshInstanceKey&) const noexcept = default;
+};
+
+// One skinned mesh's resolved draw state.
+//
+// A separate struct from `MeshInstance` rather than extra fields on it. A skinned
+// instance carries a palette and a different vertex stream, and it cannot be
+// batched with a static instance of the same mesh (the two need different shaders
+// and different vertex layouts), so a union of the two would be a struct whose
+// fields are only meaningful for one of its two states. The two arrays stay
+// separate and the renderer runs two passes over them.
+//
+// The palette is a borrowed pointer, not a copy. It is owned by the `Animator`
+// the instance came from and is valid for the duration of the frame, which is
+// exactly the window the draw runs in. Copying it into the instance would be four
+// matrices per joint per character per frame for no benefit.
+struct SkinnedInstance {
+    // The skinned renderer component, for its resolved material. Kept for the
+    // same reason `MeshInstance::renderer` is.
+    const anim::SkinnedMeshRenderer3D* renderer = nullptr;
+    // The mesh to draw. Its GPU buffers are acquired at draw time.
+    const anim::SkinnedMesh* mesh = nullptr;
+    // The animator that produced the palette, or null when the mesh has none.
+    // Kept for provenance and so a test can tell "drawn in bind pose" from
+    // "drawn posed".
+    const anim::Animator* animator = nullptr;
+    // The skinning palette to upload, one matrix per joint. Null or empty means
+    // the bind pose, which is what an unanimated character draws with.
+    const std::vector<Mat4>* palette = nullptr;
+    // The owning node's world matrix.
+    Mat4 model{};
+    // The mesh's world-space AABB. When the palette is valid this is the *posed*
+    // bounds, expanded by the skinning: a raised arm reaches outside the bind-pose
+    // box, so a cull that used the bind box would drop a character mid-swing.
+    Vec3 world_min{};
+    Vec3 world_max{};
+
+    [[nodiscard]] constexpr bool operator==(const SkinnedInstance&) const noexcept = default;
 };
 
 // Builds the key for `instance`.
@@ -291,6 +334,33 @@ usize extract_ui_into(FrameArena& arena, const Scene& scene, u32 viewport_width,
 // way.
 void extract_meshes(const Scene& scene, std::vector<MeshInstance>& out, std::vector<const Mesh*>* meshes_seen,
                     JobSystem* jobs = nullptr);
+
+// --- Skinned extraction ----------------------------------------------------
+//
+// Skinned meshes are extracted separately from static ones, for the reason
+// `SkinnedInstance` documents: they need a different shader, a different vertex
+// layout, and a per-instance palette, so they cannot share a draw or a batch key
+// with a static mesh.
+//
+// The extraction is a pure read of the scene: it does not sample a clip or
+// compute a palette. It takes the palette the `Animator` already published, so
+// the ordering rule is explicit and testable -- `SkeletonAnimationSystem` must
+// have run first. An instance whose animator has no palette yet extracts with a
+// null palette and draws in its bind pose, which is the correct behaviour for a
+// character whose first animation step has not happened.
+//
+// The world AABB is the *posed* box when a palette is present, because a skinned
+// character reaches outside its bind-pose bounds as it moves. Computing it here
+// costs one pass over the mesh's vertices per instance per frame; a caller that
+// would rather not pay it (a scene of many distant characters) is the reason the
+// bind-pose box is used when there is no palette, and the reason this is a
+// separate function a caller can choose not to call.
+void extract_skinned_meshes(const Scene& scene, std::vector<SkinnedInstance>& out, JobSystem* jobs = nullptr);
+
+// Culls skinned instances by their precomputed world AABB, exactly as
+// `cull_meshes` does for static ones. A null `frustum` culls nothing.
+[[nodiscard]] usize cull_skinned_meshes(std::vector<SkinnedInstance>& instances, const Frustum* frustum,
+                                        JobSystem* jobs = nullptr);
 
 // --- Culling ---------------------------------------------------------------
 //

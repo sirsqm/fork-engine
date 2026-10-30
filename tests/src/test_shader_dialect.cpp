@@ -218,6 +218,7 @@ private:
         void set_int(std::string_view, i32) override {}
         void set_float(std::string_view, f32) override {}
         void set_vec4_array(std::string_view, const Vec4*, u32) override {}
+        void set_mat4_array(std::string_view, const Mat4*, u32) override {}
 
     private:
         std::string name_;

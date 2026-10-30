@@ -109,6 +109,7 @@ rather than editing it.
 | [0101](0101-instanced-3d-draws.md) | Instanced 3D draws | Accepted |
 | [0102](0102-downloadable-release-builds.md) | Downloadable release builds, and an installed SDK a consumer can link | Accepted |
 | [0103](0103-linux-appimage.md) | A single-file Linux download: the AppImage | Accepted |
+| [0104](0104-skeletal-animation.md) | Skeletal animation and skinning | Accepted |
 
 ## Format
 

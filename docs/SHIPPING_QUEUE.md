@@ -558,7 +558,11 @@ with a test covering load and reload.
 ## Backlog — not yet ordered
 
 - Additional graphics backends (Vulkan, Metal, WebGPU) as targets demand.
-- Skeletal animation/skinning (the one open M6 item), needed for animated 3D.
+- Skeletal animation/skinning, continued (the one open M6 item), needed for
+  animated 3D. The runtime is landed ([ADR-0104](adr/0104-skeletal-animation.md));
+  the remaining work is the asset and draw half: `GltfLoader` reads `skins`,
+  `JOINTS_0`/`WEIGHTS_0`, and `animations`, and `Renderer3D` binds the skinned
+  vertex layout and the palette uniform array.
 - More example games beyond the breakout slice, once the first one ships.
 
 ## Ongoing

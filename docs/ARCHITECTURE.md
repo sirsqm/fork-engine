@@ -74,11 +74,11 @@ everything  <-  runtime
 | `serialization` | JSON persistence of scenes, driven by reflection, and the serializable `Operation` model (apply/inverse, `docs/adr/0047-local-operation-model.md`) | core, scene, resources, reflect |
 | `session` | The local, headless replicated log: `Session` holds a document and an ordered log of `Operation`s, two in-process replicas converge, and undo is log-based (`docs/adr/0048-replicated-operation-log.md`) | core, scene, serialization |
 | `systems` | Per-frame execution: `System`, `SceneSchedule`, `FrameContext`, and the concrete gameplay systems | core, scene, resources |
-| `anim` | Animation state machines: `AnimationStateMachine` (a named-state graph over sprite clips) and `AnimationStateMachineSystem`, which advances each machine and drives the node's `SpriteAnimator` (`docs/adr/0059-animation-state-machines.md`) | core, scene, systems, reflect |
+| `anim` | Animation state machines: `AnimationStateMachine` (a named-state graph over sprite clips) and `AnimationStateMachineSystem`, which advances each machine and drives the node's `SpriteAnimator` (`docs/adr/0059-animation-state-machines.md`). Skeletal animation: `Skeleton`, `AnimationClip`, `SkeletonPose`, `SkinnedMesh` (a rig, a clip, a pose, and CPU linear-blend skinning), the `Animator` component, and `SkeletonAnimationSystem`, which advances every animator and publishes the skinning palette (`docs/adr/0104-skeletal-animation.md`) | core, scene, systems, reflect, rhi, resources, mesh |
 | `script` | The language-agnostic gameplay seam: `Script`, `ScriptHost` (per-node instances keyed by stable node id), `ScriptRegistry`, and the `ScriptSystem` bridge; plus `ScriptLibrary`, the C++ gameplay-module loader and hot reload (`docs/adr/0061-cpp-gameplay-modules-hot-reload.md`) | core, scene, systems, platform |
 | `physics2d` | 2D collision shapes, a rigid-body simulation system (linear and angular) with a uniform-grid broad phase, joints (distance and revolute), queries, contact events, and island-based body sleeping | core, scene, systems, reflect |
 | `physics3d` | 3D collision shapes (box, sphere), a rigid-body simulation system (linear and angular: gravity, restitution, friction, damping, torque, inertia) with a uniform-grid broad phase, joints, queries, and contact events | core, scene, systems, reflect |
-| `mesh` | CPU-side geometry: `Vertex3D`, `Mesh`, primitive generators, the OBJ loader | core, scene, resources |
+| `mesh` | CPU-side geometry: `Vertex3D`, `SkinnedVertex3D`, `Mesh`, primitive generators, the OBJ and glTF loaders, and the CPU linear-blend skinner (`skin_vertices`) | core, scene, resources |
 | `scene3d` | 3D scene components (`Camera3D`, `MeshRenderer3D`, `DirectionalLight3D`, `PointLight3D`, `SpotLight3D`) and their reflection | core, scene, resources |
 | `audio` | Audio output device, decoded clips, and a mixing system | core, scene, systems, resources |
 | `pack` | Asset pack container, writer, and the runtime mount that reads a pack like a directory | core, resources |
@@ -522,6 +522,29 @@ decodes glTF 2.0 — both the JSON `.gltf` form and the binary `.glb` container 
 into one `Mesh` per primitive; it reads through `ResourceSource` like every other
 loader, so a mounted pack is served unchanged
 ([ADR-0040](adr/0040-gltf-importer.md)).
+
+**Skeletal animation** ([ADR-0104](adr/0104-skeletal-animation.md)) is a
+CPU-side rig, clip, and pose, with the skinning palette computed in the frame
+step. `anim::Skeleton` is a `Resource`: a flat joint array with a parent index, a
+rest transform, and an inverse bind matrix each, plus a parent-first `order()`
+computed by the constructor. `anim::AnimationClip` is a `Resource`: one track per
+joint, each with optional translation/rotation/scale channels interpolated as
+step, linear, or cubic, and a `LoopMode` with `wrap_time`. `anim::SkeletonPose`
+is a plain value type with no reference to a rig; it computes world matrices and
+the palette `world * inverse_bind`, and in the bind pose the palette is the
+identity. `anim::SkinnedMesh` pairs interleaved `SkinnedVertex3D` (position,
+normal, uv, four joint indices, four weights) with its skeleton, and
+`skin_vertices` is the CPU linear-blend skinner — the reference the shader
+matches, and the reason a pose can be asserted on with no GPU. The `Animator`
+component holds the authored state (skeleton, clip, clock, loop mode, an optional
+second clip to cross-fade into, and an opt-in root-motion flag);
+`SkeletonAnimationSystem` advances every animator and writes the pose and palette
+*in place* so a steady-state scene does not allocate. The palette reaches the
+shader as a uniform array (`Shader::set_vec4_array`), not per-instance
+attributes, because a rig has more joints than a vertex shader has attribute
+slots. Extraction adds `render::SkinnedInstance` with its own cull, so the static
+path is unchanged. The glTF import of `skins`/`animations` and the skinned draw
+call are the remaining work.
 
 **`renderer3d::Renderer3D`** runs the same seam: it extracts each
 `MeshRenderer3D` with its node's world matrix and the mesh's world-space AABB
@@ -1172,16 +1195,18 @@ Every milestone must build and pass its tests before the next one begins.
 ## 13. What is deliberately not here yet
 
 - The parts of 3D rendering beyond the forward lit pass and directional shadows:
-  batching, point/spot shadows, cascaded shadow maps, skeletal animation, a
-  cubemap/atmospheric sky (the gradient environment is in place), a multi-pass
-  effect stack (exposure/tonemap/vignette is in place), and a material graph (see
+  batching, point/spot shadows, cascaded shadow maps, a cubemap/atmospheric sky
+  (the gradient environment is in place), a multi-pass effect stack
+  (exposure/tonemap/vignette is in place), and a material graph (see
   [ADR-0010](adr/0010-3d-rendering-foundation.md),
   [ADR-0011](adr/0011-frustum-culling.md),
   [ADR-0012](adr/0012-forward-lighting-model.md),
   [ADR-0014](adr/0014-directional-shadow-mapping.md), and
   [ADR-0057](adr/0057-environment-and-post-processing.md)). The spatial hierarchy
   over static geometry is in place and wired: `SpatialBvh` (ADR-0053) backs
-  `Renderer3D`'s cull pass (ADR-0056).
+  `Renderer3D`'s cull pass (ADR-0056). Skeletal animation's runtime is in place
+  ([ADR-0104](adr/0104-skeletal-animation.md)); its glTF import and skinned draw
+  call are the remaining half.
 - The parts of physics not in the first cuts: continuous collision detection, a
   rotated broad-phase cell, oriented 3D colliders, and 3D islands / sleeping.
   3D physics is in place and integrated with the editor, and collider debug

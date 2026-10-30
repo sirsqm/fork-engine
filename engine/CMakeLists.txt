@@ -121,6 +121,13 @@ set(FE_ENGINE_SOURCES
     src/anim/AnimationStateMachine.cpp
     src/anim/AnimationStateMachineSystem.cpp
     src/anim/AnimationTypes.cpp
+    src/anim/AnimationClip.cpp
+    src/anim/Animator.cpp
+    src/anim/SkeletalAnimationTypes.cpp
+    src/anim/Skeleton.cpp
+    src/anim/SkeletonAnimationSystem.cpp
+    src/anim/SkinnedMesh.cpp
+    src/anim/SkinnedMeshRenderer3D.cpp
     src/physics2d/BroadPhase.cpp
     src/physics2d/Geometry.cpp
     src/physics2d/IslandSolver.cpp

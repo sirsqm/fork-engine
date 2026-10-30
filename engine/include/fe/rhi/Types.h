@@ -127,6 +127,60 @@ struct VertexLayout {
         return layout;
     }
 
+    // The skinned 3D mesh vertex format, matching fe::SkinnedVertex3D.
+    //
+    // Attributes 0-2 are the same position/normal/uv triple the static layout
+    // uses, at the same offsets, so a skinned shader's first three inputs are
+    // byte-identical to the static one's and the two shaders differ only in what
+    // they do next. Attributes 3 and 4 are the joint indices and their weights.
+    //
+    // The joint indices are integers, not floats. `VertexFormat` has no integer
+    // kind, so they arrive as float and the shader converts; that is deliberate
+    // and matches what every engine does with a small rig. An integer attribute
+    // would be exact for a rig past 2^24 joints, which no rig is, and the float
+    // path needs no `glVertexAttribIPointer` branch in the backend.
+    //
+    // The weights are NOT normalised on the GPU. The skinner (CPU) normalises, and
+    // the shader does too, so an asset whose weights do not sum to one renders at
+    // the right size either way rather than shrinking towards the origin.
+    [[nodiscard]] static VertexLayout skinned_position_normal_uv() {
+        VertexLayout layout;
+        layout.stride = 3 * 4 + 3 * 4 + 2 * 4 + 4 * 4 + 4 * 4;
+        layout.attributes = {
+            {0, VertexFormat::Float3, 0},  {1, VertexFormat::Float3, 12},
+            {2, VertexFormat::Float2, 24}, {3, VertexFormat::Float4, 32}, // joint indices, as floats
+            {4, VertexFormat::Float4, 48},                                // weights
+        };
+        return layout;
+    }
+
+    // The per-instance stream for a skinned draw: the model and normal matrices,
+    // at the same locations the static instanced layout uses.
+    //
+    // The skinning palette is deliberately *not* here. A palette is four vec4s
+    // per joint, so a 64-joint rig would need 256 attributes and the driver floor
+    // is 16; a per-instance palette cannot fit in an attribute stream at any rig
+    // size worth having. It travels as a `mat4` array uniform instead
+    // (`Shader::set_mat4_array`), which is unbounded by the attribute limit and
+    // needs no stride negotiation. The consequence is one draw per skinned
+    // instance rather than one per mesh, which is the honest trade: a palette is
+    // per-pose and a pose is per-instance, so instances of one skinned mesh do not
+    // share a draw unless they share a pose.
+    [[nodiscard]] static VertexLayout skinned_instance() {
+        VertexLayout layout;
+        layout.stride = 7 * 16;
+        layout.attributes = {
+            {5, VertexFormat::Float4, 0, 1},   // model column 0
+            {6, VertexFormat::Float4, 16, 1},  // model column 1
+            {7, VertexFormat::Float4, 32, 1},  // model column 2
+            {8, VertexFormat::Float4, 48, 1},  // model column 3
+            {9, VertexFormat::Float4, 64, 1},  // normal matrix column 0
+            {10, VertexFormat::Float4, 80, 1}, // normal matrix column 1
+            {11, VertexFormat::Float4, 96, 1}, // normal matrix column 2
+        };
+        return layout;
+    }
+
     // The instanced mesh path pairs `position_normal_uv()` (locations 0-2) with
     // this per-instance stream (locations 3-9). One record is the instance's model
     // matrix followed by its normal matrix, each as four-column vectors in the

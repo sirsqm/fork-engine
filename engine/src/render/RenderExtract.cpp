@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 #include "fe/render/RenderExtract.h"
 
+#include "fe/anim/Animator.h"
+#include "fe/anim/SkinnedMesh.h"
+#include "fe/anim/SkinnedMeshRenderer3D.h"
 #include "fe/core/FrameArena.h"
 #include "fe/jobs/JobSystem.h"
 #include "fe/mesh/Mesh.h"
@@ -144,6 +147,49 @@ void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* te
     out.renderer = renderer;
     out.mesh = mesh;
     out.model = model;
+    expand_to_world_aabb(mesh->bounds_min(), mesh->bounds_max(), model, out.world_min, out.world_max);
+    return true;
+}
+
+// One skinned mesh instance's resolved state, or a reason to skip it. Shared by
+// the serial and parallel walks, so the two cannot diverge.
+[[nodiscard]] bool resolve_skinned(const Node& node, SkinnedInstance& out) {
+    const auto* renderer = node.get_component<anim::SkinnedMeshRenderer3D>();
+    if (renderer == nullptr || !renderer->has_mesh()) {
+        return false;
+    }
+    const auto* mesh = renderer->skinned_mesh();
+    if (mesh == nullptr || mesh->index_count() == 0) {
+        return false;
+    }
+
+    const Mat4 model = node.world_matrix();
+    out = SkinnedInstance{};
+    out.renderer = renderer;
+    out.mesh = mesh;
+    out.model = model;
+
+    // The palette is taken from the animator beside the renderer, when there is
+    // one and it has run. A mesh with no animator, or one whose first frame has
+    // not happened, has no palette and draws in its bind pose -- which is exactly
+    // its static shape.
+    const auto* animator = node.get_component<anim::Animator>();
+    if (animator != nullptr && animator->has_palette() && !animator->palette().empty()) {
+        out.animator = animator;
+        out.palette = &animator->palette();
+
+        // The posed bounds: skin every vertex and take the box. This is the cost
+        // of culling a skinned character correctly, and it is why the bind-pose
+        // box is used when there is no palette.
+        Vec3 posed_min{};
+        Vec3 posed_max{};
+        if (anim::skinned_bounds(mesh->vertices(), *out.palette, posed_min, posed_max)) {
+            expand_to_world_aabb(posed_min, posed_max, model, out.world_min, out.world_max);
+            return true;
+        }
+    }
+
+    // No palette, or an empty mesh: the bind-pose bounds are the honest answer.
     expand_to_world_aabb(mesh->bounds_min(), mesh->bounds_max(), model, out.world_min, out.world_max);
     return true;
 }
@@ -937,6 +983,73 @@ usize cull_meshes(std::vector<MeshInstance>& instances, const Frustum* frustum, 
     const usize before = instances.size();
     if (jobs == nullptr || !jobs->is_threaded() || before < kParallelCullThreshold) {
         std::erase_if(instances, [&](const MeshInstance& instance) {
+            return !frustum->intersects_aabb(instance.world_min, instance.world_max);
+        });
+        return before - instances.size();
+    }
+
+    std::vector<u8> keep(before, 0);
+    const u32 chunks = static_cast<u32>(std::min<usize>(before, static_cast<usize>(jobs->worker_count()) * 4));
+    jobs->parallel_for(0, chunks, [&](usize c) {
+        const usize lo = before * c / chunks;
+        const usize hi = before * (c + 1) / chunks;
+        for (usize i = lo; i < hi; ++i) {
+            keep[i] = frustum->intersects_aabb(instances[i].world_min, instances[i].world_max) ? 1 : 0;
+        }
+    });
+
+    usize write = 0;
+    for (usize read = 0; read < before; ++read) {
+        if (keep[read] != 0) {
+            instances[write++] = instances[read];
+        }
+    }
+    instances.resize(write);
+    return before - write;
+}
+
+// --- Skinned extraction ----------------------------------------------------
+
+void extract_skinned_meshes(const Scene& scene, std::vector<SkinnedInstance>& out, JobSystem* jobs) {
+    out.clear();
+
+    if (jobs == nullptr || !jobs->is_threaded() || scene.node_count() < kParallelExtractThreshold) {
+        scene.for_each_node([&](Node& node) {
+            SkinnedInstance instance;
+            if (resolve_skinned(node, instance)) {
+                out.push_back(instance);
+            }
+        });
+        return;
+    }
+
+    std::vector<const Node*> flat;
+    flatten_nodes(scene, flat);
+
+    const usize n = flat.size();
+    const u32 chunks = static_cast<u32>(std::min<usize>(n, static_cast<usize>(jobs->worker_count()) * 4));
+    std::vector<std::vector<SkinnedInstance>> parts(chunks);
+    jobs->parallel_for(0, chunks, [&](usize c) {
+        const usize lo = n * c / chunks;
+        const usize hi = n * (c + 1) / chunks;
+        auto& local = parts[c];
+        for (usize i = lo; i < hi; ++i) {
+            SkinnedInstance instance;
+            if (resolve_skinned(*flat[i], instance)) {
+                local.push_back(instance);
+            }
+        }
+    });
+    concatenate(out, parts, chunks);
+}
+
+usize cull_skinned_meshes(std::vector<SkinnedInstance>& instances, const Frustum* frustum, JobSystem* jobs) {
+    if (frustum == nullptr) {
+        return 0;
+    }
+    const usize before = instances.size();
+    if (jobs == nullptr || !jobs->is_threaded() || before < kParallelCullThreshold) {
+        std::erase_if(instances, [&](const SkinnedInstance& instance) {
             return !frustum->intersects_aabb(instance.world_min, instance.world_max);
         });
         return before - instances.size();

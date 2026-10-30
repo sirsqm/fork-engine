@@ -90,6 +90,17 @@ public:
     //      before materials existed describes, so those scenes render exactly as
     //      they did.
     [[nodiscard]] Surface resolve_surface() const noexcept;
+
+    // The same rule against an imported material the caller supplies, rather
+    // than one read off this component's mesh.
+    //
+    // This exists so the rule has exactly one definition. `resolve_surface()` is
+    // this function with the material read off `mesh`; a component that keeps its
+    // mesh somewhere else (the skinned renderer, whose mesh is a different type)
+    // calls this directly with its own imported material instead of restating the
+    // precedence order, which would drift from this one the first time it
+    // changed.
+    [[nodiscard]] Surface resolve_surface_from(const std::optional<Material>* imported) const noexcept;
 };
 
 } // namespace fe

@@ -36,6 +36,20 @@ public:
     // uniform is absent, like the scalar setters. Used by the 3D renderer to
     // upload bounded arrays of packed light data.
     virtual void set_vec4_array(std::string_view name, const Vec4* values, u32 count) = 0;
+
+    // Uploads the first `count` elements of a `mat4` array uniform, named `name`
+    // or `name[0]`, in the same column-major order `set_mat4` uses. Silently
+    // ignored when the uniform is absent.
+    //
+    // This is how the skinning palette reaches a vertex shader: one `mat4` per
+    // joint, indexed in the shader by the vertex's joint attribute. An array
+    // uniform rather than a texture because a palette is small and bounded (a rig
+    // of a few dozen joints is ordinary) and a uniform needs no sampler setup, no
+    // float-texture format negotiation, and no row-alignment workaround -- the
+    // last of which is a real trap on WebGL2, where `glGetUniformLocation` and
+    // `uniformMatrix4fv` behave exactly as on the desktop but a matrix texture
+    // does not.
+    virtual void set_mat4_array(std::string_view name, const Mat4* values, u32 count) = 0;
 };
 
 // A GPU vertex or index buffer.

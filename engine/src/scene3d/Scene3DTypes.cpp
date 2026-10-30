@@ -174,15 +174,8 @@ void register_scene3d_types() {
 
 namespace fe {
 
-MeshRenderer3D::Surface MeshRenderer3D::resolve_surface() const noexcept {
+MeshRenderer3D::Surface MeshRenderer3D::resolve_surface_from(const std::optional<Material>* imported) const noexcept {
     Surface surface;
-
-    // The imported material, when the mesh has one. Reading it off the mesh keeps
-    // the glTF loader free of any dependency on the scene.
-    const std::optional<Material>* imported = nullptr;
-    if (const auto* typed = dynamic_cast<const Mesh*>(mesh.get()); typed != nullptr && typed->has_material()) {
-        imported = &typed->material();
-    }
 
     if (override_material) {
         surface.material = material;
@@ -191,7 +184,7 @@ MeshRenderer3D::Surface MeshRenderer3D::resolve_surface() const noexcept {
         return surface;
     }
 
-    if (imported != nullptr) {
+    if (imported != nullptr && imported->has_value()) {
         surface.material = imported->value();
         surface.specular = surface.material.specular_strength();
         surface.shininess = surface.material.shininess();
@@ -207,6 +200,16 @@ MeshRenderer3D::Surface MeshRenderer3D::resolve_surface() const noexcept {
     surface.specular = specular;
     surface.shininess = 32.0f;
     return surface;
+}
+
+MeshRenderer3D::Surface MeshRenderer3D::resolve_surface() const noexcept {
+    // The imported material, when the mesh has one. Reading it off the mesh keeps
+    // the glTF loader free of any dependency on the scene.
+    const std::optional<Material>* imported = nullptr;
+    if (const auto* typed = dynamic_cast<const Mesh*>(mesh.get()); typed != nullptr && typed->has_material()) {
+        imported = &typed->material();
+    }
+    return resolve_surface_from(imported);
 }
 
 } // namespace fe

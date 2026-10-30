@@ -168,6 +168,23 @@ public:
         }
     }
 
+    void set_mat4_array(std::string_view name, const Mat4* values, u32 count) override {
+        if (count == 0) {
+            return;
+        }
+        // Same "name" then "name[0]" resolution as the vec4 array above, for the
+        // same reason: the driver decides which spelling the array uniform has.
+        GLint location = location_of(name);
+        if (location < 0) {
+            location = location_of(std::string(name) + "[0]");
+        }
+        if (location >= 0) {
+            // Mat4 is already column-major with 16 tightly packed floats, so the
+            // whole array uploads in one call with no repacking.
+            glUniformMatrix4fv(location, static_cast<GLsizei>(count), GL_FALSE, values[0].m);
+        }
+    }
+
     void bind() const { glUseProgram(program_); }
 
     [[nodiscard]] GLuint program() const noexcept { return program_; }

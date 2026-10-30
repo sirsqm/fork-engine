@@ -387,6 +387,63 @@ struct Quat {
         const Quat derivative = (omega * *this) * (0.5f * delta_time);
         return Quat{x + derivative.x, y + derivative.y, z + derivative.z, w + derivative.w}.normalized();
     }
+
+    // --- Interpolation ------------------------------------------------------
+    //
+    // Both forms exist because they trade differently and a keyframe track has
+    // to choose: `slerp` is a constant-angular-velocity arc and is the correct
+    // interpolation for a rotation, while `nlerp` is a straight line through
+    // the 4D hypersphere's chord, renormalised. The chord is cheaper (a lerp and
+    // a normalise, no trigonometry) but does not sweep at a constant rate. A
+    // clip declares which one it wants per track; the default is `slerp`,
+    // because a rotation that visibly speeds up and slows down between two keys
+    // is the artifact an animator notices.
+    //
+    // Both take the shorter of the two arcs: if the endpoints are more than 180
+    // degrees apart, `b` is negated first. `q` and `-q` are the same rotation,
+    // so interpolating the "long way" is always a bug, and it is the one a
+    // hand-authored keyframe pair trips over.
+    //
+    // A zero-length input returns a copy rather than a NaN, so a degenerate
+    // track (both keys equal) holds instead of poisoning the pose.
+
+    // Normalised linear interpolation between `a` and `b`, along the shorter arc.
+    [[nodiscard]] static Quat nlerp(const Quat& a, const Quat& b, f32 t) noexcept {
+        Quat end = b;
+        if (a.dot(b) < 0.0f) {
+            end = b * -1.0f;
+        }
+        const Quat blended{a.x + (end.x - a.x) * t, a.y + (end.y - a.y) * t, a.z + (end.z - a.z) * t,
+                           a.w + (end.w - a.w) * t};
+        return blended.normalized();
+    }
+
+    // Spherical linear interpolation between `a` and `b`, along the shorter arc.
+    // Falls back to `nlerp` when the endpoints are nearly parallel, where the
+    // sine in the denominator underflows and the arc is indistinguishable from a
+    // chord anyway.
+    [[nodiscard]] static Quat slerp(const Quat& a, const Quat& b, f32 t) noexcept {
+        Quat end = b;
+        f32 cos_theta = a.dot(b);
+        if (cos_theta < 0.0f) {
+            // Negate so the interpolation takes the short way round.
+            end = b * -1.0f;
+            cos_theta = -cos_theta;
+        }
+        // Above this the arc is under a degree or so; the chord and the arc
+        // agree to within float precision and the acos/sin pair loses accuracy.
+        constexpr f32 kParallelThreshold = 0.9995f;
+        if (cos_theta > kParallelThreshold) {
+            return nlerp(a, end, t);
+        }
+        const f32 theta = std::acos(cos_theta);
+        const f32 sin_theta = std::sin(theta);
+        const f32 from_weight = std::sin((1.0f - t) * theta) / sin_theta;
+        const f32 to_weight = std::sin(t * theta) / sin_theta;
+        return Quat{a.x * from_weight + end.x * to_weight, a.y * from_weight + end.y * to_weight,
+                    a.z * from_weight + end.z * to_weight, a.w * from_weight + end.w * to_weight}
+            .normalized();
+    }
 };
 
 // Right-handed perspective projection with depth in [-1, 1] (the OpenGL
