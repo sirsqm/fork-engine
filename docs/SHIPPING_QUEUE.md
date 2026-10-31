@@ -335,12 +335,30 @@ Implement the Android window backend: native activity, EGL surface, lifecycle
 **Done when** the Android target builds and a documented command produces a
 runnable APK.
 
+Landed so far is the *seam*: the toolchain file and the `FE_PLATFORM_ANDROID`
+macro ([ADR-0105](adr/0105-android-window-backend.md)). The native activity, the
+EGL surface, the suspend/resume lifecycle, the touch handling, and the
+`android_main` entry point the player needs are still to write, so an Android
+configure is a build-system path, not a runnable target. This is the first half
+of the item, not the item.
+
 ### `android-export-template`
 
 Extend `fork_export` to produce an Android build.
 
 **Done when** `fork_export --target android` produces a directory that installs
 and launches on a device or emulator.
+
+The export template landed: `fork_export --target android` writes a Gradle
+project whose app module compiles the player for the phone's ABIs, stages the
+pack and the manifest in the app's assets, and declares the native activity
+([ADR-0113](adr/0113-android-export-template.md)). It is pure and unit-tested on
+the desktop CI, because it invokes no toolchain — exactly as the web export does
+not invoke Emscripten. What is *not* yet met is the item's own bar: the native
+build has no `android_main` to compile until `android-window-backend` lands its
+entry point, so the produced project does not yet `assembleDebug` into a runnable
+APK. The template is the seam that backend is built into; the "installs and
+launches" half waits on it.
 
 ### `ios-window-backend`
 

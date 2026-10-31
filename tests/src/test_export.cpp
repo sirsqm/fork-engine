@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 
 #include "fe/core/FileSystem.h"
+#include "fe/pack/AndroidExportTemplate.h"
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/PackSource.h"
 #include "fe/pack/PackWriter.h"
@@ -233,6 +234,20 @@ TEST_CASE("an export manifest records the target it was built for") {
     REQUIRE_FALSE(ExportManifest::from_json(web_text.value(), parsed));
     CHECK(parsed.target == ExportManifest::kTargetWeb);
 
+    // The Android target round-trips too, and is written because it is not the
+    // default: an export step that wrote the project but dropped the target from
+    // the manifest would leave a build no launcher could tell apart.
+    ExportManifest android;
+    android.pack = "game.fepack";
+    android.scene = "scenes/main.fescene";
+    android.target = ExportManifest::kTargetAndroid;
+    auto android_text = android.to_json();
+    REQUIRE(android_text);
+    CHECK(android_text.value().find("\"target\": \"android\"") != std::string::npos);
+    ExportManifest android_parsed;
+    REQUIRE_FALSE(ExportManifest::from_json(android_text.value(), android_parsed));
+    CHECK(android_parsed.target == ExportManifest::kTargetAndroid);
+
     // A document with no target is a desktop build: that is the only target that
     // could have produced it.
     ExportManifest legacy;
@@ -421,6 +436,131 @@ TEST_CASE("writing the web shell produces the page and its loader") {
     auto shell = fs::read_text_file(fs::join(dir.str(), WebExportNames::kShellJs));
     REQUIRE(shell);
     CHECK(shell.value().find(WebExportNames::kRuntimeJs) != std::string::npos);
+}
+
+// The Android export template: the Gradle project a phone build is. The tests
+// check the contract that fails only on a device - the names Gradle, the
+// manifest, and the JNI CMakeLists each resolve - and that a manifest from
+// before the target existed is unaffected. They never invoke Gradle or the NDK:
+// the template is pure, so the shape is testable on a desktop CI, which is the
+// point of landing it before the runtime backend.
+TEST_CASE("the android project names the runtime the manifest loads") {
+    ExportManifest manifest;
+    manifest.name = "PhoneGame";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetAndroid;
+
+    AndroidProjectOptions options;
+
+    // The manifest declares a native activity, which is the app's entry point
+    // when there is no Java code. Without it the APK has no launcher activity and
+    // the app installs but does not start.
+    const std::string xml = android_manifest_xml(manifest, options);
+    CHECK(xml.find("android.app.NativeActivity") != std::string::npos);
+    CHECK(xml.find("android:hasCode=\"false\"") != std::string::npos);
+    CHECK(xml.find("android.intent.category.LAUNCHER") != std::string::npos);
+    // The library the activity loads must be the one the JNI CMakeLists builds,
+    // or the activity starts and finds no library. Both come from the same
+    // option, so this asserts the option reaches both files.
+    const std::string jni = android_jni_cmake_lists(options);
+    CHECK(xml.find("android:value=\"" + options.native_library + "\"") != std::string::npos);
+    CHECK(jni.find("add_library(" + options.native_library + " SHARED") != std::string::npos);
+    // The library is SHARED because it is loaded by name; a static library would
+    // be linked into nothing.
+    CHECK(jni.find("SHARED") != std::string::npos);
+    // The engine is built from source for the phone, not copied: the JNI
+    // CMakeLists adds the engine tree the export was pointed at.
+    CHECK(jni.find("add_subdirectory(") != std::string::npos);
+    CHECK(jni.find("FE::engine") != std::string::npos);
+    // A game ships a runtime, not an editor or a test suite.
+    CHECK(jni.find("set(FE_BUILD_EDITOR OFF") != std::string::npos);
+    CHECK(jni.find("set(FE_BUILD_TESTS OFF") != std::string::npos);
+
+    // The application id reaches both the Gradle namespace and the app id, so
+    // Gradle does not derive a different one from a directory name.
+    const std::string app = android_app_build_gradle(manifest, options);
+    CHECK(app.find("namespace \"" + options.application_id + "\"") != std::string::npos);
+    CHECK(app.find("applicationId \"" + options.application_id + "\"") != std::string::npos);
+    // The native build is wired to the JNI CMakeLists the export writes.
+    CHECK(app.find("externalNativeBuild") != std::string::npos);
+    CHECK(app.find("src/main/jni/CMakeLists.txt") != std::string::npos);
+    // The SDK levels are the options', not hardcoded.
+    CHECK(app.find("minSdk " + std::to_string(options.min_sdk)) != std::string::npos);
+    CHECK(app.find("targetSdk " + std::to_string(options.target_sdk)) != std::string::npos);
+}
+
+TEST_CASE("the android application id is derived, valid, and lowercase") {
+    AndroidProjectOptions options;
+    options.application_id.clear(); // ask for the derived default
+
+    ExportManifest manifest;
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.name = "My Game!";
+    // A project name with a space and punctuation must still yield a valid,
+    // all-lowercase application id: the Play Store rejects anything else, and a
+    // build that installs locally but cannot be published is a trap.
+    const std::string app = android_app_build_gradle(manifest, options);
+    CHECK(app.find("com.forkengine.my.game") != std::string::npos);
+
+    // A name that starts with a digit cannot start a Java identifier segment, so
+    // it is prefixed rather than emitted as an invalid id.
+    manifest.name = "3dGame";
+    const std::string digit = android_app_build_gradle(manifest, options);
+    CHECK(digit.find("com.forkengine.x3dgame") != std::string::npos);
+
+    // A project that names no name at all still produces a valid id.
+    manifest.name.clear();
+    const std::string unnamed = android_app_build_gradle(manifest, options);
+    CHECK(unnamed.find("com.forkengine.game") != std::string::npos);
+
+    // An explicit id is used verbatim, so a caller can set the package a store
+    // expects.
+    options.application_id = "com.example.shooter";
+    const std::string explicit_id = android_app_build_gradle(manifest, options);
+    CHECK(explicit_id.find("com.example.shooter") != std::string::npos);
+    CHECK(explicit_id.find("com.forkengine.game") == std::string::npos);
+}
+
+TEST_CASE("writing the android project produces a Gradle tree and its assets directory") {
+    TempDir dir("android_project");
+
+    ExportManifest manifest;
+    manifest.name = "Written";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetAndroid;
+
+    AndroidProjectOptions options;
+    options.engine_source_dir = "/opt/forkengine";
+    options.player_source = "/opt/forkengine/tools/player/src/main.cpp";
+
+    // A manifest that names no pack or scene is refused: the project would
+    // package nothing, and a build that fails on a phone is worse than one that
+    // fails here.
+    ExportManifest incomplete;
+    incomplete.target = ExportManifest::kTargetAndroid;
+    CHECK(write_android_project(dir.str(), incomplete, options));
+
+    REQUIRE_FALSE(write_android_project(dir.str(), manifest, options));
+    for (const char* relative : {AndroidExportNames::kSettingsGradle, AndroidExportNames::kRootBuildGradle,
+                                 AndroidExportNames::kGradleProperties, AndroidExportNames::kAppBuildGradle,
+                                 AndroidExportNames::kAndroidManifest, AndroidExportNames::kJniCMakeLists}) {
+        CHECK(fs::exists(fs::join(dir.str(), relative)));
+    }
+    // The assets directory exists even before the pack is copied in, so a Gradle
+    // run that finds it empty is a valid project rather than a missing source
+    // set.
+    CHECK(fs::is_directory(fs::join(dir.str(), AndroidExportNames::kAssetsDir)));
+
+    // The engine source directory reaches the JNI CMakeLists, so the project
+    // builds the checkout it was pointed at rather than a path guessed from the
+    // working directory.
+    auto jni = fs::read_text_file(fs::join(dir.str(), AndroidExportNames::kJniCMakeLists));
+    REQUIRE(jni);
+    CHECK(jni.value().find("/opt/forkengine") != std::string::npos);
+    CHECK(jni.value().find("/opt/forkengine/tools/player/src/main.cpp") != std::string::npos);
 }
 
 // The shipping flow, in process: author a scene with a bound script, pack the

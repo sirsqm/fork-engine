@@ -118,6 +118,7 @@ rather than editing it.
 | [0110](0110-render-graph-pass-culling.md) | Render-graph pass culling | Accepted |
 | [0111](0111-shared-island-graph.md) | A shared island graph for 2D and 3D physics | Accepted |
 | [0112](0112-audio-directivity-and-doppler.md) | Audio directivity and Doppler | Accepted |
+| [0113](0113-android-export-template.md) | The Android export template | Accepted |
 
 ## Format
 

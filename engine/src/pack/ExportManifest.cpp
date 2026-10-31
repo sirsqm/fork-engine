@@ -76,7 +76,7 @@ Error ExportManifest::from_json(std::string_view text, ExportManifest& out) {
     // been a desktop build, so the default is the honest reading rather than a
     // guess.
     parsed.target = document.value("target", std::string(kTargetDesktop));
-    if (parsed.target != kTargetDesktop && parsed.target != kTargetWeb) {
+    if (parsed.target != kTargetDesktop && parsed.target != kTargetWeb && parsed.target != kTargetAndroid) {
         return Error("export manifest: unknown target '" + parsed.target + "'");
     }
     parsed.pack = document.value("pack", std::string{});

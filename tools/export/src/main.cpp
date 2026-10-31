@@ -19,17 +19,32 @@
 //     game.fepack           the assets and the startup scene
 //     fork.export.json      the manifest, naming the target and the pack
 //
+//   build/export/<name>/          --target android
+//     settings.gradle       a Gradle project whose app module builds the player
+//     build.gradle          for the phone's ABI and packages an APK
+//     gradle.properties
+//     app/build.gradle
+//     app/src/main/AndroidManifest.xml
+//     app/src/main/jni/CMakeLists.txt
+//     app/src/main/assets/  the pack and the manifest, packaged into the APK
+//       game.fepack
+//       fork.export.json
+//
 // The pack is written by the engine's PackWriter, the same code fork_pack uses,
 // so the two tools cannot disagree about the format. On desktop the player is
 // copied, not rebuilt: the runtime is generic and driven by the pack, so export
 // has no compiler in it and cannot fail for toolchain reasons. A web build cannot
 // copy a runtime, because the player is a wasm module the page loads
 // asynchronously; the export assembles the wasm pair Emscripten produced and
-// writes a shell beside it (docs/adr/0071-web-first-2d-shipping-path.md).
+// writes a shell beside it (docs/adr/0071-web-first-2d-shipping-path.md). An
+// Android build is a third shape: the export writes a Gradle project that
+// compiles the player for the phone and packages it, the pack, and the manifest
+// into an APK (docs/SHIPPING_QUEUE.md, `android-export-template`).
 //
 // Usage:
-//   fork_export --project DIR --out DIR [--target desktop|web] [--player PATH]
+//   fork_export --project DIR --out DIR [--target desktop|web|android] [--player PATH]
 //               [--pack-name NAME] [--scene-key PATH]
+//               [--android-application-id ID] [--android-engine-dir DIR]
 //
 // --player names the runtime to copy (desktop) or to assemble (web). It defaults
 // to the fork_player beside this executable, or fork_player.js for web, which is
@@ -38,6 +53,7 @@
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
 #include "fe/mesh/GltfLoader.h"
+#include "fe/pack/AndroidExportTemplate.h"
 #include "fe/pack/AssetClosure.h"
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/PackWriter.h"
@@ -51,6 +67,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -64,9 +81,15 @@ struct Options {
     std::string player;               // runtime to copy; default: beside this executable
     std::string pack_name;            // pack file name inside the output directory
     std::string scene_key;            // key the scene is stored under; default: project-relative
-    std::string target = "desktop";   // "desktop" (copy the player) or "web" (assemble a shell)
+    std::string target = "desktop";   // "desktop" (copy the player), "web" (assemble a shell),
+                                      // or "android" (write a Gradle project)
     std::vector<std::string> modules; // gameplay modules to copy in and record
-    bool prune = true;                // pack only what the startup scene references
+    // Android-only inputs. The application id defaults to a value derived from
+    // the project's name; the engine source tree is where the JNI CMakeLists
+    // builds the player from, and defaults to this process's directory.
+    std::string android_application_id; // the Java package; default: com.forkengine.<name>
+    std::string android_engine_dir;     // the engine checkout; default: the current directory
+    bool prune = true;                  // pack only what the startup scene references
     bool verbose = false;
 };
 
@@ -177,8 +200,9 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
 }
 
 void print_usage() {
-    std::puts("usage: fork_export --project DIR --out DIR [--target desktop|web] [--player PATH]\n"
+    std::puts("usage: fork_export --project DIR --out DIR [--target desktop|web|android] [--player PATH]\n"
               "                   [--pack-name NAME] [--scene-key PATH] [--module PATH ...] [--no-prune]\n"
+              "                   [--android-application-id ID] [--android-engine-dir DIR]\n"
               "\n"
               "  --project DIR    a project directory or fork.project.json file\n"
               "  --out DIR        the directory to write the build into\n"
@@ -186,12 +210,19 @@ void print_usage() {
               "                     desktop  copy the native player beside the pack\n"
               "                     web      assemble a wasm runtime, a pack, and an\n"
               "                              HTML/JS shell a browser loads\n"
+              "                     android  write a Gradle project that packages the\n"
+              "                              pack and a native-activity runtime into\n"
+              "                              an APK (see --android-engine-dir)\n"
               "  --player PATH    the runtime to copy or, for --target web, the wasm\n"
               "                   runtime to assemble (default: fork_player beside\n"
               "                   this tool, or fork_player.js for web)\n"
               "  --pack-name NAME the pack file's name (default: game.fepack)\n"
               "  --scene-key PATH the scene's key inside the pack (default: project-relative)\n"
               "  --module PATH    a gameplay module to copy in and record (repeatable)\n"
+              "  --android-application-id ID  the Java package for an Android build\n"
+              "                   (default: com.forkengine.<project name>)\n"
+              "  --android-engine-dir DIR     the engine checkout the Android build\n"
+              "                   compiles the player from (default: the current directory)\n"
               "  --no-prune       pack the whole asset tree instead of only the\n"
               "                   assets the startup scene references. Pruning is\n"
               "                   the default (ADR-0065)\n"
@@ -214,6 +245,10 @@ void print_usage() {
             out.scene_key = argv[++i];
         } else if (arg == "--target" && has_value) {
             out.target = argv[++i];
+        } else if (arg == "--android-application-id" && has_value) {
+            out.android_application_id = argv[++i];
+        } else if (arg == "--android-engine-dir" && has_value) {
+            out.android_engine_dir = argv[++i];
         } else if (arg == "--module" && has_value) {
             out.modules.emplace_back(argv[++i]);
         } else if (arg == "--prune") {
@@ -252,12 +287,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "fork_export: --project and --out are required\n");
         return 2;
     }
-    // The target decides what "the runtime" is: a native executable to copy, or
-    // a wasm module plus a shell. Rejecting an unknown target here means the
-    // rest of the tool has exactly two cases to reason about.
+    // The target decides what "the runtime" is: a native executable to copy, a
+    // wasm module plus a shell, or a Gradle project that compiles the player for
+    // the phone. Rejecting an unknown target here means the rest of the tool has
+    // exactly three cases to reason about.
     const bool web = options.target == fe::pack::ExportManifest::kTargetWeb;
-    if (!web && options.target != fe::pack::ExportManifest::kTargetDesktop) {
-        std::fprintf(stderr, "fork_export: unknown target '%s' (expected 'desktop' or 'web')\n",
+    const bool android = options.target == fe::pack::ExportManifest::kTargetAndroid;
+    if (!web && !android && options.target != fe::pack::ExportManifest::kTargetDesktop) {
+        std::fprintf(stderr, "fork_export: unknown target '%s' (expected 'desktop', 'web', or 'android')\n",
                      options.target.c_str());
         return 2;
     }
@@ -286,28 +323,34 @@ int main(int argc, char** argv) {
     // copy - the runtime is the wasm module Emscripten emits - so the default is
     // the JS glue beside this tool, and its .wasm is expected next to it.
     std::string player = options.player;
-    if (player.empty()) {
-        const std::string directory = executable_directory(argv[0]);
-        player = fe::fs::join(directory.empty() ? "." : directory,
-                              web ? fe::pack::WebExportNames::kRuntimeJs : player_file_name());
-    }
-    if (!fe::fs::exists(player)) {
-        std::fprintf(stderr, "fork_export: no runtime at '%s'. Build fork_player%s, or pass --player PATH.\n",
-                     player.c_str(), web ? " for the web target (emcmake)" : "");
-        return 1;
-    }
-    // For web the .wasm sits beside the JS glue; Emscripten writes both, so a
-    // missing one means the build was not a web build and the export should say
-    // so now rather than leave a shell that 404s at load.
     std::string wasm_source;
-    if (web) {
-        wasm_source = fe::fs::join(fe::fs::parent_path(player), fe::pack::WebExportNames::kWasmBinary);
-        if (!fe::fs::exists(wasm_source)) {
-            std::fprintf(stderr,
-                         "fork_export: no '%s' beside '%s'. A web runtime is built with emcmake; "
-                         "build fork_player for the web target, or pass --player PATH.\n",
-                         fe::pack::WebExportNames::kWasmBinary, player.c_str());
+    // Android has no runtime to copy or assemble: the Gradle project compiles
+    // the player from source for the phone's ABI, so there is no file here to
+    // check for. The check is the engine source tree the JNI CMakeLists points
+    // at, made below.
+    if (!android) {
+        if (player.empty()) {
+            const std::string directory = executable_directory(argv[0]);
+            player = fe::fs::join(directory.empty() ? "." : directory,
+                                  web ? fe::pack::WebExportNames::kRuntimeJs : player_file_name());
+        }
+        if (!fe::fs::exists(player)) {
+            std::fprintf(stderr, "fork_export: no runtime at '%s'. Build fork_player%s, or pass --player PATH.\n",
+                         player.c_str(), web ? " for the web target (emcmake)" : "");
             return 1;
+        }
+        // For web the .wasm sits beside the JS glue; Emscripten writes both, so a
+        // missing one means the build was not a web build and the export should
+        // say so now rather than leave a shell that 404s at load.
+        if (web) {
+            wasm_source = fe::fs::join(fe::fs::parent_path(player), fe::pack::WebExportNames::kWasmBinary);
+            if (!fe::fs::exists(wasm_source)) {
+                std::fprintf(stderr,
+                             "fork_export: no '%s' beside '%s'. A web runtime is built with emcmake; "
+                             "build fork_player for the web target, or pass --player PATH.\n",
+                             fe::pack::WebExportNames::kWasmBinary, player.c_str());
+                return 1;
+            }
         }
     }
 
@@ -370,7 +413,21 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const std::string pack_path = fe::fs::join(options.out, pack_name);
+    // Where the pack and the manifest go. Desktop and web put them beside the
+    // runtime, at the export root, because that is where the player and the
+    // shell look. Android puts them under the app module's `assets`, which is
+    // what the Gradle plugin packages into the APK and what the runtime reads
+    // from the APK's asset manager. The manifest still records the pack by its
+    // bare name, because within the assets directory the two are siblings and
+    // the runtime resolves both relative to itself.
+    const std::string content_dir =
+        android ? fe::fs::join(options.out, fe::pack::AndroidExportNames::kAssetsDir) : options.out;
+    if (fe::Error error = fe::fs::create_directories(content_dir); error) {
+        std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
+        return 1;
+    }
+
+    const std::string pack_path = fe::fs::join(content_dir, pack_name);
     if (fe::Error error = fe::fs::write_binary_file(pack_path, pack_bytes.value().data(), pack_bytes.value().size());
         error) {
         std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
@@ -382,6 +439,9 @@ int main(int argc, char** argv) {
     // not depend on a toolchain, and the same player serves every game
     // (ADR-0064). Web copies the wasm pair instead - there is no executable, and
     // the page loads the JS glue and its .wasm - and then writes the shell.
+    // Android copies neither: the player is compiled from source for the phone's
+    // ABI by the Gradle project's own native build, so there is nothing to copy
+    // here.
     if (web) {
         const std::string js_out = fe::fs::join(options.out, fe::pack::WebExportNames::kRuntimeJs);
         if (fe::Error error = fe::fs::copy_file(player, js_out); error) {
@@ -393,7 +453,7 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
             return 1;
         }
-    } else {
+    } else if (!android) {
         const std::string player_out = fe::fs::join(options.out, player_file_name());
         if (fe::Error error = fe::fs::copy_file(player, player_out); error) {
             std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
@@ -423,11 +483,18 @@ int main(int argc, char** argv) {
     // told to ship.
     //
     // A web build has no shared-library loader, so a module cannot be loaded in
-    // a browser. Refusing rather than recording a module the shell would never
-    // load keeps a build from claiming gameplay it cannot run.
+    // a browser; an Android build loads modules from the app's native library
+    // directory, which the export does not stage yet. Refusing rather than
+    // recording a module the build would never load keeps a build from claiming
+    // gameplay it cannot run.
     if (web && !options.modules.empty()) {
         std::fprintf(stderr, "fork_export: gameplay modules are not supported for the web target "
                              "(a browser has no shared-library loader)\n");
+        return 1;
+    }
+    if (android && !options.modules.empty()) {
+        std::fprintf(stderr, "fork_export: gameplay modules are not supported for the android target yet "
+                             "(the export does not stage a native library directory)\n");
         return 1;
     }
     for (const std::string& module : options.modules) {
@@ -436,23 +503,48 @@ int main(int argc, char** argv) {
             return 1;
         }
         const std::string module_name = fe::fs::filename(module);
-        if (fe::Error error = fe::fs::copy_file(module, fe::fs::join(options.out, module_name)); error) {
+        if (fe::Error error = fe::fs::copy_file(module, fe::fs::join(content_dir, module_name)); error) {
             std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
             return 1;
         }
         manifest.modules.push_back(module_name);
     }
 
-    if (fe::Error error = manifest.save(fe::fs::join(options.out, fe::pack::ExportManifest::kDefaultFileName)); error) {
+    if (fe::Error error = manifest.save(fe::fs::join(content_dir, fe::pack::ExportManifest::kDefaultFileName)); error) {
         std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
         return 1;
     }
 
     // The shell is written last, after the manifest it reads, so a failure above
     // leaves no page pointing at files that were never written. The shell takes
-    // the pack and scene from the manifest, so the two cannot disagree.
+    // the pack and scene from the manifest, so the two cannot disagree. Android
+    // writes a Gradle project instead, and it too goes last for the same reason:
+    // a project that referenced a pack that was never written would fail on a
+    // phone rather than here.
     if (web) {
         if (fe::Error error = fe::pack::write_web_shell(options.out, manifest); error) {
+            std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
+            return 1;
+        }
+    }
+    if (android) {
+        fe::pack::AndroidProjectOptions android_options;
+        android_options.application_id = options.android_application_id;
+        // The JNI CMakeLists is run by Gradle from the app module's directory, so
+        // both paths are made absolute: a relative path would resolve against
+        // Gradle's working directory, not the export's.
+        const std::string engine_dir =
+            options.android_engine_dir.empty() ? std::string(".") : options.android_engine_dir;
+        android_options.engine_source_dir = fe::fs::normalize(
+            fe::fs::is_absolute(engine_dir) ? engine_dir : std::filesystem::absolute(engine_dir).string());
+        android_options.player_source =
+            fe::fs::normalize(fe::fs::join(android_options.engine_source_dir, "tools/player/src/main.cpp"));
+        if (!fe::fs::exists(android_options.engine_source_dir)) {
+            std::fprintf(stderr, "fork_export: no engine source at '%s'. Pass --android-engine-dir DIR.\n",
+                         android_options.engine_source_dir.c_str());
+            return 1;
+        }
+        if (fe::Error error = fe::pack::write_android_project(options.out, manifest, android_options); error) {
             std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
             return 1;
         }

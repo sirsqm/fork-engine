@@ -44,12 +44,18 @@ struct ExportManifest {
     // a sentence rather than a blank canvas.
     static constexpr const char* kTargetDesktop = "desktop";
     static constexpr const char* kTargetWeb = "web";
+    // The Android target. A build for it is a Gradle project that packages the
+    // player (a native activity), the pack, and the manifest into an APK; the
+    // export step writes the project rather than a copy of a runtime
+    // (docs/SHIPPING_QUEUE.md, `android-export-template`). A launcher reads this to
+    // know what it has without probing file names.
+    static constexpr const char* kTargetAndroid = "android";
 
     // The project's name, for a launcher to display. Not used to find anything.
     std::string name;
-    // What this build runs on: kTargetDesktop or kTargetWeb. Absent in a
-    // document written before targets existed, which reads as desktop - the
-    // only target that could have produced it.
+    // What this build runs on: kTargetDesktop, kTargetWeb, or kTargetAndroid.
+    // Absent in a document written before targets existed, which reads as
+    // desktop - the only target that could have produced it.
     std::string target = kTargetDesktop;
     // The pack file to mount, relative to the manifest's directory.
     std::string pack;
