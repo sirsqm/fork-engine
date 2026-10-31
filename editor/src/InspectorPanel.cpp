@@ -4,6 +4,7 @@
 
 #include "fe/core/Log.h"
 #include "fe/editor/EditorContext.h"
+#include "fe/editor/EditorWidgets.h"
 #include "fe/editor/OperationCommand.h"
 #include "fe/editor/PropertyEditor.h"
 #include "fe/reflect/ComponentTypes.h"
@@ -485,20 +486,28 @@ void InspectorPanel::draw(EditorContext& context) {
 
     Node* node = context.hierarchy().selected_node();
     if (node == nullptr) {
-        ImGui::TextDisabled("Select a node to inspect its components");
+        ImGui::Dummy(ImVec2{0.0f, 6.0f});
+        ui::empty_hint("Select a node to inspect its components");
         ImGui::End();
         return;
     }
 
-    ImGui::Text("%s", node->name().c_str());
+    // The node's identity block: its name as a heading, then its type as a badge,
+    // then the stable id in the muted colour. The id is what an operation names,
+    // so it is worth showing when it needs to be quoted; it is quiet enough not
+    // to compete with the name.
+    ImGui::Dummy(ImVec2{0.0f, 4.0f});
+    ImGui::TextUnformatted(node->name().c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("(%s)", node->type_name());
+    ui::badge(node->type_name(), ui::palette().surface_raised);
     ImGui::Separator();
+    ImGui::TextDisabled("%s", node->id().to_string().c_str());
 
     draw_transform_section(context, *node);
 
     if (node->component_count() == 0) {
-        ImGui::TextDisabled("No components");
+        ImGui::Dummy(ImVec2{0.0f, 4.0f});
+        ui::empty_hint("No components on this node");
     }
 
     const reflect::Registry& registry = reflect::Registry::instance();

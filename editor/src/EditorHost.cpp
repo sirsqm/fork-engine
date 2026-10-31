@@ -43,6 +43,7 @@ Error EditorHost::initialize() {
     // The starting colour scheme. Set before the UI is initialised, so the very
     // first frame is drawn in it rather than flashing the default.
     context_.set_theme(config_.theme);
+    context_.set_density(config_.density);
     // Point the inspector's resource fields at the embedded engine's manager.
     context_.set_resources(&engine_.resources());
 

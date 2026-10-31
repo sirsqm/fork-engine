@@ -3,6 +3,7 @@
 #include "fe/editor/HierarchyPanel.h"
 
 #include "fe/editor/EditorContext.h"
+#include "fe/editor/EditorWidgets.h"
 #include "fe/editor/HierarchyViewModel.h"
 #include "fe/editor/OperationCommand.h"
 #include "fe/scene/Node.h"
@@ -138,11 +139,12 @@ void HierarchyPanel::draw(EditorContext& context) {
     if (ImGui::Begin(name())) {
         model.rebuild(context.scene());
 
+        // The filter gets a full-width field with a hint, and the node count sits
+        // beside it, so the panel says how much it is showing.
+        ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::InputTextWithHint("##filter", "Search nodes", filter_buffer_.data(), filter_buffer_.size())) {
             model.set_filter(std::string(filter_buffer_.data()));
         }
-
-        ImGui::Separator();
 
         // Delete removes the selection. Handled at panel level so it works
         // whether or not a row is hovered. Refused while a text field has focus
@@ -166,7 +168,7 @@ void HierarchyPanel::draw(EditorContext& context) {
             ImGui::PushID(node);
 
             if (row.depth > 0) {
-                ImGui::Indent(static_cast<f32>(row.depth) * 12.0f);
+                ImGui::Indent(static_cast<f32>(row.depth) * ui::metrics().indent_spacing);
             }
 
             if (row.has_children) {
@@ -186,7 +188,9 @@ void HierarchyPanel::draw(EditorContext& context) {
                     commit_rename(context);
                 }
             } else {
-                if (ImGui::Selectable(node->name().c_str(), selected)) {
+                // A row is a full-width selectable, so the selection highlight
+                // spans the row rather than hugging the label.
+                if (ImGui::Selectable(node->name().c_str(), selected, ImGuiSelectableFlags_None)) {
                     model.select(node);
                 }
                 // The view model rebuilt this frame, so `node` is still valid;
@@ -199,12 +203,16 @@ void HierarchyPanel::draw(EditorContext& context) {
             }
 
             if (row.depth > 0) {
-                ImGui::Unindent(static_cast<f32>(row.depth) * 12.0f);
+                ImGui::Unindent(static_cast<f32>(row.depth) * ui::metrics().indent_spacing);
             }
 
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
-                ImGui::Text("%s (%zu components)", node->type_name(), node->component_count());
+                ImGui::TextUnformatted(node->name().c_str());
+                ImGui::Separator();
+                ImGui::TextDisabled("%s", node->type_name());
+                ImGui::TextDisabled("%zu component%s", node->component_count(),
+                                    node->component_count() == 1 ? "" : "s");
                 ImGui::EndTooltip();
             }
 
@@ -212,7 +220,9 @@ void HierarchyPanel::draw(EditorContext& context) {
         }
 
         if (model.rows().empty()) {
-            ImGui::TextDisabled("No nodes");
+            ui::empty_hint(model.has_filter() ? "No matching nodes" : "No nodes in this scene");
+            ImGui::Dummy(ImVec2{0.0f, 2.0f});
+            ImGui::TextDisabled("Right-click to add a node");
         }
 
         // Right-clicking empty space adds a scene root.

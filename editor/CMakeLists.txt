@@ -21,6 +21,7 @@ add_library(fork_editor_core STATIC
     src/HierarchyViewModel.cpp
     src/AssetBrowserViewModel.cpp
     src/EditorContext.cpp
+    src/EditorPalette.cpp
     src/ProjectSettings.cpp
     src/PlaySession.cpp
     src/PropertyEditor.cpp
@@ -46,6 +47,8 @@ target_compile_features(fork_editor_core PUBLIC cxx_std_20)
 # ---------------------------------------------------------------------------
 add_library(fork_editor STATIC
     src/EditorUi.cpp
+    src/EditorStyle.cpp
+    src/EditorWidgets.cpp
     src/EditorHost.cpp
     src/HierarchyPanel.cpp
     src/AssetBrowserPanel.cpp
@@ -57,6 +60,32 @@ add_library(fork_editor STATIC
     src/ViewportPanel.cpp
 )
 add_library(FE::editor ALIAS fork_editor)
+
+# ---------------------------------------------------------------------------
+# Embedded fonts
+#
+# The UI draws with a real typeface, not Dear ImGui's built-in bitmap font. The
+# bytes are embedded in the binary so the same code finds the font from a build
+# tree, an install tree, and the AppImage; see cmake/EmbedFonts.cmake. The
+# generated unit is added to fork_editor rather than committed.
+# ---------------------------------------------------------------------------
+set(FE_EDITOR_FONT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts")
+set(FE_EDITOR_EMBEDDED_FONTS "${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedFonts.cpp")
+add_custom_command(
+  OUTPUT "${FE_EDITOR_EMBEDDED_FONTS}"
+  COMMAND ${CMAKE_COMMAND}
+          -DINPUT_DIR=${FE_EDITOR_FONT_DIR}
+          -DOUTPUT=${FE_EDITOR_EMBEDDED_FONTS}
+          -P "${CMAKE_SOURCE_DIR}/cmake/EmbedFonts.cmake"
+  DEPENDS
+    "${FE_EDITOR_FONT_DIR}/Inter-Regular.ttf"
+    "${FE_EDITOR_FONT_DIR}/Inter-SemiBold.ttf"
+    "${FE_EDITOR_FONT_DIR}/JetBrainsMono-Regular.ttf"
+    "${CMAKE_SOURCE_DIR}/cmake/EmbedFonts.cmake"
+  COMMENT "Embedding editor fonts"
+  VERBATIM
+)
+target_sources(fork_editor PRIVATE "${FE_EDITOR_EMBEDDED_FONTS}")
 
 target_include_directories(
   fork_editor

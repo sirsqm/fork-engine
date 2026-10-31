@@ -327,6 +327,19 @@ public:
     void set_theme(EditorTheme theme) noexcept { theme_ = theme; }
     [[nodiscard]] bool is_dark_theme() const noexcept { return theme_ == EditorTheme::Dark; }
 
+    // How tightly the UI is packed. Set from the View menu, like the theme, and
+    // applied by the UI on the frame it changes.
+    [[nodiscard]] EditorDensity density() const noexcept { return density_; }
+    void set_density(EditorDensity density) noexcept { density_ = density; }
+
+    // The scheme (palette + metrics) currently in effect, for a panel that needs
+    // a colour or a measurement without reaching into the UI toolkit. This is the
+    // bridge that lets a panel stay toolkit-light: it reads a role-named colour
+    // here rather than an ImGui slot. EditorUi keeps it in step with what it has
+    // applied, so the value a panel reads is the value on screen.
+    [[nodiscard]] const EditorScheme& scheme() const noexcept { return scheme_; }
+    void set_scheme(EditorScheme scheme) noexcept { scheme_ = scheme; }
+
     // Ends the current coalescing group, so the next property edit is a new undo
     // step. The panels call this when an edit gesture finishes.
     void break_undo_coalescing() noexcept { commands_.break_coalescing(); }
@@ -373,6 +386,12 @@ private:
     std::optional<Profiler> profiler_;
     ViewportMode viewport_mode_ = ViewportMode::Auto;
     EditorTheme theme_ = EditorTheme::Dark;
+    EditorDensity density_ = EditorDensity::Comfortable;
+    // Kept in step with the toolkit by EditorUi::apply_theme, so a panel reading
+    // scheme() sees what is on screen. Default-constructed to the dark,
+    // comfortable scheme so a panel drawn before the first apply_theme (never in
+    // practice, but a test can) still reads sane values.
+    EditorScheme scheme_ = EditorScheme::for_theme(EditorTheme::Dark, EditorDensity::Comfortable);
 };
 
 } // namespace editor

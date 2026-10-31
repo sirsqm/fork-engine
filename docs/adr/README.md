@@ -112,6 +112,7 @@ rather than editing it.
 | [0104](0104-skeletal-animation.md) | Skeletal animation and skinning | Accepted |
 | [0105](0105-android-window-backend.md) | The Android target's toolchain and platform macro | Accepted |
 | [0106](0106-one-mark-for-the-engine.md) | One mark for the engine, the window, and the web page | Accepted |
+| [0107](0107-editor-typeface-and-palette.md) | A real typeface and a role-named palette for the editor UI | Accepted |
 
 ## Format
 

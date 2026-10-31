@@ -59,6 +59,9 @@ public:
         // this only sets the initial one, so a shell can open light without a
         // click (and a screenshot script can capture both).
         EditorTheme theme = EditorTheme::Dark;
+        // The packing density to start in. Set here for the same reason as the
+        // theme: a script can pick the compact layout with no click.
+        EditorDensity density = EditorDensity::Comfortable;
     };
 
     explicit EditorHost(Config config);

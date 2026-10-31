@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/core/Error.h"
+#include "fe/editor/EditorStyle.h"
 #include "fe/editor/EditorTheme.h"
 #include "fe/editor/Panel.h"
 
@@ -74,15 +75,21 @@ public:
 private:
     void draw_dock_space(unsigned int dockspace_id);
 
-    // Applies the ImGui colour scheme for `theme`, if it differs from the one
-    // currently in effect. Called at the top of every frame, so a toggle in the
-    // menu takes effect on the frame it is clicked.
-    void apply_theme(EditorTheme theme);
+    // Applies the ImGui style and fonts for `theme` and `density`, if either
+    // differs from what is currently in effect. Called at the top of every frame,
+    // so a toggle in the menu takes effect on the frame it is clicked.
+    void apply_theme(EditorTheme theme, EditorDensity density);
 
-    // The top menu bar: play/stop control and the scene's identity. Kept here
-    // rather than in a panel so it is always visible regardless of the dock
-    // layout, the way a real editor's transport bar is.
+    // The top menu bar and the transport/status strip below it: play/stop, the
+    // viewport mode, and the scene's identity. Kept here rather than in a panel so
+    // it is always visible regardless of the dock layout, the way a real editor's
+    // transport bar is.
     void draw_toolbar(EditorContext& context);
+
+    // The second toolbar row: the transport buttons and the status readout. Split
+    // from draw_toolbar() so the menu bar stays a pure menu and this can carry
+    // real controls without cramming them into the menu line.
+    void draw_transport_bar(EditorContext& context);
 
     bool initialized_ = false;
     std::vector<std::unique_ptr<Panel>> panels_;
@@ -91,10 +98,16 @@ private:
     bool default_layout_applied_ = false;
     std::string layout_ini_path_;
     // The scheme currently applied to ImGui, so apply_theme() is a no-op unless
-    // the requested theme differs. `Dark` matches the StyleColorsDark() call in
-    // initialize(), so the first frame does not re-apply.
-    EditorTheme applied_theme_ = EditorTheme::Dark;
-    bool theme_applied_ = false;
+    // the requested theme or density differs. Initialised to dark/comfortable so
+    // the first frame's apply is the one that actually sets the style.
+    EditorScheme applied_scheme_ = EditorScheme::for_theme(EditorTheme::Dark, EditorDensity::Comfortable);
+    bool style_applied_ = false;
+    // Set when a density change asked for the font atlas to be re-baked at a new
+    // size. The rebuild is deferred to begin_frame(), between frames, because it
+    // clears the atlas and that is illegal while a frame has a font bound.
+    bool fonts_need_rebuild_ = false;
+    // The fonts, resolved once at initialize() and pushed for the whole frame.
+    EditorFonts fonts_;
 };
 
 } // namespace editor

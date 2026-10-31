@@ -49,6 +49,10 @@ public:
     [[nodiscard]] const std::vector<Row>& rows() const noexcept { return rows_; }
     [[nodiscard]] bool empty() const noexcept { return rows_.empty(); }
 
+    // True when a search filter is active, so an empty row list can say "no
+    // matching nodes" rather than "no nodes".
+    [[nodiscard]] bool has_filter() const noexcept { return !filter_.empty(); }
+
     // --- Selection ---------------------------------------------------------
     void select(Node* node) noexcept;
     void clear_selection() noexcept;

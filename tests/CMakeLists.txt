@@ -239,6 +239,7 @@ if(FE_BUILD_EDITOR)
       src/test_operations.cpp
       src/test_editor_physics_play.cpp
       src/test_profiler_panel.cpp
+      src/test_editor_style.cpp
   )
   target_link_libraries(fork_editor_tests PRIVATE FE::editor_core ${FE_DOCTEST_TARGET} fe_warnings)
   target_compile_features(fork_editor_tests PRIVATE cxx_std_20)

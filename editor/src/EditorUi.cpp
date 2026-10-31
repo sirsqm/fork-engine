@@ -5,6 +5,8 @@
 #include "fe/core/Assert.h"
 #include "fe/core/Log.h"
 #include "fe/editor/EditorContext.h"
+#include "fe/editor/EditorStyle.h"
+#include "fe/editor/EditorWidgets.h"
 #include "fe/platform/Window.h"
 
 #include "backends/imgui_impl_glfw.h"
@@ -14,6 +16,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <cstdio>
 #include <string>
 #include <string_view>
 
@@ -24,6 +27,17 @@ namespace {
 // stable constant, which is what lets the saved layout find the host again
 // next launch.
 constexpr ImGuiID kDockSpaceId = 0x0FE1D0C4;
+
+// The glyphs the toolbar draws. Taken from the embedded Inter face (which
+// carries the geometric shapes and arrows below), so the buttons are typographic
+// rather than images and scale with the font.
+constexpr const char* kGlyphPlay = "\u25B6"; // BLACK RIGHT-POINTING TRIANGLE
+constexpr const char* kGlyphStop = "\u25A0"; // BLACK SQUARE
+constexpr const char* kGlyphUndo = "\u21BB"; // CLOCKWISE OPEN CIRCLE ARROW
+
+[[nodiscard]] ImVec4 to_imvec4(const Rgba& c) noexcept {
+    return ImVec4{c.r, c.g, c.b, c.a};
+}
 
 } // namespace
 
@@ -50,7 +64,22 @@ Error EditorUi::initialize(Window& window) {
     // GL contexts. See docs/adr/0007-editor-ui-toolkit.md.
     io.IniFilename = nullptr; // The shell decides where (and whether) to persist.
 
-    ImGui::StyleColorsDark();
+    // The editor's own look, not a stock ImGui theme, and its own typeface rather
+    // than the built-in bitmap font. Applied before the backends so the first
+    // frame is already correct.
+    const EditorScheme initial = EditorScheme::for_theme(EditorTheme::Dark, EditorDensity::Comfortable);
+    apply_editor_style(initial);
+    ui::set_active_palette(initial.palette);
+    ui::set_active_metrics(initial.metrics);
+    applied_scheme_ = initial;
+    style_applied_ = true;
+
+    if (!load_editor_fonts(fonts_, initial.metrics)) {
+        // Not fatal: ImGui keeps its built-in font, so the editor still runs. The
+        // warning is worth having, because the UI will look wrong and this is the
+        // one place that says why.
+        FE_LOG_WARN("editor: embedded UI fonts failed to load; falling back to the built-in font");
+    }
 
     auto* glfw_window = static_cast<GLFWwindow*>(window.native_handle());
     if (glfw_window == nullptr) {
@@ -94,6 +123,13 @@ void EditorUi::add_panel(std::unique_ptr<Panel> panel) {
 
 void EditorUi::begin_frame() {
     FE_CHECK(initialized_);
+    // A density change from the previous frame asked for a font re-bake. This is
+    // the one place it is safe: the previous frame has been rendered and nothing
+    // is bound yet, so clearing the atlas does not remove a live font.
+    if (fonts_need_rebuild_) {
+        fonts_need_rebuild_ = false;
+        (void)rebuild_editor_fonts(fonts_, applied_scheme_.metrics);
+    }
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -122,29 +158,51 @@ void EditorUi::draw_dock_space(unsigned int dockspace_id) {
     ImGui::End();
 }
 
-void EditorUi::apply_theme(EditorTheme theme) {
-    // Re-applying a style is cheap but not free, and a per-frame call would
-    // reset any colour the user had tweaked, so this is a no-op unless the theme
-    // actually changed. `initialize()` already applied dark, so the first frame
-    // with the default theme does nothing.
-    if (theme_applied_ && theme == applied_theme_) {
+void EditorUi::apply_theme(EditorTheme theme, EditorDensity density) {
+    // Re-applying a style is cheap but not free, and a per-frame call would reset
+    // any colour the user had tweaked, so this is a no-op unless the scheme
+    // actually changed. `initialize()` already applied the initial scheme.
+    const EditorScheme wanted = EditorScheme::for_theme(theme, density);
+    const bool same_theme = wanted.palette.window_bg.r == applied_scheme_.palette.window_bg.r &&
+                            wanted.palette.window_bg.g == applied_scheme_.palette.window_bg.g &&
+                            wanted.palette.window_bg.b == applied_scheme_.palette.window_bg.b;
+    const bool same_density = wanted.metrics.font_size == applied_scheme_.metrics.font_size;
+    if (style_applied_ && same_theme && same_density) {
         return;
     }
-    if (theme == EditorTheme::Light) {
-        ImGui::StyleColorsLight();
-    } else {
-        ImGui::StyleColorsDark();
+    apply_editor_style(wanted);
+    applied_scheme_ = wanted;
+    style_applied_ = true;
+    // Keep the shared widgets' palette in step, so a panel that calls ui::labelled
+    // or ui::badge draws in the scheme now on screen.
+    ui::set_active_palette(wanted.palette);
+    ui::set_active_metrics(wanted.metrics);
+    // A density change moves the font size, so the faces must be re-baked at the
+    // new size. That rebuild cannot happen here: this runs inside a frame, where
+    // the atlas's current font is bound, and clearing it mid-frame aborts. Set a
+    // flag and do it in begin_frame(), between frames.
+    if (!same_density) {
+        fonts_need_rebuild_ = true;
     }
-    applied_theme_ = theme;
-    theme_applied_ = true;
 }
 
 void EditorUi::draw_panels(EditorContext& context) {
     FE_CHECK(initialized_);
 
-    apply_theme(context.theme());
+    apply_theme(context.theme(), context.density());
+    // Keep the context's copy of the scheme in step with what is on screen, so a
+    // panel reading context.scheme() reads the applied colours and metrics.
+    context.set_scheme(applied_scheme_);
+
+    // The whole frame draws in the regular face; a panel that wants the mono or
+    // semibold face pushes it for its own draws. Pushing once here rather than
+    // per panel means the default is right even before a panel runs.
+    if (fonts_.regular != nullptr) {
+        ImGui::PushFont(fonts_.regular, applied_scheme_.metrics.font_size);
+    }
 
     draw_toolbar(context);
+    draw_transport_bar(context);
     draw_dock_space(kDockSpaceId);
 
     // Apply a default layout the first frame after the dock space exists, so a
@@ -186,12 +244,152 @@ void EditorUi::draw_panels(EditorContext& context) {
     for (const auto& panel : panels_) {
         panel->draw(context);
     }
+
+    if (fonts_.regular != nullptr) {
+        ImGui::PopFont();
+    }
+}
+
+void EditorUi::draw_transport_bar(EditorContext& context) {
+    // A strip docked to the top of the viewport, below the menu bar. It is drawn
+    // on the `surface` colour rather than the panel body, so it reads as chrome
+    // above the working area rather than as a floating panel, and a hairline
+    // under it separates the two.
+    const float height = ImGui::GetFrameHeight() + applied_scheme_.metrics.frame_padding_y * 2.0f + 4.0f;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, to_imvec4(applied_scheme_.palette.surface));
+    const bool open = ImGui::BeginViewportSideBar(
+        "##ForkEngineTransport", const_cast<ImGuiViewport*>(viewport), ImGuiDir_Up, height,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration);
+    ImGui::PopStyleColor();
+    if (!open) {
+        ImGui::End();
+        return;
+    }
+
+    // The hairline along the bottom edge.
+    {
+        const ImVec2 pos = ImGui::GetWindowPos();
+        const float y = pos.y + ImGui::GetWindowHeight() - 1.0f;
+        ImGui::GetWindowDrawList()->AddLine(ImVec2{pos.x, y}, ImVec2{pos.x + ImGui::GetWindowWidth(), y},
+                                            ImGui::GetColorU32(to_imvec4(applied_scheme_.palette.border)));
+    }
+
+    const PlaySession& play = context.play();
+
+    // --- Transport ---------------------------------------------------------
+    // A filled accent button for the primary action (play), a quiet one to stop,
+    // so the eye lands on what the editor wants you to do next.
+    if (play.is_playing()) {
+        ImGui::PushStyleColor(ImGuiCol_Button, to_imvec4(applied_scheme_.palette.danger));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, to_imvec4(applied_scheme_.palette.danger));
+        if (ImGui::Button((std::string(kGlyphStop) + "  Stop").c_str())) {
+            context.request_stop_play();
+        }
+        ImGui::PopStyleColor(2);
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button, to_imvec4(applied_scheme_.palette.accent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, to_imvec4(applied_scheme_.palette.accent_hovered));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, to_imvec4(applied_scheme_.palette.accent_active));
+        // The text on the accent button is the background colour, so it stays
+        // legible in both schemes rather than being a fixed dark that fails on the
+        // light accent.
+        ImGui::PushStyleColor(ImGuiCol_Text, to_imvec4(applied_scheme_.palette.window_bg));
+        if (ImGui::Button((std::string(kGlyphPlay) + "  Play").c_str())) {
+            context.request_start_play();
+        }
+        ImGui::PopStyleColor(4);
+    }
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!context.can_undo());
+    if (ImGui::Button((std::string(kGlyphUndo) + "  Undo").c_str())) {
+        context.undo();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!context.can_redo());
+    if (ImGui::Button("Redo")) {
+        context.redo();
+    }
+    ImGui::EndDisabled();
+
+    // --- Viewport mode -----------------------------------------------------
+    // A segmented control rather than three loose radios: the three are one
+    // choice, so they are drawn as one control.
+    ImGui::SameLine();
+    ImGui::TextDisabled("View");
+    ImGui::SameLine();
+    const int mode = context.viewport_mode() == ViewportMode::TwoD     ? 0
+                     : context.viewport_mode() == ViewportMode::ThreeD ? 2
+                                                                       : 1;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0.0f, 0.0f});
+    for (int i = 0; i < 3; ++i) {
+        const char* label = i == 0 ? "2D" : (i == 1 ? "Auto" : "3D");
+        const bool selected = mode == i;
+        if (selected) {
+            ImGui::PushStyleColor(ImGuiCol_Button, to_imvec4(applied_scheme_.palette.selection_bg));
+        }
+        if (i > 0) {
+            ImGui::SameLine();
+        }
+        if (ImGui::Button(label)) {
+            context.set_viewport_mode(i == 0 ? ViewportMode::TwoD : i == 1 ? ViewportMode::Auto : ViewportMode::ThreeD);
+        }
+        if (selected) {
+            ImGui::PopStyleColor();
+        }
+    }
+    ImGui::PopStyleVar();
+
+    // --- Status ------------------------------------------------------------
+    // Right-aligned: the scene identity and its dirty state. `GetContentRegionAvail`
+    // after a SameLine gives the width left, so the status sits against the right
+    // edge the way a status bar does.
+    const std::string scene_name = context.scene().name();
+    const std::string path = context.scene_path().empty() ? "(unsaved)" : context.scene_path();
+    const std::string status = scene_name + "  -  " + path;
+    const float status_width = ImGui::CalcTextSize(status.c_str()).x + 150.0f;
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - status_width);
+    ImGui::TextDisabled("%s", scene_name.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("-");
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", path.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu nodes", context.scene().node_count());
+
+    if (context.is_dirty()) {
+        ImGui::SameLine();
+        ui::badge("modified", applied_scheme_.palette.accent);
+    }
+    if (play.is_playing()) {
+        ImGui::SameLine();
+        ui::badge("PLAYING", applied_scheme_.palette.success);
+    }
+
+    ImGui::End();
 }
 
 void EditorUi::draw_toolbar(EditorContext& context) {
     if (!ImGui::BeginMainMenuBar()) {
         return;
     }
+
+    // The engine's name in the semibold face, as the menu bar's leading mark. It
+    // is not a menu; it is the app identity, the way a real editor labels itself.
+    if (fonts_.semibold != nullptr) {
+        ImGui::PushFont(fonts_.semibold, applied_scheme_.metrics.font_size);
+    }
+    ImGui::TextUnformatted("Fork Engine");
+    if (fonts_.semibold != nullptr) {
+        ImGui::PopFont();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
 
     if (ImGui::BeginMenu("File")) {
         if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
@@ -244,58 +442,30 @@ void EditorUi::draw_toolbar(EditorContext& context) {
         // The colour scheme. A radio pair so the current choice is visible, the
         // same idiom the viewport mode uses. The change is applied by
         // apply_theme() on this frame, so it is immediate.
-        if (ImGui::MenuItem("Dark Theme", nullptr, context.theme() == EditorTheme::Dark)) {
+        ImGui::SeparatorText("Theme");
+        if (ImGui::MenuItem("Dark", nullptr, context.theme() == EditorTheme::Dark)) {
             context.set_theme(EditorTheme::Dark);
         }
-        if (ImGui::MenuItem("Light Theme", nullptr, context.theme() == EditorTheme::Light)) {
+        if (ImGui::MenuItem("Light", nullptr, context.theme() == EditorTheme::Light)) {
             context.set_theme(EditorTheme::Light);
+        }
+        ImGui::SeparatorText("Density");
+        if (ImGui::MenuItem("Comfortable", nullptr, context.density() == EditorDensity::Comfortable)) {
+            context.set_density(EditorDensity::Comfortable);
+        }
+        if (ImGui::MenuItem("Compact", nullptr, context.density() == EditorDensity::Compact)) {
+            context.set_density(EditorDensity::Compact);
         }
         ImGui::EndMenu();
     }
 
-    const PlaySession& play = context.play();
-    if (play.is_playing()) {
-        if (ImGui::Button("Stop")) {
-            context.request_stop_play();
-        }
-    } else {
-        if (ImGui::Button("Play")) {
-            context.request_start_play();
-        }
-    }
-
-    // The viewport mode: 2D, 3D, or Auto (follow the scene). A radio so the
-    // current mode is always visible; Auto is the default, so a scene with a 3D
-    // camera opens in 3D without a click.
-    ImGui::SameLine();
-    ImGui::Text("  View:");
-    ImGui::SameLine();
-    int mode = context.viewport_mode() == ViewportMode::TwoD     ? 0
-               : context.viewport_mode() == ViewportMode::ThreeD ? 2
-                                                                 : 1;
-    if (ImGui::RadioButton("2D", mode == 0)) {
-        context.set_viewport_mode(ViewportMode::TwoD);
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Auto", mode == 1)) {
-        context.set_viewport_mode(ViewportMode::Auto);
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("3D", mode == 2)) {
-        context.set_viewport_mode(ViewportMode::ThreeD);
-    }
-
-    ImGui::SameLine();
-    const std::string scene_name = context.scene().name();
-    const std::string path = context.scene_path().empty() ? "(unsaved)" : context.scene_path();
-    // A trailing "*" marks unsaved changes, the convention every editor uses, so
-    // the user can tell at a glance whether quitting will lose work.
-    const char* dirty_marker = context.is_dirty() ? " *" : "";
-    ImGui::Text("  %s%s  -  %s  |  %zu nodes", scene_name.c_str(), dirty_marker, path.c_str(),
-                context.scene().node_count());
-    if (play.is_playing()) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "  PLAYING");
+    if (ImGui::BeginMenu("Help")) {
+        ImGui::MenuItem("Fork Engine Editor", nullptr, false, false);
+        ImGui::Separator();
+        ImGui::MenuItem("Save Scene: Ctrl+S", nullptr, false, false);
+        ImGui::MenuItem("Undo / Redo: Ctrl+Z / Ctrl+Y", nullptr, false, false);
+        ImGui::MenuItem("Rename node: F2   Delete node: Del", nullptr, false, false);
+        ImGui::EndMenu();
     }
 
     ImGui::EndMainMenuBar();
@@ -305,7 +475,7 @@ void EditorUi::draw_toolbar(EditorContext& context) {
     // does not trigger them. ImGui's Ctrl+Y redo and Ctrl+Shift+Z are both
     // accepted, matching common conventions.
     const ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantTextInput && !play.is_playing()) {
+    if (!io.WantTextInput && !context.play().is_playing()) {
         const bool ctrl = io.KeyCtrl;
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
             if (io.KeyShift) {

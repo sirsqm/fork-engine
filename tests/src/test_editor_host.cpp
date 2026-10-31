@@ -147,6 +147,49 @@ TEST_CASE("EditorHost runs frames, reflects a Sprite2D, and exits cleanly") {
     CHECK(host.viewport_target() == nullptr);
 }
 
+TEST_CASE("changing density mid-run re-bakes the fonts without aborting") {
+    if (!graphics_available()) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    fe::editor::EditorHost::Config config;
+    config.engine.window.title = "fork engine editor density test";
+    config.engine.window.width = 256;
+    config.engine.window.height = 192;
+    config.engine.window.visible = false;
+    config.engine.window.vsync = false;
+    config.engine.log_level = fe::LogLevel::Error;
+    config.max_frames = 1;
+
+    fe::editor::EditorHost host(std::move(config));
+    REQUIRE_FALSE(host.initialize());
+
+    // Start comfortable, draw a frame, then switch to compact. The density change
+    // moves the font size, so the atlas must be re-baked; doing that inside a
+    // frame clears the font the frame has bound and aborts (ImTextureData's
+    // Pixels assertion). The rebuild is deferred to the next begin_frame(), so
+    // this sequence must survive several frames after the switch.
+    CHECK(host.context().density() == fe::editor::EditorDensity::Comfortable);
+    host.step();
+
+    host.context().set_density(fe::editor::EditorDensity::Compact);
+    CHECK(host.context().density() == fe::editor::EditorDensity::Compact);
+    // The first step applies the style and flags the rebuild; the second performs
+    // it between frames; the third draws with the re-baked faces. Reaching the
+    // end without aborting is the assertion.
+    host.step();
+    host.step();
+    host.step();
+
+    // Switching back exercises the same path in the other direction.
+    host.context().set_density(fe::editor::EditorDensity::Comfortable);
+    host.step();
+    host.step();
+
+    host.shutdown();
+}
+
 TEST_CASE("a configured project root is indexed by the embedded engine") {
     if (!graphics_available()) {
         MESSAGE("skipping: no graphics context");

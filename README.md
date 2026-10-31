@@ -154,6 +154,7 @@ engine/           the engine library (the only thing a game links against)
   include/fe/     public headers, one directory per module
   src/            module implementations
 editor/           the visual editor, built on the engine (core, UI, shell)
+  assets/fonts/   the editor's typefaces (Inter, JetBrains Mono), OFL-licensed
 examples/sandbox/ a small runnable program that exercises every layer
 examples/demo_project/ a minimal project to open in the editor shell
 tests/            doctest-based unit, editor, and graphics test targets

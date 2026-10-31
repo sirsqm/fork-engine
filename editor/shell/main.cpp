@@ -16,6 +16,8 @@
 //   fork_editor_shell --scene PATH    open a scene file
 //   fork_editor_shell --module PATH   load a gameplay module (repeatable); it is
 //                                     hot-reloaded when its file is rebuilt
+//   fork_editor_shell --theme dark|light       pick the starting colour scheme
+//   fork_editor_shell --density comfortable|compact  pick the starting packing
 //
 // Controls: the Hierarchy panel lists the scene; the Play panel starts and
 // stops play-in-editor; close the window to exit.
@@ -50,8 +52,10 @@ struct Options {
     // docs/adr/0029-import-cache.md.
     bool import_cache = true;
     std::string import_cache_dir;
-    // The starting colour scheme; the View menu switches it at run time.
+    // The starting colour scheme and packing density; the View menu switches
+    // both at run time.
     fe::editor::EditorTheme theme = fe::editor::EditorTheme::Dark;
+    fe::editor::EditorDensity density = fe::editor::EditorDensity::Comfortable;
 };
 
 // The directory a project lives in, used to place its import cache beside it.
@@ -113,6 +117,17 @@ struct Options {
                              std::string(theme).c_str());
                 std::exit(2);
             }
+        } else if (arg == "--density" && i + 1 < argc) {
+            const std::string_view density = argv[++i];
+            if (density == "comfortable") {
+                options.density = fe::editor::EditorDensity::Comfortable;
+            } else if (density == "compact") {
+                options.density = fe::editor::EditorDensity::Compact;
+            } else {
+                std::fprintf(stderr, "fork_editor_shell: --density expects 'comfortable' or 'compact', got '%s'\n",
+                             std::string(density).c_str());
+                std::exit(2);
+            }
         } else if (arg == "--verbose") {
             options.log_level = fe::LogLevel::Debug;
         } else if (arg == "--quiet") {
@@ -120,7 +135,8 @@ struct Options {
         } else if (arg == "--help" || arg == "-h") {
             std::puts(
                 "usage: fork_editor_shell [--project DIR|FILE] [--project-file FILE] [--scene PATH] [--module PATH] "
-                "[--theme dark|light] [--headless] [--frames N] [--cache-dir DIR] [--no-cache] [--verbose] [--quiet]");
+                "[--theme dark|light] [--density comfortable|compact] [--headless] [--frames N] [--cache-dir DIR] "
+                "[--no-cache] [--verbose] [--quiet]");
             std::exit(0);
         }
     }
@@ -157,6 +173,7 @@ int main(int argc, char** argv) {
     config.modules = options.modules;
     config.max_frames = options.max_frames;
     config.theme = options.theme;
+    config.density = options.density;
 
     fe::editor::EditorHost host(std::move(config));
     return host.run();
