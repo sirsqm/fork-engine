@@ -176,12 +176,39 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         entry.voice.spatial = source->spatial;
         entry.voice.min_distance = source->min_distance;
         entry.voice.max_distance = source->max_distance;
+        entry.voice.cone_inner_degrees = source->cone_inner_degrees;
+        entry.voice.cone_outer_degrees = source->cone_outer_degrees;
+        entry.voice.cone_outer_gain = source->cone_outer_gain;
         entry.voice.stream_channels = streaming ? entry.stream->format().channels : 0;
         // Position comes from the node's world transform, never a transform of
         // the source's own. Computed fresh each frame so a moving node attenuates
         // correctly.
         const Mat4 world = node.world_matrix();
         entry.voice.world_position = Vec3{world.m[12], world.m[13], world.m[14]};
+
+        // The cone axis is the node's forward (-Z of its world transform), the
+        // same convention Camera3D::forward() uses, so a source is aimed by
+        // rotating its node. A source whose cone is omnidirectional (the default)
+        // leaves this zero, which the mixer reads as "no cone", so the vector
+        // maths is skipped entirely.
+        const bool cone_active = source->spatial && source->cone_inner_degrees < 180.0f &&
+                                 source->cone_outer_degrees > source->cone_inner_degrees;
+        entry.voice.cone_direction =
+            cone_active ? transform_direction(world, Vec3{0.0f, 0.0f, -1.0f}).normalized() : Vec3{};
+
+        // Velocity, for the Doppler shift, derived from how far the node moved
+        // since the previous frame. The first frame an entry exists has no
+        // previous sample, so the velocity is zero and no shift is applied; a
+        // later frame differences against the sample stored then. A non-positive
+        // delta (a paused step) leaves the previous position in place and reports
+        // no velocity, so a pause does not register as a huge jump.
+        entry.voice.velocity = Vec3{};
+        if (entry.has_previous_position && context.delta_time > 0.0f) {
+            entry.voice.velocity = (entry.voice.world_position - entry.previous_position) / context.delta_time;
+        }
+        entry.previous_position = entry.voice.world_position;
+        entry.has_previous_position = true;
+
         entry.voice.bus = kNoBus;
         for (u32 i = 0; i < buses_.size(); ++i) {
             if (buses_[i].name == source->bus_name) {
@@ -233,6 +260,9 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         params.listener_position = listener_position_;
         params.listener_forward = listener_forward_;
         params.listener_up = listener_up_;
+        params.listener_velocity = listener_velocity_;
+        params.speed_of_sound = speed_of_sound_;
+        params.doppler_enabled = doppler_enabled_;
         params.buses = buses_.empty() ? nullptr : buses_.data();
         params.bus_count = static_cast<u32>(buses_.size());
         params.master_gain = master_gain_;

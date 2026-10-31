@@ -77,6 +77,36 @@ public:
     f32 min_distance = 1.0f;
     f32 max_distance = 20.0f;
 
+    // --- Directivity cone --------------------------------------------------
+    // A spatial source projects its sound along an axis: a loudspeaker, a
+    // megaphone, an NPC calling out in the direction they face. These four fields
+    // describe that cone. The axis is the node's own forward - the -Z axis of its
+    // world transform, the same convention `Camera3D::forward()` uses - so a
+    // source is aimed by rotating its node, with no second transform to keep in
+    // sync. Ignored while `spatial` is false.
+    //
+    // `cone_inner_degrees` and `cone_outer_degrees` are half-angles: full gain
+    // inside the inner angle, falling to `cone_outer_gain` at the outer angle,
+    // and that gain beyond. The defaults (360/360) make the source
+    // omnidirectional, so a source that never sets a cone sounds exactly as it
+    // did before directivity existed.
+    f32 cone_inner_degrees = 360.0f;
+    f32 cone_outer_degrees = 360.0f;
+
+    // Gain beyond the outer cone, in [0, 1]. 1 is "the cone does nothing" (the
+    // default) and 0 is "silent behind the source".
+    f32 cone_outer_gain = 1.0f;
+
+    // When true the source is Doppler-shifted by its motion relative to the
+    // listener: a source approaching is pitched up, one receding pitched down.
+    // The source's velocity is derived from how far its node moved since the
+    // previous frame, so a moving node shifts pitch with no extra authoring, and
+    // the listener's velocity is derived the same way. Off by default, so an
+    // existing scene mixes exactly as it did. The shift scales with
+    // `AudioSystem::set_speed_of_sound`, whose default is the speed of sound in
+    // air for a metre-unit scene.
+    bool doppler = false;
+
     // The mixing group this source routes to, matched by name against the
     // AudioSystem's bus table (see AudioBus.h). Empty means the master bus: the
     // source is scaled by the master gain alone. The bus's gain scales every

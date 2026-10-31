@@ -6,6 +6,7 @@
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
+#include "fe/physics/IslandSolver.h"
 #include "fe/physics3d/BroadPhase3D.h"
 #include "fe/physics3d/JointSolver3D.h"
 #include "fe/systems/System.h"
@@ -63,8 +64,11 @@ struct ContactEvent {
 //     work.
 //   * **Box and sphere shapes.** The 3D analogues of box and circle. Capsules and
 //     convex hulls are later work.
-//   * **No sleeping or islands yet.** Those were a later 2D cut (ADR-0026) and
-//     follow here too.
+//   * **Sleeping and islands.** A body at rest long enough sleeps, and sleeping
+//     is grouped by island exactly as in 2D (ADR-0026, ADR-0111): a body sleeps
+//     only when every dynamic body in its contact-and-joint island is ready, and
+//     waking one wakes the group. The island graph is the shared, pure
+//     `fe::physics::IslandBuilder`.
 //
 // Shape and motion are separate components. A node with a Collider3D alone is a
 // static obstacle; a node with both a Collider3D and a dynamic RigidBody3D is
@@ -77,12 +81,17 @@ struct ContactEvent {
 // One step runs, in order:
 //
 //   1. gather      -- flatten the scene into bodies and joints
-//   2. integrate   -- gravity, torque, damping, position, orientation
-//   3. broad phase -- find the candidate contact pairs once for the step
-//   4. solve       -- sequential impulses over the candidate pairs
-//   5. joints      -- solve every joint once, after the contacts
-//   6. write back  -- transforms, velocities, and orientation
-//   7. reconcile   -- diff the touching pairs against last frame for events
+//   2. islands     -- group the bodies by contacts and joints
+//   3. wake checks -- wake an island touched by an awake dynamic body, then
+//                     propagate that wake across the whole island
+//   4. integrate   -- gravity, torque, damping, position, orientation; awake only
+//   5. broad phase -- find the candidate contact pairs once for the step
+//   6. solve       -- sequential impulses over the candidate pairs; awake only
+//   7. joints      -- solve every joint once, after the contacts
+//   8. write back  -- transforms, velocities, and orientation
+//   9. sleep checks-- advance each awake island's rest timers, then sleep a whole
+//                     island once every body in it has been still long enough
+//  10. reconcile   -- diff the touching pairs against last frame for events
 class Physics3DSystem final : public System {
 public:
     [[nodiscard]] std::string_view name() const noexcept override { return "Physics3DSystem"; }
@@ -126,6 +135,21 @@ public:
     // immovable ends, or a coincident pair -- is not counted. Exposed for tests
     // and the editor's debug overlay, mirroring Physics2DSystem::joint_count.
     [[nodiscard]] usize joint_count() const noexcept { return joints_solved_; }
+
+    // Islands found in the most recent update: the connected components of the
+    // contact-and-joint graph over the dynamic bodies (ADR-0111).
+    [[nodiscard]] usize island_count() const noexcept { return islands_.island_count(); }
+
+    // True when the last update put the two bodies (by node id) in one island.
+    // False when either is not a simulated dynamic body, or is not part of an
+    // island. Used by tests to prove a jointed pair is one island and that two
+    // bodies resting on separate parts of a floor are not.
+    [[nodiscard]] bool same_island(const Uuid& a, const Uuid& b) const;
+
+    // Sleeping dynamic bodies in the most recent update. A sleeping body is
+    // skipped by integration and by the solver, so this is the count of bodies
+    // that cost nothing this step.
+    [[nodiscard]] usize sleeping_body_count() const noexcept { return sleeping_bodies_; }
 
 private:
     // One simulated node, flattened out of the scene for the duration of the
@@ -196,6 +220,24 @@ private:
     // `bodies_` is empty.
     void solve_joints(Scene& scene, f32 delta_time);
 
+    // Builds the island graph: one link per contact pair and per solved joint,
+    // over the dynamic bodies only (a link to a static body is dropped, so it
+    // does not conduct motion between the bodies resting on it).
+    void build_islands();
+
+    // Wakes islands that an awake dynamic body is touching or joined to, then
+    // propagates that wake across each island. Runs before integration, so a
+    // moving body wakes a sleeper in the same step it reaches it.
+    void apply_wake_checks();
+
+    // Advances each awake island's rest timers and sleeps an island once every
+    // body in it has been still long enough and can_sleep.
+    void apply_sleep_checks(f32 delta_time);
+
+    // Marks every body of island `index` awake, in `asleep_` and on the bodies
+    // themselves, and restarts each newly woken body's rest timer.
+    void wake_island(usize index);
+
     std::vector<Body> bodies_;
     usize contacts_ = 0;
 
@@ -205,6 +247,12 @@ private:
     // Maps a node id to its node so a joint can resolve either end in O(1),
     // including a bare pivot that is not simulated as a body.
     std::unordered_map<Uuid, Node*> node_index_;
+
+    // Maps a node id to its index in `bodies_`, for the simulated bodies only.
+    // The island graph needs it to turn a joint's two node ids into the two body
+    // vertices it links; a joint end that is not a simulated dynamic body is
+    // absent, so it contributes no link.
+    std::unordered_map<Uuid, usize> body_index_;
 
     // Broad phase, rebuilt once per step. `broad_phase_bounds_` holds the world
     // bounds of the bodies that have a collider; the grid returns index pairs into
@@ -218,6 +266,23 @@ private:
     std::vector<BodyPair> active_pairs_;
     std::vector<BodyPair> previous_pairs_;
     std::vector<ContactEvent> events_;
+
+    // Sleeping. `islands_` groups the dynamic bodies by contact and joint. The
+    // island graph has only dynamic bodies as vertices, so `island_vertex_body_`
+    // maps an island vertex back to its index in `bodies_`, and `body_vertex_`
+    // maps the other way (kNoVertex for a static body, which is never part of an
+    // island). `island_awake_` holds one flag per island for the wake and sleep
+    // passes; `asleep_` is one flag per body, rebuilt each step from
+    // `RigidBody3D::is_sleeping` and written back after the sleep checks.
+    // `sleeping_bodies_` is the count reported by sleeping_body_count().
+    static constexpr usize kNoVertex = static_cast<usize>(-1);
+    physics::IslandBuilder islands_;
+    std::vector<physics::IslandLink> island_links_;
+    std::vector<usize> island_vertex_body_;
+    std::vector<usize> body_vertex_;
+    std::vector<bool> asleep_;
+    std::vector<bool> island_awake_;
+    usize sleeping_bodies_ = 0;
 };
 
 } // namespace physics3d

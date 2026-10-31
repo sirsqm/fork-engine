@@ -108,12 +108,92 @@ f32 block_sample(const f32* samples, u32 source_channels, u64 frame, u32 out_cha
 f32 voice_level(Voice& voice, const MixParams& params) noexcept {
     voice.attenuation = 1.0f;
     voice.pan = 0.0f;
+    voice.cone_gain = 1.0f;
     if (voice.spatial) {
         const Vec3 offset = voice.world_position - params.listener_position;
         voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
         voice.pan = voice_pan(voice, params);
+
+        // Directivity: the angle between the source's cone axis and the direction
+        // from the source to the listener. A zero cone axis is "no cone" (the
+        // default), so the gain stays 1 and an omnidirectional source is
+        // unaffected. A source and listener at the same point has no direction to
+        // measure, so it is treated as facing the listener (gain 1).
+        const f32 axis_length = voice.cone_direction.length();
+        const f32 distance = offset.length();
+        if (axis_length > 0.0f && distance > 0.0f) {
+            const Vec3 axis = voice.cone_direction / axis_length;
+            // `offset` is source-minus-listener, so the direction from the source
+            // to the listener is its negation: listener - source, normalised.
+            const Vec3 to_listener = (params.listener_position - voice.world_position) / distance;
+            const f32 cos_angle = std::clamp(axis.dot(to_listener), -1.0f, 1.0f);
+            const f32 angle_degrees = std::acos(cos_angle) * (180.0f / kPi);
+            voice.cone_gain = cone_attenuation(angle_degrees, voice.cone_inner_degrees, voice.cone_outer_degrees,
+                                               voice.cone_outer_gain);
+        }
     }
-    return voice.gain * voice.attenuation * params.bus_gain(voice.bus);
+    return voice.gain * voice.attenuation * voice.cone_gain * params.bus_gain(voice.bus);
+}
+
+f32 cone_attenuation(f32 angle_degrees, f32 inner_degrees, f32 outer_degrees, f32 outer_gain) noexcept {
+    // A cone that covers the whole sphere, or one whose inner angle already
+    // reaches its outer angle, has no falloff region: it is omnidirectional.
+    if (inner_degrees >= 180.0f || outer_degrees <= inner_degrees) {
+        return 1.0f;
+    }
+    // Only attenuate: a gain above 1 would boost the source, which directivity is
+    // not for.
+    const f32 outer = outer_gain < 0.0f ? 0.0f : (outer_gain > 1.0f ? 1.0f : outer_gain);
+
+    if (angle_degrees <= inner_degrees) {
+        return 1.0f;
+    }
+    if (angle_degrees >= outer_degrees) {
+        return outer;
+    }
+    // Linear ramp from full gain at the inner edge to `outer` at the outer edge.
+    const f32 t = (angle_degrees - inner_degrees) / (outer_degrees - inner_degrees);
+    return 1.0f + (outer - 1.0f) * t;
+}
+
+f32 doppler_factor(f32 speed_of_sound, const Vec3& source_position, const Vec3& source_velocity,
+                   const Vec3& listener_position, const Vec3& listener_velocity) noexcept {
+    // A non-positive speed of sound is a degenerate world; no shift.
+    if (speed_of_sound <= 0.0f) {
+        return 1.0f;
+    }
+    const Vec3 offset = listener_position - source_position;
+    const f32 distance = offset.length();
+    if (distance <= 0.0f) {
+        // At the ear there is no line to project the velocities onto.
+        return 1.0f;
+    }
+    // The unit vector from the source to the listener. A velocity's component
+    // along it is positive when that body moves towards the other.
+    const Vec3 to_listener = offset / distance;
+    const f32 source_towards = source_velocity.dot(to_listener);
+    const f32 listener_towards = listener_velocity.dot(to_listener);
+
+    // The classic Doppler relation
+    //
+    //     f_observed = f_emitted * (c - v_listener) / (c - v_source)
+    //
+    // with each velocity measured positive *towards* the other. A listener
+    // closing on the source raises the numerator (a pitch-up); a source closing
+    // on the listener lowers the denominator (also a pitch-up). That is the same
+    // relation the engine exposes as a playback-rate factor.
+    const f32 numerator = speed_of_sound - listener_towards;
+    const f32 denominator = speed_of_sound - source_towards;
+    if (numerator <= 0.0f || denominator <= 0.0f) {
+        // A supersonic (or faster) closing speed would invert the ratio or divide
+        // by zero; clamp to "no shift" rather than produce a nonsense pitch.
+        return 1.0f;
+    }
+    const f32 factor = numerator / denominator;
+    // Keep the shift audible but bounded: a runaway velocity must not pitch the
+    // voice to an absurd rate (a resampling step that would read the clip
+    // hundreds of frames per output frame).
+    return std::clamp(factor, 0.25f, 4.0f);
 }
 
 f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 frames, f32* output, u32 out_channels,
@@ -129,6 +209,16 @@ f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 
     if (ratio <= 0.0) {
         ratio = 1.0;
     }
+
+    // Doppler applies to a streamed voice exactly as it does to a clip voice:
+    // the same factor on the same resampling ratio, so a passing siren shifts
+    // pitch the same way whether it is streamed or fully loaded.
+    const f32 doppler = params.doppler_enabled && voice.spatial
+                            ? doppler_factor(params.speed_of_sound, voice.world_position, voice.velocity,
+                                             params.listener_position, params.listener_velocity)
+                            : 1.0f;
+    voice.doppler = doppler;
+    ratio *= static_cast<f64>(doppler);
 
     // Panning, exactly as mix_voices applies it: the same per-ear gains on the
     // same two channels, so a streamed spatial voice and a clip spatial voice
@@ -211,8 +301,15 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
         // resampling ratio between the clip's rate and the output rate; the
         // second is the authored pitch. Combining them is what keeps a clip at
         // the right speed when the device runs at a different rate than it was
-        // recorded at.
-        const f64 ratio = (static_cast<f64>(clip.sample_rate()) / output_rate) * static_cast<f64>(voice.pitch);
+        // recorded at. The Doppler factor multiplies in as a third term: a
+        // closing source reads faster (higher pitch), a receding one slower.
+        const f32 doppler = params.doppler_enabled && voice.spatial
+                                ? doppler_factor(params.speed_of_sound, voice.world_position, voice.velocity,
+                                                 params.listener_position, params.listener_velocity)
+                                : 1.0f;
+        voice.doppler = doppler;
+        const f64 ratio = (static_cast<f64>(clip.sample_rate()) / output_rate) * static_cast<f64>(voice.pitch) *
+                          static_cast<f64>(doppler);
 
         for (u32 f = 0; f < frames; ++f) {
             if (voice.position >= static_cast<f64>(clip_frames)) {

@@ -469,6 +469,25 @@ Error Renderer2D::render_frame(rhi::Device& device, const Scene& scene, u32 view
     if (Result<void> added = graph.add_dependency("ui", "world"); !added) {
         return added.error();
     }
+    // Declare the flow so the graph can reason about it (ADR-0110): the world
+    // draws into the backbuffer, the UI draws over it, and the swapchain is what
+    // the frame is observed through. Both passes stay live -- the world's write
+    // is read by the UI, and the UI writes the marked output -- which is exactly
+    // the order the dependency already expressed. The declarations cost nothing
+    // at run time and make the seam able to cull a pass whose output nobody
+    // reads as the renderer grows a chain of intermediate targets.
+    if (Result<void> added = graph.add_write("world", "backbuffer"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_read("ui", "backbuffer"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_write("ui", "swapchain"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.mark_output("swapchain"); !added) {
+        return added.error();
+    }
 
     world_drawn = 0;
     ui_quads_drawn = 0;

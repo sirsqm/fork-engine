@@ -70,6 +70,44 @@ struct Voice {
     // re-deriving the vector maths.
     f32 pan = 0.0f;
 
+    // --- Directivity cone --------------------------------------------------
+    // The axis the source projects along, in world space. A source that faces a
+    // listener is louder than one that faces away. The zero vector (the default)
+    // is "no cone": the source is omnidirectional, exactly as before this
+    // refinement, so a scene that sets nothing sounds the same. A caller that has
+    // a facing (a speaker, a megaphone) sets a real vector - the AudioSystem
+    // derives it from the node's forward - and opts the source into directivity.
+    Vec3 cone_direction{};
+
+    // The cone's half-angles in degrees: full gain inside `cone_inner_degrees`,
+    // falling linearly in angle to `cone_outer_gain` at `cone_outer_degrees` and
+    // staying there beyond. An inner angle of 180 or more (the default 360) makes
+    // the cone omnidirectional, so the refinement is opt-in. See
+    // cone_attenuation() for the curve.
+    f32 cone_inner_degrees = 360.0f;
+    f32 cone_outer_degrees = 360.0f;
+
+    // Gain applied beyond the outer cone, in [0, 1]. 1 is "the cone does
+    // nothing" and 0 is "silent behind the source".
+    f32 cone_outer_gain = 1.0f;
+
+    // The source's linear velocity, in world units per second, for the Doppler
+    // shift. The AudioSystem fills this from the node's motion; the mixer never
+    // invents one. Zero (the default) means "not moving", so the Doppler factor
+    // is 1 and the mix is unchanged.
+    Vec3 velocity{};
+
+    // The cone gain the mixer applied on the last call, in [0, 1]. 1 when the
+    // voice is non-positional, has no cone direction, or is omnidirectional.
+    // Exposed for diagnostics and tests, like `attenuation`.
+    f32 cone_gain = 1.0f;
+
+    // The Doppler factor the mixer applied on the last call. 1 when the voice is
+    // non-positional, Doppler is disabled, or nothing is moving. It scales the
+    // playback rate (a pitch shift), not the level, because that is what the
+    // effect is. Exposed for diagnostics and tests.
+    f32 doppler = 1.0f;
+
     // --- Streaming ---------------------------------------------------------
     // The channel count of the decoded samples for a streaming voice (a voice
     // whose frames come from an AudioStream rather than an AudioClip). Zero for
@@ -106,6 +144,43 @@ struct Voice {
 // silence at or beyond it. The function is total - it never returns NaN - and
 // pure, so it is called directly by the tests.
 [[nodiscard]] f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept;
+
+// Directivity attenuation for a cone source.
+//
+// A source that faces the listener is heard at full gain; one that faces away is
+// heard at `outer_gain`. `angle_degrees` is the angle between the source's cone
+// axis and the direction from the source to the listener, in degrees, in
+// [0, 180].
+//
+// The curve is a piecewise-linear ramp: full gain for an angle at or inside
+// `inner_degrees`, falling linearly to `outer_gain` at `outer_degrees`, and
+// `outer_gain` beyond. A degenerate cone - `inner_degrees >= 180`, or
+// `outer_degrees <= inner_degrees` - is omnidirectional and returns 1, so a
+// source that never sets a cone is unaffected. `outer_gain` is clamped to [0, 1]
+// so the function can only attenuate, never boost.
+//
+// The function is total and pure, so it is called directly by the tests.
+[[nodiscard]] f32 cone_attenuation(f32 angle_degrees, f32 inner_degrees, f32 outer_degrees, f32 outer_gain) noexcept;
+
+// The Doppler frequency factor for one voice.
+//
+// The factor is the ratio of the sound's apparent frequency to its emitted one,
+// which is what the playback rate is multiplied by: a source approaching the
+// listener has a factor above 1 (higher pitch), one receding below 1. The model
+// is the classic one
+//
+//     factor = (c + v_listener_towards) / (c + v_source_towards)
+//
+// where `c` is `speed_of_sound`, and each velocity is the component along the
+// line from the source to the listener, signed so that motion *towards* the
+// other raises the numerator (listener) or lowers the denominator (source).
+//
+// Total and pure: a zero or negative speed of sound, a source at the ear, or a
+// denominator that would cross zero each return 1 (no shift) rather than
+// dividing by zero or inverting. The factor is clamped to a sane band
+// ([0.25, 4]) so a runaway velocity cannot produce an absurd pitch.
+[[nodiscard]] f32 doppler_factor(f32 speed_of_sound, const Vec3& source_position, const Vec3& source_velocity,
+                                 const Vec3& listener_position, const Vec3& listener_velocity) noexcept;
 
 // Stereo pan gain for one output channel, from a pan in [-1, 1].
 //
@@ -157,6 +232,25 @@ struct MixParams {
     // make the pan ignore the roll. Ignored while `listener_forward` is zero.
     Vec3 listener_up{0.0f, 1.0f, 0.0f};
 
+    // The listener's linear velocity, in world units per second, for the Doppler
+    // shift. The zero vector (the default) means "the ear is still", so a moving
+    // source is the only thing that shifts pitch and a scene that sets nothing
+    // keeps its mix. Consulted only for positional voices with a real cone or a
+    // non-zero source velocity.
+    Vec3 listener_velocity{};
+
+    // The speed of sound in the scene's world units per second, for the Doppler
+    // shift. The default is the speed of sound in air (343 m/s) for a scene whose
+    // unit is a metre, which is the convention the physics gravity default uses.
+    // A scene that authors its own scale sets this to match, and the shift scales
+    // with it: a larger speed of sound means a smaller, subtler shift.
+    f32 speed_of_sound = 343.0f;
+
+    // Whether the Doppler shift is applied at all. False (the default) keeps
+    // every existing scene mixing byte for byte: the factor is 1 and pitch is
+    // unchanged, so this refinement is opt-in like panning and directivity.
+    bool doppler_enabled = false;
+
     // Whether panning is active. False while `listener_forward` is zero, which
     // is the default and every 2D scene: the mixer then applies no per-ear gain,
     // so a centred voice keeps exactly its authored level rather than the -3 dB
@@ -205,7 +299,9 @@ struct MixParams {
 //
 // This is the voice's *level*, not its per-ear gain: panning is applied per
 // output channel on top of it (see pan_gain), because a stereo pan is a different
-// gain for the left and right ears rather than one number for the voice.
+// gain for the left and right ears rather than one number for the voice. The
+// level folds in the directivity cone as well as distance attenuation: a source
+// facing away from the listener is quieter than one facing it.
 [[nodiscard]] f32 voice_level(Voice& voice, const MixParams& params) noexcept;
 
 // The pan the mixer computes for a voice, in [-1, 1], and records on
@@ -257,12 +353,14 @@ struct MixParams {
 //
 // Each voice's contribution is scaled by
 //
-//     voice.gain * attenuation * params.master_gain * bus_gain
+//     voice.gain * attenuation * cone_gain * params.master_gain * bus_gain
 //
 // where `attenuation` is distance_attenuation() for a positional voice and 1
-// otherwise, and `bus_gain` is the gain of the voice's bus (1 when it is on no
-// bus). A non-positional voice on no bus therefore keeps exactly its authored
-// gain, which is the behaviour that existed before this refinement.
+// otherwise, `cone_gain` is cone_attenuation() for a positional voice with a
+// cone axis and 1 otherwise, and `bus_gain` is the gain of the voice's bus (1
+// when it is on no bus). A non-positional voice on no bus therefore keeps
+// exactly its authored gain, which is the behaviour that existed before this
+// refinement.
 //
 // A positional voice is additionally panned across the output channels by
 // voice_pan() and pan_gain(): its level is multiplied by a per-ear gain so a

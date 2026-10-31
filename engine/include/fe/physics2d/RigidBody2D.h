@@ -80,7 +80,7 @@ public:
     //
     // A body that has been nearly still for a sustained number of steps is put
     // to sleep: the solver skips it, so a settled pile stops costing solver
-    // time. Sleeping is grouped by island (see ADR-0024): a body sleeps only
+    // time. Sleeping is grouped by island (see ADR-0026): a body sleeps only
     // when every dynamic body it is connected to by a contact or a joint is also
     // ready, and waking any one of them wakes the whole group.
     //

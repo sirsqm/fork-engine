@@ -104,6 +104,26 @@ public:
     // non-zero forward vector.
     [[nodiscard]] bool has_listener_orientation() const noexcept { return listener_forward_.length_squared() > 0.0f; }
 
+    // The listener's linear velocity, for the Doppler shift. The zero vector
+    // (the default) means the ear is still, so a moving source is the only thing
+    // that shifts pitch. A caller that has the ear's velocity (a fast-moving
+    // camera) sets it; a scene that never does hears the source's own motion
+    // alone, which is the common case and the audible half of the effect.
+    void set_listener_velocity(const Vec3& velocity) noexcept { listener_velocity_ = velocity; }
+    [[nodiscard]] const Vec3& listener_velocity() const noexcept { return listener_velocity_; }
+
+    // The speed of sound the Doppler shift is computed against, in world units
+    // per second. The default (343) is the speed of sound in air for a
+    // metre-unit scene. A scene that authors its own scale sets this to match.
+    void set_speed_of_sound(f32 speed) noexcept { speed_of_sound_ = speed; }
+    [[nodiscard]] f32 speed_of_sound() const noexcept { return speed_of_sound_; }
+
+    // Whether the Doppler shift is applied at all. Off by default, so every
+    // existing scene mixes byte for byte; a game that wants the effect opts in
+    // once, and then every source that sets `doppler` is shifted.
+    void set_doppler_enabled(bool enabled) noexcept { doppler_enabled_ = enabled; }
+    [[nodiscard]] bool doppler_enabled() const noexcept { return doppler_enabled_; }
+
     // The gain of the master bus, applied to the summed output. 1 is unity.
     void set_master_gain(f32 gain) noexcept { master_gain_ = gain; }
     [[nodiscard]] f32 master_gain() const noexcept { return master_gain_; }
@@ -158,6 +178,13 @@ private:
         std::shared_ptr<AudioStream> stream{};
         std::string stream_path{};
         std::vector<f32> stream_window{}; // scratch: the block decoded this frame
+
+        // The node's world position last frame, so this frame's velocity can be
+        // derived from the delta. `has_previous_position` is false on the frame
+        // the entry is created, when there is no previous sample to difference
+        // against and the velocity is taken as zero.
+        Vec3 previous_position{};
+        bool has_previous_position = false;
     };
 
     // Rebuilds the entry's stream to match the source (opening or closing it as
@@ -173,6 +200,9 @@ private:
     Vec3 listener_position_{};
     Vec3 listener_forward_{};
     Vec3 listener_up_{0.0f, 1.0f, 0.0f};
+    Vec3 listener_velocity_{};
+    f32 speed_of_sound_ = 343.0f;
+    bool doppler_enabled_ = false;
     f32 master_gain_ = 1.0f;
     std::vector<AudioBus> buses_;
 

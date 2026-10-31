@@ -80,6 +80,45 @@ public:
     // angular influence), which is what a body that must stay upright wants.
     bool fixed_rotation = false;
 
+    // --- Sleeping ----------------------------------------------------------
+    // Sleeping is the optimisation that stops a settled pile costing solver time
+    // every frame: a body at rest for long enough is skipped by integration and
+    // by the solver until something wakes it. Sleeping is grouped by island (see
+    // ADR-0026 and ADR-0111): a body sleeps only when every dynamic body in its
+    // contact-and-joint island is ready, and waking any one of them wakes the
+    // whole group. The state lives on the component, so a caller can read
+    // `is_sleeping` and call `wake()`; the engine never hides the decision.
+    //
+    // When false, this body never sleeps, and -- because a body that never sleeps
+    // keeps its island awake -- neither does anything resting on it. Set it on a
+    // body that a gameplay system moves every frame, so the island does not
+    // thrash between asleep and awake.
+    bool can_sleep = true;
+
+    // True while the body is asleep. While asleep its velocity is treated as zero
+    // and the solver skips it entirely; a sleeping body is woken by a new
+    // contact, by a joint to a moving body, or by an explicit call to `wake()`.
+    bool is_sleeping = false;
+
+    // How long a body must be at rest before it may sleep, in seconds. Counted
+    // while it is awake and reset whenever it moves. Short enough that a settled
+    // pile sleeps quickly, long enough that a body mid-bounce does not.
+    f32 sleep_time = 0.5f;
+
+    // Linear speed below which the body counts as at rest, in world units per
+    // second, and the angular counterpart in radians per second. Both are
+    // compared against the component's own velocity, which the solver writes
+    // back before the sleep check, so the test is current. Sized so a body
+    // resting on a floor (whose velocity is driven to zero every frame) reads as
+    // at rest, while a body still drifting does not.
+    f32 sleep_linear_threshold = 0.05f;
+    f32 sleep_angular_threshold = 0.05f;
+
+    // Seconds the body has been continuously at rest. Advanced by the system for
+    // a body on an awake island; reset to zero when the body moves. Exposed so a
+    // test (or an inspector) can watch a body approach sleep.
+    f32 sleep_timer = 0.0f;
+
     [[nodiscard]] f32 inverse_mass() const noexcept {
         if (kinematic || mass <= 0.0f) {
             return 0.0f;
@@ -102,6 +141,39 @@ public:
     }
 
     [[nodiscard]] bool is_dynamic() const noexcept { return inverse_mass() > 0.0f; }
+
+    // True when the body's motion is slow enough to count as at rest: both the
+    // linear speed and the angular speed are below their thresholds. A sleeping
+    // body is at rest by definition. This is the raw test; the sustained-time
+    // requirement lives in the system, which advances `sleep_timer`.
+    [[nodiscard]] bool is_resting() const noexcept {
+        if (is_sleeping) {
+            return true;
+        }
+        return velocity.length_squared() <= sleep_linear_threshold * sleep_linear_threshold &&
+               angular_velocity.length_squared() <= sleep_angular_threshold * sleep_angular_threshold;
+    }
+
+    // Puts the body to sleep immediately: it stops being integrated or solved
+    // until something wakes it. Clears its velocity, so it comes back to rest
+    // rather than resuming a stale speed, and zeroes the rest timer. Waking is
+    // per body here; the system wakes a whole island when one of its bodies is
+    // woken.
+    void sleep() noexcept {
+        is_sleeping = true;
+        velocity = Vec3{};
+        angular_velocity = Vec3{};
+        sleep_timer = 0.0f;
+    }
+
+    // Wakes the body: it is integrated and solved again, and its rest timer
+    // restarts. A body that was already awake is unchanged apart from the timer.
+    // Does nothing about the island; the system propagates a wake across a whole
+    // island.
+    void wake() noexcept {
+        is_sleeping = false;
+        sleep_timer = 0.0f;
+    }
 };
 
 } // namespace fe::physics3d

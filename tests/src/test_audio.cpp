@@ -1750,3 +1750,285 @@ TEST_CASE("a headless frame with no input does not crash a suspended device") {
     CHECK(system.mixed_frames() == 8);
     CHECK(device.frames_submitted() == 0);
 }
+
+// ---------------------------------------------------------------------------
+// Directivity cone (pure)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the cone curve is full inside, outer_gain beyond, and ramps between") {
+    // Inside the inner angle: full gain.
+    CHECK(audio::cone_attenuation(0.0f, 30.0f, 90.0f, 0.2f) == doctest::Approx(1.0f));
+    CHECK(audio::cone_attenuation(30.0f, 30.0f, 90.0f, 0.2f) == doctest::Approx(1.0f));
+    // At and beyond the outer angle: outer_gain.
+    CHECK(audio::cone_attenuation(90.0f, 30.0f, 90.0f, 0.2f) == doctest::Approx(0.2f));
+    CHECK(audio::cone_attenuation(180.0f, 30.0f, 90.0f, 0.2f) == doctest::Approx(0.2f));
+    // Halfway between the two edges: halfway between 1 and outer_gain.
+    CHECK(audio::cone_attenuation(60.0f, 30.0f, 90.0f, 0.2f) == doctest::Approx(0.6f));
+}
+
+TEST_CASE("the cone curve is monotonically non-increasing with angle") {
+    f32 previous = audio::cone_attenuation(0.0f, 20.0f, 120.0f, 0.0f);
+    for (f32 angle = 0.0f; angle <= 180.0f; angle += 5.0f) {
+        const f32 gain = audio::cone_attenuation(angle, 20.0f, 120.0f, 0.0f);
+        CHECK(gain <= previous + 1e-6f);
+        previous = gain;
+    }
+}
+
+TEST_CASE("a degenerate cone is omnidirectional") {
+    // The defaults (360/360), an inner angle at or past 180, or an outer angle
+    // that does not exceed the inner one all mean "no cone": gain 1 everywhere,
+    // so a source that never sets a cone is unaffected.
+    CHECK(audio::cone_attenuation(90.0f, 360.0f, 360.0f, 0.0f) == doctest::Approx(1.0f));
+    CHECK(audio::cone_attenuation(179.0f, 180.0f, 200.0f, 0.0f) == doctest::Approx(1.0f));
+    CHECK(audio::cone_attenuation(90.0f, 90.0f, 90.0f, 0.0f) == doctest::Approx(1.0f));
+    CHECK(audio::cone_attenuation(90.0f, 90.0f, 30.0f, 0.0f) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("the cone gain only attenuates, never boosts") {
+    // An outer gain above 1 is clamped to 1: directivity is a loss, not a gain.
+    CHECK(audio::cone_attenuation(180.0f, 10.0f, 20.0f, 5.0f) == doctest::Approx(1.0f));
+    // A negative outer gain is clamped to 0.
+    CHECK(audio::cone_attenuation(180.0f, 10.0f, 20.0f, -3.0f) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a positional voice facing the listener is louder than one facing away") {
+    // Source at +X, listener at the origin. The direction from source to
+    // listener is -X.
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f};
+    voice.min_distance = 1.0f;
+    voice.max_distance = 100.0f;
+    voice.cone_inner_degrees = 30.0f;
+    voice.cone_outer_degrees = 90.0f;
+    voice.cone_outer_gain = 0.0f;
+
+    // Facing -X: straight at the listener, angle 0, full cone gain.
+    voice.cone_direction = Vec3{-1.0f, 0.0f, 0.0f};
+    f32 facing[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, facing, 1, 1, 8000, params));
+    CHECK(voice.cone_gain == doctest::Approx(1.0f));
+
+    // Facing +X: away from the listener, angle 180, outer gain (silent).
+    voice.cone_direction = Vec3{1.0f, 0.0f, 0.0f};
+    f32 away[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, away, 1, 1, 8000, params));
+    CHECK(voice.cone_gain == doctest::Approx(0.0f));
+
+    CHECK(facing[0] > away[0]);
+}
+
+TEST_CASE("a voice with no cone axis is omnidirectional") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f};
+    voice.cone_inner_degrees = 30.0f;
+    voice.cone_outer_degrees = 60.0f;
+    voice.cone_outer_gain = 0.0f;
+    // cone_direction left zero: no cone, even with tight angles set.
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 1, 8000, params));
+    CHECK(voice.cone_gain == doctest::Approx(1.0f));
+}
+
+// ---------------------------------------------------------------------------
+// Doppler (pure)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the Doppler factor is 1 when nothing moves") {
+    CHECK(audio::doppler_factor(343.0f, Vec3{5.0f, 0.0f, 0.0f}, Vec3{}, Vec3{}, Vec3{}) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a source approaching raises the pitch and one receding lowers it") {
+    // Source at +X, listener at the origin: the line from source to listener is
+    // -X. Moving in -X is towards the listener.
+    const Vec3 source{10.0f, 0.0f, 0.0f};
+    const Vec3 listener{0.0f, 0.0f, 0.0f};
+
+    const f32 approaching = audio::doppler_factor(343.0f, source, Vec3{-34.3f, 0.0f, 0.0f}, listener, Vec3{});
+    const f32 receding = audio::doppler_factor(343.0f, source, Vec3{34.3f, 0.0f, 0.0f}, listener, Vec3{});
+
+    CHECK(approaching > 1.0f);
+    CHECK(receding < 1.0f);
+    // 343 / (343 - 34.3) = 343 / 308.7 = 1.111...
+    CHECK(approaching == doctest::Approx(343.0f / 308.7f));
+    // 343 / (343 + 34.3) = 343 / 377.3
+    CHECK(receding == doctest::Approx(343.0f / 377.3f));
+}
+
+TEST_CASE("a listener moving towards a still source also raises the pitch") {
+    const Vec3 source{10.0f, 0.0f, 0.0f};
+    const Vec3 listener{0.0f, 0.0f, 0.0f};
+    // The listener moving in +X is moving towards the source at +X.
+    const f32 factor = audio::doppler_factor(343.0f, source, Vec3{}, listener, Vec3{34.3f, 0.0f, 0.0f});
+    CHECK(factor > 1.0f);
+    CHECK(factor == doctest::Approx(377.3f / 343.0f));
+}
+
+TEST_CASE("the Doppler factor is total: a degenerate world returns no shift") {
+    const Vec3 p{10.0f, 0.0f, 0.0f};
+    // Non-positive speed of sound.
+    CHECK(audio::doppler_factor(0.0f, p, Vec3{100.0f, 0.0f, 0.0f}, Vec3{}, Vec3{}) == doctest::Approx(1.0f));
+    CHECK(audio::doppler_factor(-5.0f, p, Vec3{}, Vec3{}, Vec3{}) == doctest::Approx(1.0f));
+    // Source and listener coincident: no line to project onto.
+    CHECK(audio::doppler_factor(343.0f, Vec3{}, Vec3{50.0f, 0.0f, 0.0f}, Vec3{}, Vec3{}) == doctest::Approx(1.0f));
+    // A supersonic closing speed would divide by zero or invert; return 1.
+    CHECK(audio::doppler_factor(343.0f, p, Vec3{-400.0f, 0.0f, 0.0f}, Vec3{}, Vec3{}) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("the Doppler factor is clamped to a bounded band") {
+    // A runaway velocity must not pitch the voice absurdly. Even a large but
+    // sub-sonic approach is bounded at 4.
+    const f32 factor =
+        audio::doppler_factor(343.0f, Vec3{10.0f, 0.0f, 0.0f}, Vec3{-340.0f, 0.0f, 0.0f}, Vec3{}, Vec3{});
+    CHECK(factor <= 4.0f);
+    CHECK(factor >= 0.25f);
+}
+
+TEST_CASE("Doppler is off by default and does not change the mix") {
+    // The regression guarantee: a scene that never enables Doppler mixes exactly
+    // as before, even for a fast-moving spatial source.
+    auto clip = mono_clip(8000, {0.5f, 0.25f, 0.125f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.loop = true;
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f};
+    voice.velocity = Vec3{-100.0f, 0.0f, 0.0f};
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+    params.doppler_enabled = false;
+
+    f32 output[2] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 2, 1, 8000, params));
+    CHECK(voice.doppler == doctest::Approx(1.0f));
+    // The clip reads at its own rate: frame 0 then frame 1, attenuated only by
+    // distance. Distance 5, min 1, max 20 -> (1/5 - 1/20)/(1 - 1/20) = 0.15/0.95.
+    const f32 atten = 0.15f / 0.95f;
+    CHECK(output[0] == doctest::Approx(0.5f * atten));
+    CHECK(output[1] == doctest::Approx(0.25f * atten));
+}
+
+TEST_CASE("an enabled Doppler shift changes how fast the clip is read") {
+    // With Doppler on and a source approaching at 34.3 units/s against c = 343,
+    // the factor is 343/308.7 = 1.111..., so the read position advances faster
+    // than the same voice with Doppler off. A ramp clip makes the divergence
+    // observable in the samples.
+    std::vector<f32> ramp(32);
+    for (usize i = 0; i < ramp.size(); ++i) {
+        ramp[i] = static_cast<f32>(i);
+    }
+    auto clip = mono_clip(8000, std::move(ramp));
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+
+    const auto render = [&](bool doppler_enabled, f32* out, u32 frames) {
+        audio::Voice voice;
+        voice.clip = clip.get();
+        voice.spatial = true;
+        voice.loop = true;
+        voice.world_position = Vec3{10.0f, 0.0f, 0.0f};
+        voice.velocity = Vec3{-34.3f, 0.0f, 0.0f};
+        voice.min_distance = 1.0f;
+        voice.max_distance = 1000.0f;
+        params.doppler_enabled = doppler_enabled;
+        static_cast<void>(audio::mix_voices(&voice, 1, out, frames, 1, 8000, params));
+        return voice.doppler;
+    };
+
+    f32 shifted[16] = {};
+    const f32 shifted_factor = render(true, shifted, 16);
+    f32 plain[16] = {};
+    const f32 plain_factor = render(false, plain, 16);
+
+    CHECK(shifted_factor == doctest::Approx(343.0f / 308.7f));
+    CHECK(plain_factor == doctest::Approx(1.0f));
+    // The pitch-up reads the ramp ahead of the unshifted voice, so over a run
+    // the two sequences diverge: a later clip sample, hence a larger value.
+    CHECK(shifted[15] > plain[15]);
+}
+
+TEST_CASE("the system applies the source cone and reports the Doppler factor") {
+    // End to end through AudioSystem: a source whose node faces away from the
+    // listener is quieter than one that faces it, and the voice records it.
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    system.set_listener_position(Vec3{0.0f, 0.0f, 0.0f});
+
+    Scene scene;
+    Node* node = scene.create_node("Speaker");
+    node->transform().position = Vec3{5.0f, 0.0f, 0.0f};
+    // Face +X, away from the listener at the origin: the node's forward is -Z,
+    // so rotating -90 degrees (radians) about Y turns -Z to +X (away).
+    node->transform().rotation = Vec3{0.0f, -kPi * 0.5f, 0.0f};
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(800, 1.0f));
+    source->loop = true;
+    source->play_on_start = true;
+    source->spatial = true;
+    source->min_distance = 1.0f;
+    source->max_distance = 100.0f;
+    source->cone_inner_degrees = 20.0f;
+    source->cone_outer_degrees = 60.0f;
+    source->cone_outer_gain = 0.1f;
+
+    FrameContext context = step(0.001f);
+    system.update(context, scene);
+    // The source faces away, so its cone gain is the outer gain (0.1): the peak
+    // is the distance attenuation times that, far below a facing source.
+    CHECK(system.last_peak() > 0.0f);
+    CHECK(system.last_peak() < 0.1f);
+}
+
+TEST_CASE("the system derives a moving source's velocity and applies Doppler") {
+    // A node that moves between frames has a velocity derived from the delta, so
+    // a source approaching the listener is pitched up with no extra authoring.
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    system.set_listener_position(Vec3{0.0f, 0.0f, 0.0f});
+    system.set_doppler_enabled(true);
+    system.set_speed_of_sound(343.0f);
+
+    Scene scene;
+    Node* node = scene.create_node("Siren");
+    node->transform().position = Vec3{10.0f, 0.0f, 0.0f};
+    auto* source = node->add_component<audio::AudioSource>();
+    source->clip = mono_clip(8000, std::vector<f32>(8000, 1.0f));
+    source->loop = true;
+    source->play_on_start = true;
+    source->spatial = true;
+    source->doppler = true;
+    source->min_distance = 1.0f;
+    source->max_distance = 1000.0f;
+
+    // First frame: no previous position, so no velocity and no shift.
+    system.update(step(0.05f), scene);
+    CHECK(system.last_peak() > 0.0f);
+
+    // Second frame: the node moved 1 unit in -X (towards the listener) over
+    // 0.05 s, so velocity = -20 units/s towards the ear: a pitch-up, but the
+    // level is unchanged (Doppler scales rate, not gain).
+    node->transform().position = Vec3{9.0f, 0.0f, 0.0f};
+    system.update(step(0.05f), scene);
+    CHECK(system.last_peak() > 0.0f);
+}

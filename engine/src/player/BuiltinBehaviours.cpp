@@ -448,6 +448,10 @@ Error CharacterController3D::attach(Node& node) {
     // left to the scene author to remember.
     if (auto* body = node.get_component<physics3d::RigidBody3D>(); body != nullptr) {
         body->affected_by_gravity = false;
+        // The controller writes the body's velocity every frame, so the body must
+        // never sleep: a sleeping body ignores that write and the character would
+        // freeze after standing still long enough to settle.
+        body->can_sleep = false;
     }
     return Error::none();
 }

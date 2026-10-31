@@ -18,6 +18,7 @@
 #     module can be loaded — see ADR-0078)
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, reflect  <-  physics3d
+#   core  <-  physics (the shared, pure island graph; see ADR-0111)
 #   core, scene, systems, resources  <-  audio
 #   core, resources  <-  pack
 #   core  <-  jobs (a thread pool; see ADR-0068)
@@ -130,9 +131,9 @@ set(FE_ENGINE_SOURCES
     src/anim/SkeletonAnimationSystem.cpp
     src/anim/SkinnedMesh.cpp
     src/anim/SkinnedMeshRenderer3D.cpp
+    src/physics/IslandSolver.cpp
     src/physics2d/BroadPhase.cpp
     src/physics2d/Geometry.cpp
-    src/physics2d/IslandSolver.cpp
     src/physics2d/JointSolver.cpp
     src/physics2d/Physics2DQueries.cpp
     src/physics2d/Physics2DSystem.cpp

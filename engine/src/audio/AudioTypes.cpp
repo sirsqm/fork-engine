@@ -53,6 +53,17 @@ void register_audio_source(Registry& registry) {
                                                                    ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<audio::AudioSource, f32>("max_distance", &audio::AudioSource::max_distance,
                                                                    ValueKind::Float, &defaults));
+    // The directivity cone. The axis is the node's own forward, so it is aimed by
+    // rotating the node and has no property of its own; the three numbers below
+    // describe the cone's shape. The defaults make the source omnidirectional.
+    desc.properties.push_back(make_scalar<audio::AudioSource, f32>(
+        "cone_inner_degrees", &audio::AudioSource::cone_inner_degrees, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<audio::AudioSource, f32>(
+        "cone_outer_degrees", &audio::AudioSource::cone_outer_degrees, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<audio::AudioSource, f32>(
+        "cone_outer_gain", &audio::AudioSource::cone_outer_gain, ValueKind::Float, &defaults));
+    desc.properties.push_back(
+        make_scalar<audio::AudioSource, bool>("doppler", &audio::AudioSource::doppler, ValueKind::Bool, &defaults));
     // The bus name is a plain string, so a scene persists which mixing group the
     // source routes to. An empty string is the master bus and is the default.
     desc.properties.push_back(make_scalar<audio::AudioSource, std::string>("bus_name", &audio::AudioSource::bus_name,

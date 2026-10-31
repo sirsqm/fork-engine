@@ -1,11 +1,11 @@
 // Copyright (c) 2026 sqm
 // SPDX-License-Identifier: MIT
-#include "fe/physics2d/IslandSolver.h"
+#include "fe/physics/IslandSolver.h"
 
 #include <utility>
 #include <vector>
 
-namespace fe::physics2d {
+namespace fe::physics {
 namespace {
 
 // Union-find with path compression and union by size. A negative parent marks a
@@ -75,4 +75,4 @@ void IslandBuilder::build(usize body_count, const std::vector<IslandLink>& links
     }
 }
 
-} // namespace fe::physics2d
+} // namespace fe::physics

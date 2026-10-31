@@ -111,8 +111,10 @@ not a claim.
   3D mesh path ([ADR-0101](adr/0101-instanced-3d-draws.md)), and the
   **render-graph seam**'s scheduler landed
   ([ADR-0100](adr/0100-render-graph-seam.md)): pass order is data, and each pass
-  is profiled as `pass/<name>`. Pass culling and render-target ownership remain
-  open, and are what turn the scheduler into an optimizer.
+  is profiled as `pass/<name>`. Pass culling landed on top
+  ([ADR-0110](adr/0110-render-graph-pass-culling.md)): a pass whose declared
+  writes nobody reads is dropped, iteratively. Render-target ownership remains
+  open, and is what turns the culling optimizer into a resource manager.
 
 ### Verification
 

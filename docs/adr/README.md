@@ -115,6 +115,9 @@ rather than editing it.
 | [0107](0107-editor-typeface-and-palette.md) | A real typeface and a role-named palette for the editor UI | Accepted |
 | [0108](0108-appimage-ships-the-editor.md) | The AppImage ships the editor, and defaults to it | Accepted |
 | [0109](0109-in-engine-debugging-surface.md) | An in-engine debugging surface: a bounded log buffer and recorded script failures | Accepted |
+| [0110](0110-render-graph-pass-culling.md) | Render-graph pass culling | Accepted |
+| [0111](0111-shared-island-graph.md) | A shared island graph for 2D and 3D physics | Accepted |
+| [0112](0112-audio-directivity-and-doppler.md) | Audio directivity and Doppler | Accepted |
 
 ## Format
 

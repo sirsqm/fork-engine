@@ -89,6 +89,9 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     joints_solved_ = 0;
     joints_.clear();
     node_index_.clear();
+    body_index_.clear();
+    sleeping_bodies_ = 0;
+    asleep_.clear();
 
     // Gather. Walk the scene once and keep every node that can participate in a
     // collision, with its world position and material data flattened out. The
@@ -142,7 +145,22 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
             entry.inv_inertia = inertia > 0.0f ? 1.0f / inertia : 0.0f;
         }
 
+        // A sleeping body resumes from rest: its authored velocity is ignored so
+        // a body that was asleep when the scene loaded does not spring into
+        // motion on the first step. Its island is re-derived below and the wake
+        // pass decides whether it stays asleep.
+        const bool sleeping = body != nullptr && body->is_sleeping && entry.inv_mass > 0.0f;
+        if (sleeping) {
+            entry.velocity = Vec3{};
+            entry.angular_velocity = Vec3{};
+        }
+
         bodies_.push_back(entry);
+        body_index_.emplace(node.id(), bodies_.size() - 1);
+        asleep_.push_back(sleeping);
+        if (sleeping) {
+            ++sleeping_bodies_;
+        }
     });
 
     if (bodies_.empty()) {
@@ -164,10 +182,19 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
         return;
     }
 
+    // Islands, then wake checks, then integration -- all before the solver. The
+    // island graph is built from the contacts that exist at the start of the
+    // step and from the joints, so a moving body wakes a sleeper it has just
+    // reached before the solver runs and can never pass through it.
+    build_islands();
+    apply_wake_checks();
+
     // Integrate velocity: gravity, torque, then linear and angular damping. A
-    // body with no dynamic motion (infinite mass) skips all of it.
-    for (Body& entry : bodies_) {
-        if (entry.inv_mass <= 0.0f) {
+    // body with no dynamic motion (infinite mass) skips all of it, and so does a
+    // sleeping body: it is at rest and stays exactly where it is.
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        Body& entry = bodies_[i];
+        if (entry.inv_mass <= 0.0f || asleep_[i]) {
             continue;
         }
         if (entry.body->affected_by_gravity) {
@@ -196,8 +223,9 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     // fixed-rotation body keeps its authored rotation regardless of its angular
     // velocity (the angular state is still carried so a later contact can read
     // it, but it never changes the transform).
-    for (Body& entry : bodies_) {
-        if (entry.inv_mass <= 0.0f) {
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        Body& entry = bodies_[i];
+        if (entry.inv_mass <= 0.0f || asleep_[i]) {
             continue;
         }
         entry.position += entry.velocity * delta_time;
@@ -272,7 +300,10 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
             // Record the touching pair once, on the first iteration, so the
             // contact-event pass can diff it against the previous frame. The key
             // is by node identity (ordered), so it is stable no matter how the
-            // scene is walked.
+            // scene is walked. A sleeping body's contacts are still recorded --
+            // its position does not change, so they neither begin nor end, and
+            // the event stream stays quiet -- but no impulse is applied to it
+            // below.
             if (first_iteration) {
                 ++contacts_;
                 BodyPair pair;
@@ -289,6 +320,15 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
             // solid pair), but no impulse and no positional correction is
             // applied, so bodies pass through it.
             if (a.collider->is_trigger || b.collider->is_trigger) {
+                continue;
+            }
+
+            // A sleeping body is not impulsed: it is at rest until something
+            // wakes it, which the wake pass did before this loop if an awake body
+            // was touching it. Its contacts were still recorded above, so the
+            // event stream does not change when it sleeps. Skipping here is what
+            // makes a settled pile cost nothing in the solver.
+            if (asleep_[bounds_owner_[candidate.first]] || asleep_[bounds_owner_[candidate.second]]) {
                 continue;
             }
 
@@ -397,8 +437,17 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     // sync, exactly as the animation system writes UVs back onto the sprite. The
     // orientation is written as Euler angles, the boundary conversion that keeps
     // Transform's API unchanged.
-    for (Body& entry : bodies_) {
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        Body& entry = bodies_[i];
         if (entry.inv_mass <= 0.0f) {
+            continue;
+        }
+        if (asleep_[i]) {
+            // A sleeping body is at rest. Keep its stored velocity zero, so the
+            // component never carries a stale speed into a wake, and leave its
+            // transform exactly where it is -- nothing moves while it sleeps.
+            entry.body->velocity = Vec3{};
+            entry.body->angular_velocity = Vec3{};
             continue;
         }
         entry.body->velocity = entry.velocity;
@@ -417,6 +466,11 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     // pinned even while it also rests on a collider. A joint writes its own node
     // transforms and velocities.
     solve_joints(scene, delta_time);
+
+    // Sleep checks last, on the final velocities: an island that has been still
+    // for long enough sleeps, so the next step skips it. A body that is already
+    // asleep is left asleep; the wake pass is what brings it back.
+    apply_sleep_checks(delta_time);
 
     reconcile_contacts(scene);
 }
@@ -443,9 +497,25 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
 
         JointBody3D body_a = make_joint_body(*joint.a);
         JointBody3D body_b = make_joint_body(*joint.b);
+        // A sleeping end behaves as an immovable one: the joint is still enforced
+        // -- so joint_count() reports it -- but it cannot move the sleeper. The
+        // wake pass already woke the island if the other end was moving, so a
+        // joint is only one-sided here when the whole island is asleep, in which
+        // case there is nothing to correct. This keeps a pendulum that has come
+        // to rest reporting its constraint rather than vanishing from the count.
+        if (const auto* body = joint.a->get_component<RigidBody3D>(); body != nullptr && body->is_sleeping) {
+            body_a.inv_mass = 0.0f;
+            body_a.inv_inertia = 0.0f;
+        }
+        if (const auto* body = joint.b->get_component<RigidBody3D>(); body != nullptr && body->is_sleeping) {
+            body_b.inv_mass = 0.0f;
+            body_b.inv_inertia = 0.0f;
+        }
         if (body_a.inv_mass <= 0.0f && body_b.inv_mass <= 0.0f) {
             // Two immovable ends: the constraint can never be satisfied by moving
-            // anything, so leave the world alone.
+            // anything, so leave the world alone. It is still counted -- it was
+            // gathered and is not broken -- exactly as in 2D.
+            ++joints_solved_;
             continue;
         }
 
@@ -470,6 +540,190 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
         store_joint_body(*joint.b, body_b);
         ++joints_solved_;
     }
+}
+
+void Physics3DSystem::build_islands() {
+    // Only dynamic bodies are island vertices: static geometry is collided with
+    // but never conducts motion between the bodies resting on it, so a link to a
+    // static body is dropped. That is what makes a crate on the left of a floor
+    // and a crate on the right separate islands even though both touch it.
+    island_vertex_body_.clear();
+    body_vertex_.assign(bodies_.size(), kNoVertex);
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        if (bodies_[i].inv_mass > 0.0f) {
+            body_vertex_[i] = island_vertex_body_.size();
+            island_vertex_body_.push_back(i);
+        }
+    }
+
+    // Edges. A link is a pair of dynamic bodies whose bounds overlap (the broad
+    // phase's notion of "may be touching") or a joint between two dynamic
+    // bodies. The bounds test is deliberately conservative: it may join two
+    // bodies that are near but not quite touching, which only makes sleeping
+    // more conservative (the group wakes and sleeps together), never less safe.
+    // Using bounds rather than the exact contact is what lets the graph be built
+    // before the solver runs, so a moving body wakes a sleeper in the same step
+    // it reaches it.
+    //
+    // This enumeration is separate from the solver's uniform-grid broad phase:
+    // the island graph is built before integration, over the pre-step bounds,
+    // while the broad phase is built after it, over the post-step bounds. It is
+    // O(n^2) and is the next thing to fold into the broad phase if the two
+    // passes are ever brought to the same point in the step. The order is bodies
+    // in array order, so the link order -- and therefore the islands -- is
+    // deterministic.
+    island_links_.clear();
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        if (body_vertex_[i] == kNoVertex || bodies_[i].collider == nullptr) {
+            continue;
+        }
+        const Aabb3D bounds_a = bodies_[i].collider->bounds(bodies_[i].position);
+        for (usize j = i + 1; j < bodies_.size(); ++j) {
+            if (body_vertex_[j] == kNoVertex || bodies_[j].collider == nullptr) {
+                continue;
+            }
+            const Aabb3D bounds_b = bodies_[j].collider->bounds(bodies_[j].position);
+            if (bounds_overlap(bounds_a, bounds_b)) {
+                island_links_.push_back(physics::IslandLink{body_vertex_[i], body_vertex_[j]});
+            }
+        }
+    }
+
+    // Joints link two dynamic bodies. An end that is nil, missing, or not a
+    // simulated body contributes no link, so a joint to an immovable pivot does
+    // not join two islands.
+    for (const Joint& joint : joints_) {
+        if (joint.distance == nullptr) {
+            continue;
+        }
+        const auto index_a = body_index_.find(joint.distance->body_a);
+        const auto index_b = body_index_.find(joint.distance->body_b);
+        if (index_a == body_index_.end() || index_b == body_index_.end()) {
+            continue;
+        }
+        const usize vertex_a = body_vertex_[index_a->second];
+        const usize vertex_b = body_vertex_[index_b->second];
+        if (vertex_a == kNoVertex || vertex_b == kNoVertex) {
+            continue;
+        }
+        island_links_.push_back(physics::IslandLink{vertex_a, vertex_b});
+    }
+
+    islands_.build(island_vertex_body_.size(), island_links_);
+
+    // Seed the awake flags from the bodies' current state. A body that is awake
+    // (including one that can never sleep) makes its island awake.
+    island_awake_.assign(islands_.island_count(), false);
+    for (usize vertex = 0; vertex < island_vertex_body_.size(); ++vertex) {
+        if (!asleep_[island_vertex_body_[vertex]]) {
+            island_awake_[islands_.island_of_body()[vertex]] = true;
+        }
+    }
+}
+
+void Physics3DSystem::wake_island(usize index) {
+    if (index >= islands_.island_count()) {
+        return;
+    }
+    island_awake_[index] = true;
+    for (const usize vertex : islands_.islands()[index]) {
+        const usize body = island_vertex_body_[vertex];
+        if (asleep_[body]) {
+            asleep_[body] = false;
+            --sleeping_bodies_;
+            // Clear the body's own sleeping flag and restart its rest timer. An
+            // already-awake body in the island keeps its timer, so a body that
+            // has been settling is not sent back to the start by a neighbour
+            // being woken.
+            if (bodies_[body].body != nullptr) {
+                bodies_[body].body->wake();
+            }
+        }
+    }
+}
+
+void Physics3DSystem::apply_wake_checks() {
+    // A contact or a joint to an *awake* dynamic body wakes the island. The
+    // island awake flags were seeded from the bodies in `build_islands`, so a
+    // flag is true exactly when some body in it was already awake; here that
+    // wake is propagated across the whole island, which is what wakes a sleeping
+    // body joined to a moving one or resting against a moving one.
+    //
+    // Because the graph already links the pair that is touching this step, a
+    // moving body wakes a sleeper before the solver runs: the solver can never
+    // move an awake body into a still-sleeping one.
+    for (usize island = 0; island < islands_.island_count(); ++island) {
+        if (island_awake_[island]) {
+            wake_island(island);
+        }
+    }
+}
+
+void Physics3DSystem::apply_sleep_checks(f32 delta_time) {
+    for (usize island = 0; island < islands_.island_count(); ++island) {
+        if (!island_awake_[island]) {
+            continue;
+        }
+        // An awake island advances each body's rest timer. A body that is still
+        // moving resets its own timer; a body below the thresholds accumulates.
+        // The island may only sleep when every body in it has accumulated long
+        // enough and can_sleep.
+        bool ready = true;
+        for (const usize vertex : islands_.islands()[island]) {
+            const usize body_index = island_vertex_body_[vertex];
+            RigidBody3D* component = bodies_[body_index].body;
+            if (component == nullptr) {
+                continue;
+            }
+            if (!component->can_sleep) {
+                ready = false;
+                component->sleep_timer = 0.0f;
+                continue;
+            }
+            // The write-back above has already synced the component's velocity,
+            // so the component's own rest test is current.
+            if (component->is_resting()) {
+                component->sleep_timer += delta_time;
+            } else {
+                component->sleep_timer = 0.0f;
+            }
+            if (component->sleep_timer < component->sleep_time) {
+                ready = false;
+            }
+        }
+        if (ready) {
+            // Every body in the island has been still long enough: sleep the
+            // whole island at once, so the group stops as a unit rather than one
+            // body at a time.
+            for (const usize vertex : islands_.islands()[island]) {
+                const usize body_index = island_vertex_body_[vertex];
+                RigidBody3D* component = bodies_[body_index].body;
+                if (component == nullptr) {
+                    continue;
+                }
+                if (!asleep_[body_index]) {
+                    asleep_[body_index] = true;
+                    ++sleeping_bodies_;
+                }
+                component->sleep();
+            }
+            island_awake_[island] = false;
+        }
+    }
+}
+
+bool Physics3DSystem::same_island(const Uuid& a, const Uuid& b) const {
+    const auto index_a = body_index_.find(a);
+    const auto index_b = body_index_.find(b);
+    if (index_a == body_index_.end() || index_b == body_index_.end()) {
+        return false;
+    }
+    const usize vertex_a = body_vertex_[index_a->second];
+    const usize vertex_b = body_vertex_[index_b->second];
+    if (vertex_a == kNoVertex || vertex_b == kNoVertex) {
+        return false;
+    }
+    return islands_.same_island(vertex_a, vertex_b);
 }
 
 void Physics3DSystem::reconcile_contacts(Scene& scene) {
