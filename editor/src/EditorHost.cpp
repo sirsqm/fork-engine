@@ -117,10 +117,11 @@ Error EditorHost::initialize() {
     // systems survive across it. A machine with no sound card plays silently.
     context_.play().enable_audio(engine_);
 
-    // The viewport renders through the embedded engine's device and 2D renderer,
-    // and must release its off-screen target before the device shuts down.
+    // The viewport renders through the embedded engine's device and both
+    // renderers, and must release its off-screen targets before the device shuts
+    // down.
     auto viewport = std::make_unique<ViewportPanel>();
-    viewport->initialize(engine_.device(), engine_.renderer_2d());
+    viewport->initialize(engine_.device(), engine_.renderer_2d(), &engine_.renderer_3d());
     viewport_panel_ = viewport.get();
     ui_.add_panel(std::move(viewport));
 

@@ -26,6 +26,7 @@ add_library(fork_editor_core STATIC
     src/PropertyEditor.cpp
     src/ProfilerPanelViewModel.cpp
     src/Viewport.cpp
+    src/Viewport3D.cpp
     src/Command.cpp
     src/FileDialogViewModel.cpp
     src/Commands.cpp

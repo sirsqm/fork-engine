@@ -34,6 +34,16 @@ enum class PlayRequest {
     Stop,
 };
 
+// Which renderer the viewport panel presents. A scene may hold both 2D and 3D
+// content (a HUD over a 3D world), so this is a view choice rather than a
+// property of the document. `Auto` picks 3D when the scene has a 3D camera and
+// 2D otherwise, so opening a 3D scene shows it without a click.
+enum class ViewportMode {
+    Auto,
+    TwoD,
+    ThreeD,
+};
+
 // A document-level request from the menu. Like `PlayRequest`, the UI only sets
 // it; the host - which owns the embedded Engine and the window - performs it
 // between frames, so document replacement and window control never happen from
@@ -297,6 +307,16 @@ public:
     // True when the scene may be edited: not while playing.
     [[nodiscard]] bool is_editable() const noexcept { return !play_.is_playing(); }
 
+    // --- Viewport mode -----------------------------------------------------
+    // Which of the two renderers the viewport panel shows. A scene may hold both
+    // 2D and 3D content (a HUD over a 3D world), so the mode is a view choice,
+    // not a property of the document; it lives here so the toolbar and the panel
+    // read one source of truth. `Auto` picks 3D when the scene has a 3D camera
+    // and 2D otherwise, which is what makes opening a 3D scene show it without a
+    // click.
+    [[nodiscard]] ViewportMode viewport_mode() const noexcept { return viewport_mode_; }
+    void set_viewport_mode(ViewportMode mode) noexcept { viewport_mode_ = mode; }
+
     // Ends the current coalescing group, so the next property edit is a new undo
     // step. The panels call this when an edit gesture finishes.
     void break_undo_coalescing() noexcept { commands_.break_coalescing(); }
@@ -341,6 +361,7 @@ private:
     bool confirming_ = false;
     std::string confirm_message_;
     std::optional<Profiler> profiler_;
+    ViewportMode viewport_mode_ = ViewportMode::Auto;
 };
 
 } // namespace editor

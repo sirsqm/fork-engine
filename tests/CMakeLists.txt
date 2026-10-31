@@ -233,6 +233,7 @@ if(FE_BUILD_EDITOR)
       src/test_play_session.cpp
       src/test_property_editor.cpp
       src/test_viewport.cpp
+      src/test_viewport3d.cpp
       src/test_commands.cpp
       src/test_operations.cpp
       src/test_editor_physics_play.cpp

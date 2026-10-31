@@ -232,6 +232,27 @@ void EditorUi::draw_toolbar(EditorContext& context) {
         }
     }
 
+    // The viewport mode: 2D, 3D, or Auto (follow the scene). A radio so the
+    // current mode is always visible; Auto is the default, so a scene with a 3D
+    // camera opens in 3D without a click.
+    ImGui::SameLine();
+    ImGui::Text("  View:");
+    ImGui::SameLine();
+    int mode = context.viewport_mode() == ViewportMode::TwoD     ? 0
+               : context.viewport_mode() == ViewportMode::ThreeD ? 2
+                                                                 : 1;
+    if (ImGui::RadioButton("2D", mode == 0)) {
+        context.set_viewport_mode(ViewportMode::TwoD);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Auto", mode == 1)) {
+        context.set_viewport_mode(ViewportMode::Auto);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("3D", mode == 2)) {
+        context.set_viewport_mode(ViewportMode::ThreeD);
+    }
+
     ImGui::SameLine();
     const std::string scene_name = context.scene().name();
     const std::string path = context.scene_path().empty() ? "(unsaved)" : context.scene_path();
