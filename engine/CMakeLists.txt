@@ -186,6 +186,7 @@ set(FE_ENGINE_SOURCES
     src/pack/ExportManifest.cpp
     src/pack/WebExportTemplate.cpp
     src/pack/AndroidExportTemplate.cpp
+    src/pack/IosExportTemplate.cpp
     src/serialization/Json.cpp
     src/serialization/PropertyJson.cpp
     src/serialization/SceneSerializer.cpp

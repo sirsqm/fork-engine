@@ -30,21 +30,30 @@
 //       game.fepack
 //       fork.export.json
 //
+//   build/export/<name>/          --target ios
+//     CMakeLists.txt        a CMake/Xcode project that builds the player as an
+//     app/Info.plist        app bundle carrying the pack and the manifest
+//     app/assets/           the pack and the manifest, copied into the bundle
+//       game.fepack
+//       fork.export.json
+//
 // The pack is written by the engine's PackWriter, the same code fork_pack uses,
 // so the two tools cannot disagree about the format. On desktop the player is
 // copied, not rebuilt: the runtime is generic and driven by the pack, so export
 // has no compiler in it and cannot fail for toolchain reasons. A web build cannot
 // copy a runtime, because the player is a wasm module the page loads
 // asynchronously; the export assembles the wasm pair Emscripten produced and
-// writes a shell beside it (docs/adr/0071-web-first-2d-shipping-path.md). An
-// Android build is a third shape: the export writes a Gradle project that
-// compiles the player for the phone and packages it, the pack, and the manifest
-// into an APK (docs/SHIPPING_QUEUE.md, `android-export-template`).
+// writes a shell beside it (docs/adr/0071-web-first-2d-shipping-path.md). Android
+// and iOS are a third shape: the export writes a project - Gradle, or CMake that
+// Xcode builds - that compiles the player for the target and packages it, the
+// pack, and the manifest (docs/SHIPPING_QUEUE.md, `android-export-template`,
+// `ios-export-template`).
 //
 // Usage:
-//   fork_export --project DIR --out DIR [--target desktop|web|android] [--player PATH]
+//   fork_export --project DIR --out DIR [--target desktop|web|android|ios] [--player PATH]
 //               [--pack-name NAME] [--scene-key PATH]
 //               [--android-application-id ID] [--android-engine-dir DIR]
+//               [--ios-bundle-id ID] [--ios-engine-dir DIR]
 //
 // --player names the runtime to copy (desktop) or to assemble (web). It defaults
 // to the fork_player beside this executable, or fork_player.js for web, which is
@@ -56,6 +65,7 @@
 #include "fe/pack/AndroidExportTemplate.h"
 #include "fe/pack/AssetClosure.h"
 #include "fe/pack/ExportManifest.h"
+#include "fe/pack/IosExportTemplate.h"
 #include "fe/pack/PackWriter.h"
 #include "fe/pack/WebExportTemplate.h"
 #include "fe/resources/AssetDatabase.h"
@@ -82,14 +92,18 @@ struct Options {
     std::string pack_name;            // pack file name inside the output directory
     std::string scene_key;            // key the scene is stored under; default: project-relative
     std::string target = "desktop";   // "desktop" (copy the player), "web" (assemble a shell),
-                                      // or "android" (write a Gradle project)
+                                      // "android" (write a Gradle project), or "ios" (write a
+                                      // CMake/Xcode project)
     std::vector<std::string> modules; // gameplay modules to copy in and record
     // Android-only inputs. The application id defaults to a value derived from
     // the project's name; the engine source tree is where the JNI CMakeLists
     // builds the player from, and defaults to this process's directory.
     std::string android_application_id; // the Java package; default: com.forkengine.<name>
     std::string android_engine_dir;     // the engine checkout; default: the current directory
-    bool prune = true;                  // pack only what the startup scene references
+    // iOS-only inputs, the same shape as the Android ones.
+    std::string ios_bundle_id;  // the reverse-DNS id; default: com.forkengine.<name>
+    std::string ios_engine_dir; // the engine checkout; default: the current directory
+    bool prune = true;          // pack only what the startup scene references
     bool verbose = false;
 };
 
@@ -200,9 +214,10 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
 }
 
 void print_usage() {
-    std::puts("usage: fork_export --project DIR --out DIR [--target desktop|web|android] [--player PATH]\n"
+    std::puts("usage: fork_export --project DIR --out DIR [--target desktop|web|android|ios] [--player PATH]\n"
               "                   [--pack-name NAME] [--scene-key PATH] [--module PATH ...] [--no-prune]\n"
               "                   [--android-application-id ID] [--android-engine-dir DIR]\n"
+              "                   [--ios-bundle-id ID] [--ios-engine-dir DIR]\n"
               "\n"
               "  --project DIR    a project directory or fork.project.json file\n"
               "  --out DIR        the directory to write the build into\n"
@@ -213,6 +228,9 @@ void print_usage() {
               "                     android  write a Gradle project that packages the\n"
               "                              pack and a native-activity runtime into\n"
               "                              an APK (see --android-engine-dir)\n"
+              "                     ios      write a CMake/Xcode project that builds\n"
+              "                              the pack and the runtime into an app\n"
+              "                              bundle (see --ios-engine-dir)\n"
               "  --player PATH    the runtime to copy or, for --target web, the wasm\n"
               "                   runtime to assemble (default: fork_player beside\n"
               "                   this tool, or fork_player.js for web)\n"
@@ -222,6 +240,10 @@ void print_usage() {
               "  --android-application-id ID  the Java package for an Android build\n"
               "                   (default: com.forkengine.<project name>)\n"
               "  --android-engine-dir DIR     the engine checkout the Android build\n"
+              "                   compiles the player from (default: the current directory)\n"
+              "  --ios-bundle-id ID           the bundle id for an iOS build\n"
+              "                   (default: com.forkengine.<project name>)\n"
+              "  --ios-engine-dir DIR         the engine checkout the iOS build\n"
               "                   compiles the player from (default: the current directory)\n"
               "  --no-prune       pack the whole asset tree instead of only the\n"
               "                   assets the startup scene references. Pruning is\n"
@@ -249,6 +271,10 @@ void print_usage() {
             out.android_application_id = argv[++i];
         } else if (arg == "--android-engine-dir" && has_value) {
             out.android_engine_dir = argv[++i];
+        } else if (arg == "--ios-bundle-id" && has_value) {
+            out.ios_bundle_id = argv[++i];
+        } else if (arg == "--ios-engine-dir" && has_value) {
+            out.ios_engine_dir = argv[++i];
         } else if (arg == "--module" && has_value) {
             out.modules.emplace_back(argv[++i]);
         } else if (arg == "--prune") {
@@ -288,13 +314,19 @@ int main(int argc, char** argv) {
         return 2;
     }
     // The target decides what "the runtime" is: a native executable to copy, a
-    // wasm module plus a shell, or a Gradle project that compiles the player for
-    // the phone. Rejecting an unknown target here means the rest of the tool has
-    // exactly three cases to reason about.
+    // wasm module plus a shell, a Gradle project that compiles the player for
+    // Android, or a CMake/Xcode project that compiles it for iOS. Rejecting an
+    // unknown target here means the rest of the tool has exactly four cases to
+    // reason about.
     const bool web = options.target == fe::pack::ExportManifest::kTargetWeb;
     const bool android = options.target == fe::pack::ExportManifest::kTargetAndroid;
-    if (!web && !android && options.target != fe::pack::ExportManifest::kTargetDesktop) {
-        std::fprintf(stderr, "fork_export: unknown target '%s' (expected 'desktop', 'web', or 'android')\n",
+    const bool ios = options.target == fe::pack::ExportManifest::kTargetIos;
+    // A project-based target ships no runtime *file*: the player is compiled from
+    // source by the target's own build (Gradle, or Xcode through CMake), so
+    // there is nothing to copy and no toolchain for the export to require.
+    const bool project_target = android || ios;
+    if (!web && !project_target && options.target != fe::pack::ExportManifest::kTargetDesktop) {
+        std::fprintf(stderr, "fork_export: unknown target '%s' (expected 'desktop', 'web', 'android', or 'ios')\n",
                      options.target.c_str());
         return 2;
     }
@@ -324,11 +356,11 @@ int main(int argc, char** argv) {
     // the JS glue beside this tool, and its .wasm is expected next to it.
     std::string player = options.player;
     std::string wasm_source;
-    // Android has no runtime to copy or assemble: the Gradle project compiles
-    // the player from source for the phone's ABI, so there is no file here to
-    // check for. The check is the engine source tree the JNI CMakeLists points
-    // at, made below.
-    if (!android) {
+    // Android and iOS have no runtime to copy or assemble: the target's own build
+    // compiles the player from source, so there is no file here to check for. The
+    // check is the engine source tree the generated project points at, made
+    // below.
+    if (!project_target) {
         if (player.empty()) {
             const std::string directory = executable_directory(argv[0]);
             player = fe::fs::join(directory.empty() ? "." : directory,
@@ -417,11 +449,17 @@ int main(int argc, char** argv) {
     // runtime, at the export root, because that is where the player and the
     // shell look. Android puts them under the app module's `assets`, which is
     // what the Gradle plugin packages into the APK and what the runtime reads
-    // from the APK's asset manager. The manifest still records the pack by its
-    // bare name, because within the assets directory the two are siblings and
-    // the runtime resolves both relative to itself.
-    const std::string content_dir =
-        android ? fe::fs::join(options.out, fe::pack::AndroidExportNames::kAssetsDir) : options.out;
+    // from the APK's asset manager. iOS puts them under the project's `app/assets`
+    // directory, which the project copies into the app bundle's Resources. In
+    // each case the manifest still records the pack by its bare name, because
+    // within that directory the two are siblings and the runtime resolves both
+    // relative to itself.
+    std::string content_dir = options.out;
+    if (android) {
+        content_dir = fe::fs::join(options.out, fe::pack::AndroidExportNames::kAssetsDir);
+    } else if (ios) {
+        content_dir = fe::fs::join(options.out, fe::pack::IosExportNames::kAssetsDir);
+    }
     if (fe::Error error = fe::fs::create_directories(content_dir); error) {
         std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
         return 1;
@@ -439,8 +477,8 @@ int main(int argc, char** argv) {
     // not depend on a toolchain, and the same player serves every game
     // (ADR-0064). Web copies the wasm pair instead - there is no executable, and
     // the page loads the JS glue and its .wasm - and then writes the shell.
-    // Android copies neither: the player is compiled from source for the phone's
-    // ABI by the Gradle project's own native build, so there is nothing to copy
+    // Android and iOS copy neither: the player is compiled from source for the
+    // target by the generated project's own build, so there is nothing to copy
     // here.
     if (web) {
         const std::string js_out = fe::fs::join(options.out, fe::pack::WebExportNames::kRuntimeJs);
@@ -453,7 +491,7 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
             return 1;
         }
-    } else if (!android) {
+    } else if (!project_target) {
         const std::string player_out = fe::fs::join(options.out, player_file_name());
         if (fe::Error error = fe::fs::copy_file(player, player_out); error) {
             std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
@@ -483,10 +521,10 @@ int main(int argc, char** argv) {
     // told to ship.
     //
     // A web build has no shared-library loader, so a module cannot be loaded in
-    // a browser; an Android build loads modules from the app's native library
-    // directory, which the export does not stage yet. Refusing rather than
-    // recording a module the build would never load keeps a build from claiming
-    // gameplay it cannot run.
+    // a browser; an Android or iOS build loads modules from a native library
+    // directory the export does not stage yet. Refusing rather than recording a
+    // module the build would never load keeps a build from claiming gameplay it
+    // cannot run.
     if (web && !options.modules.empty()) {
         std::fprintf(stderr, "fork_export: gameplay modules are not supported for the web target "
                              "(a browser has no shared-library loader)\n");
@@ -494,6 +532,11 @@ int main(int argc, char** argv) {
     }
     if (android && !options.modules.empty()) {
         std::fprintf(stderr, "fork_export: gameplay modules are not supported for the android target yet "
+                             "(the export does not stage a native library directory)\n");
+        return 1;
+    }
+    if (ios && !options.modules.empty()) {
+        std::fprintf(stderr, "fork_export: gameplay modules are not supported for the ios target yet "
                              "(the export does not stage a native library directory)\n");
         return 1;
     }
@@ -545,6 +588,27 @@ int main(int argc, char** argv) {
             return 1;
         }
         if (fe::Error error = fe::pack::write_android_project(options.out, manifest, android_options); error) {
+            std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
+            return 1;
+        }
+    }
+    if (ios) {
+        fe::pack::IosProjectOptions ios_options;
+        ios_options.bundle_id = options.ios_bundle_id;
+        // The project adds the engine as a subdirectory, resolved against the
+        // project's own directory, so both paths are made absolute: a relative
+        // path would resolve against Xcode's working directory, not the export's.
+        const std::string engine_dir = options.ios_engine_dir.empty() ? std::string(".") : options.ios_engine_dir;
+        ios_options.engine_source_dir = fe::fs::normalize(
+            fe::fs::is_absolute(engine_dir) ? engine_dir : std::filesystem::absolute(engine_dir).string());
+        ios_options.player_source =
+            fe::fs::normalize(fe::fs::join(ios_options.engine_source_dir, "tools/player/src/main.cpp"));
+        if (!fe::fs::exists(ios_options.engine_source_dir)) {
+            std::fprintf(stderr, "fork_export: no engine source at '%s'. Pass --ios-engine-dir DIR.\n",
+                         ios_options.engine_source_dir.c_str());
+            return 1;
+        }
+        if (fe::Error error = fe::pack::write_ios_project(options.out, manifest, ios_options); error) {
             std::fprintf(stderr, "fork_export: %s\n", error.message().c_str());
             return 1;
         }

@@ -383,6 +383,17 @@ Extend `fork_export` to produce an iOS build.
 **Done when** `fork_export --target ios` produces an Xcode project or archive
 that a macOS host can sign and run.
 
+Landed: `fork_export --target ios` now writes a CMake/Xcode project — a
+top-level `CMakeLists.txt` that builds the player as an app bundle
+(`MACOSX_BUNDLE`) from source, an `app/Info.plist` carrying the keys iOS needs to
+launch, and the pack and manifest in `app/assets` for the project to copy into
+the bundle's Resources ([ADR-0115](adr/0115-ios-export-template.md)). The export
+is complete and tested on the desktop CI, because the template is pure and never
+invokes CMake or Xcode. The "a macOS host can sign and run" half waits on the
+iOS window backend, which is what the generated project compiles against
+(`ios-window-backend`): until it exists, configuring the project with the iOS
+toolchain stops at the mobile-backend check with a clear message.
+
 ---
 
 ## Phase 3 — a downloadable desktop build

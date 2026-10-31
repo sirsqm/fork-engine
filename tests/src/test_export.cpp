@@ -11,6 +11,7 @@
 #include "fe/core/FileSystem.h"
 #include "fe/pack/AndroidExportTemplate.h"
 #include "fe/pack/ExportManifest.h"
+#include "fe/pack/IosExportTemplate.h"
 #include "fe/pack/PackSource.h"
 #include "fe/pack/PackWriter.h"
 #include "fe/pack/WebExportTemplate.h"
@@ -247,6 +248,20 @@ TEST_CASE("an export manifest records the target it was built for") {
     ExportManifest android_parsed;
     REQUIRE_FALSE(ExportManifest::from_json(android_text.value(), android_parsed));
     CHECK(android_parsed.target == ExportManifest::kTargetAndroid);
+
+    // The iOS target round-trips too, for the same reason: an export step that
+    // wrote the project but dropped the target would leave a build no launcher
+    // could tell apart.
+    ExportManifest ios;
+    ios.pack = "game.fepack";
+    ios.scene = "scenes/main.fescene";
+    ios.target = ExportManifest::kTargetIos;
+    auto ios_text = ios.to_json();
+    REQUIRE(ios_text);
+    CHECK(ios_text.value().find("\"target\": \"ios\"") != std::string::npos);
+    ExportManifest ios_parsed;
+    REQUIRE_FALSE(ExportManifest::from_json(ios_text.value(), ios_parsed));
+    CHECK(ios_parsed.target == ExportManifest::kTargetIos);
 
     // A document with no target is a desktop build: that is the only target that
     // could have produced it.
@@ -561,6 +576,166 @@ TEST_CASE("writing the android project produces a Gradle tree and its assets dir
     REQUIRE(jni);
     CHECK(jni.value().find("/opt/forkengine") != std::string::npos);
     CHECK(jni.value().find("/opt/forkengine/tools/player/src/main.cpp") != std::string::npos);
+}
+
+// The iOS export template: the CMake/Xcode project an app-bundle build is. The
+// tests check the contract that fails only on a Mac - the names CMake and Xcode
+// resolve, the plist keys iOS requires to launch, and that the pack travels in
+// the bundle - and that a manifest from before the target existed is unaffected.
+// They never invoke CMake or Xcode: the template is pure, so the shape is
+// testable on a Linux or Windows CI, which is the point of landing it before the
+// runtime backend.
+TEST_CASE("the ios project builds the runtime as an app bundle carrying the pack") {
+    ExportManifest manifest;
+    manifest.name = "PhoneGame";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetIos;
+    manifest.engine_version = "0.3.1";
+
+    IosProjectOptions options;
+    options.engine_source_dir = "/opt/forkengine";
+    options.player_source = "/opt/forkengine/tools/player/src/main.cpp";
+
+    const std::string cmake = ios_project_cmake_lists(manifest, options);
+    // The runtime is built as an app bundle, which is what makes CMake produce a
+    // .app rather than a bare executable under the iOS toolchain.
+    CHECK(cmake.find("add_executable(fork_player MACOSX_BUNDLE") != std::string::npos);
+    CHECK(cmake.find("target_link_libraries(fork_player PRIVATE FE::engine)") != std::string::npos);
+    // The engine is built from source for the target, not copied.
+    CHECK(cmake.find("add_subdirectory(\"/opt/forkengine\"") != std::string::npos);
+    // A game ships a runtime, not an editor or a test suite.
+    CHECK(cmake.find("set(FE_BUILD_EDITOR OFF") != std::string::npos);
+    CHECK(cmake.find("set(FE_BUILD_TESTS OFF") != std::string::npos);
+    // The plist the project points at must be the one the export writes, or the
+    // bundle has no Info.plist and iOS refuses to install it.
+    CHECK(cmake.find(std::string("MACOSX_BUNDLE_INFO_PLIST") + " \"${CMAKE_CURRENT_SOURCE_DIR}/" +
+                     IosExportNames::kInfoPlist + "\"") != std::string::npos);
+    // The pack and manifest travel in the bundle's Resources, from the assets
+    // directory the export fills.
+    CHECK(cmake.find("copy_directory") != std::string::npos);
+    CHECK(cmake.find(std::string("${CMAKE_CURRENT_SOURCE_DIR}/") + IosExportNames::kAssetsDir) != std::string::npos);
+    CHECK(cmake.find("TARGET_BUNDLE_CONTENT_DIR:fork_player") != std::string::npos);
+    // The version reaches the bundle from the manifest, not a literal.
+    CHECK(cmake.find("MACOSX_BUNDLE_BUNDLE_VERSION \"0.3.1\"") != std::string::npos);
+}
+
+TEST_CASE("the ios Info.plist carries the keys iOS requires to launch") {
+    ExportManifest manifest;
+    manifest.name = "PhoneGame";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetIos;
+
+    IosProjectOptions options;
+    const std::string plist = ios_info_plist(manifest, options);
+
+    // CFBundleExecutable must name the bundle's executable, which CMake names
+    // after the target; a mismatch means iOS cannot find the binary to run.
+    CHECK(plist.find("<key>CFBundleExecutable</key>") != std::string::npos);
+    CHECK(plist.find("<string>fork_player</string>") != std::string::npos);
+    // The identifier and package type are what make it an installable app.
+    CHECK(plist.find("<key>CFBundleIdentifier</key>") != std::string::npos);
+    CHECK(plist.find("<string>" + options.bundle_id + "</string>") != std::string::npos);
+    CHECK(plist.find("<string>APPL</string>") != std::string::npos);
+    // The deployment target comes from the options, so the plist and the
+    // toolchain agree about the minimum OS.
+    CHECK(plist.find("<key>MinimumOSVersion</key>") != std::string::npos);
+    CHECK(plist.find("<string>" + options.deployment_target + "</string>") != std::string::npos);
+    // A game is fullscreen and landscape: a windowed plist is rejected or shows
+    // a status bar over the canvas.
+    CHECK(plist.find("<key>UILaunchScreen</key>") != std::string::npos);
+    CHECK(plist.find("UIStatusBarHidden") != std::string::npos);
+    CHECK(plist.find("UIInterfaceOrientationLandscapeLeft") != std::string::npos);
+    // The document is well-formed enough to parse: the XML declaration, a
+    // doctype, and one closing plist tag.
+    CHECK(plist.find("<?xml version=\"1.0\" encoding=\"UTF-8\"?>") != std::string::npos);
+    CHECK(plist.find("<!DOCTYPE plist") != std::string::npos);
+    CHECK(plist.find("</plist>") != std::string::npos);
+}
+
+TEST_CASE("the ios bundle id is derived, valid, and lowercase") {
+    IosProjectOptions options;
+    options.bundle_id.clear(); // ask for the derived default
+
+    ExportManifest manifest;
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.name = "My Game!";
+    // A project name with a space and punctuation must still yield a valid,
+    // lowercase bundle id: the signing tools reject anything else, and a build
+    // that runs locally but cannot be signed is a trap.
+    const std::string plist = ios_info_plist(manifest, options);
+    CHECK(plist.find("com.forkengine.my.game") != std::string::npos);
+
+    // A name that starts with a digit cannot start an identifier segment, so it
+    // is prefixed rather than emitted as an invalid id.
+    manifest.name = "3dGame";
+    const std::string digit = ios_info_plist(manifest, options);
+    CHECK(digit.find("com.forkengine.x3dgame") != std::string::npos);
+
+    // A project that names no name at all still produces a valid id.
+    manifest.name.clear();
+    const std::string unnamed = ios_info_plist(manifest, options);
+    CHECK(unnamed.find("com.forkengine.game") != std::string::npos);
+
+    // An explicit id is used verbatim, so a caller can set the id a store
+    // expects.
+    options.bundle_id = "com.example.shooter";
+    const std::string explicit_id = ios_info_plist(manifest, options);
+    CHECK(explicit_id.find("com.example.shooter") != std::string::npos);
+    CHECK(explicit_id.find("com.forkengine.game") == std::string::npos);
+}
+
+TEST_CASE("a game name with XML characters cannot break the plist") {
+    ExportManifest manifest;
+    manifest.name = "Tom & Jerry <Deluxe>";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetIos;
+
+    IosProjectOptions options;
+    const std::string plist = ios_info_plist(manifest, options);
+    // The raw characters must not appear unescaped, or the plist is not XML and
+    // the app does not launch; the escaped forms must.
+    CHECK(plist.find("Tom &amp; Jerry &lt;Deluxe&gt;") != std::string::npos);
+    CHECK(plist.find("Tom & Jerry <Deluxe>") == std::string::npos);
+}
+
+TEST_CASE("writing the ios project produces a CMake tree and its assets directory") {
+    TempDir dir("ios_project");
+
+    ExportManifest manifest;
+    manifest.name = "Written";
+    manifest.pack = "game.fepack";
+    manifest.scene = "scenes/main.fescene";
+    manifest.target = ExportManifest::kTargetIos;
+
+    IosProjectOptions options;
+    options.engine_source_dir = "/opt/forkengine";
+    options.player_source = "/opt/forkengine/tools/player/src/main.cpp";
+
+    // A manifest that names no pack or scene is refused: the project would
+    // package nothing, and a build that fails on a Mac is worse than one that
+    // fails here.
+    ExportManifest incomplete;
+    incomplete.target = ExportManifest::kTargetIos;
+    CHECK(write_ios_project(dir.str(), incomplete, options));
+
+    REQUIRE_FALSE(write_ios_project(dir.str(), manifest, options));
+    for (const char* relative : {IosExportNames::kProjectCMakeLists, IosExportNames::kInfoPlist}) {
+        CHECK(fs::exists(fs::join(dir.str(), relative)));
+    }
+    // The assets directory exists even before the pack is copied in, so a build
+    // that finds it empty is a valid project rather than a missing copy source.
+    CHECK(fs::is_directory(fs::join(dir.str(), IosExportNames::kAssetsDir)));
+
+    // The engine source directory reaches the project, so it builds the checkout
+    // it was pointed at rather than a path guessed from the working directory.
+    auto cmake = fs::read_text_file(fs::join(dir.str(), IosExportNames::kProjectCMakeLists));
+    REQUIRE(cmake);
+    CHECK(cmake.value().find("/opt/forkengine") != std::string::npos);
+    CHECK(cmake.value().find("/opt/forkengine/tools/player/src/main.cpp") != std::string::npos);
 }
 
 // The shipping flow, in process: author a scene with a bound script, pack the

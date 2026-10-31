@@ -50,12 +50,17 @@ struct ExportManifest {
     // (docs/SHIPPING_QUEUE.md, `android-export-template`). A launcher reads this to
     // know what it has without probing file names.
     static constexpr const char* kTargetAndroid = "android";
+    // The iOS target. A build for it is a CMake project that Xcode turns into an
+    // app bundle carrying the player, the pack, and the manifest; like Android,
+    // the export step writes the project rather than a copy of a runtime
+    // (docs/SHIPPING_QUEUE.md, `ios-export-template`).
+    static constexpr const char* kTargetIos = "ios";
 
     // The project's name, for a launcher to display. Not used to find anything.
     std::string name;
-    // What this build runs on: kTargetDesktop, kTargetWeb, or kTargetAndroid.
-    // Absent in a document written before targets existed, which reads as
-    // desktop - the only target that could have produced it.
+    // What this build runs on: kTargetDesktop, kTargetWeb, kTargetAndroid, or
+    // kTargetIos. Absent in a document written before targets existed, which
+    // reads as desktop - the only target that could have produced it.
     std::string target = kTargetDesktop;
     // The pack file to mount, relative to the manifest's directory.
     std::string pack;
