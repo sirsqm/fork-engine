@@ -64,6 +64,7 @@ endif()
 
 set(FE_ENGINE_SOURCES
     src/core/Log.cpp
+    src/core/LogBuffer.cpp
     src/core/Assert.cpp
     src/core/Uuid.cpp
     src/core/FileSystem.cpp
@@ -186,6 +187,7 @@ set(FE_ENGINE_SOURCES
     src/jobs/JobSystem.cpp
     src/script/ScriptLibrary.cpp
     src/script/ScriptBinding.cpp
+    src/script/ScriptDiagnostics.cpp
     src/player/ActionBindings.cpp
     src/player/BuiltinBehaviours.cpp
 )

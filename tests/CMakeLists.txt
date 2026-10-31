@@ -7,6 +7,7 @@
 add_executable(fork_engine_tests
     src/main.cpp
     src/test_log.cpp
+    src/test_log_buffer.cpp
     src/test_assert.cpp
     src/test_uuid.cpp
     src/test_filesystem.cpp
@@ -240,6 +241,7 @@ if(FE_BUILD_EDITOR)
       src/test_editor_physics_play.cpp
       src/test_profiler_panel.cpp
       src/test_editor_style.cpp
+      src/test_console_panel.cpp
   )
   target_link_libraries(fork_editor_tests PRIVATE FE::editor_core ${FE_DOCTEST_TARGET} fe_warnings)
   target_compile_features(fork_editor_tests PRIVATE cxx_std_20)

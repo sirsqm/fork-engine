@@ -43,7 +43,7 @@ many of its items are checked.
 | M4 | 3D rendering | M1, M3 | mostly done (pass culling open) |
 | M5 | Physics | M1, M3 | mostly done (3D parity open) |
 | M6 | Animation and audio | M4 | mostly done (audio refinements open) |
-| M7 | Scripting | M2, M5 | core done (debugging open) |
+| M7 | Scripting | M2, M5 | core done (debugger integration open) |
 | M8 | Ship anywhere | M2.5, M3 | partly done (web done, mobile open) |
 | M9 | Performance | M1 | mostly done (pass culling open) |
 
@@ -65,8 +65,9 @@ line; the milestones below hold the detail.
    [ADR-0032](adr/0032-near-term-platform-scope.md), so the README does not
    promise more than the engine delivers.
 3. **Scripting depth** — the language-agnostic seam and C++ native modules are
-   in place (M7); what remains is debugging support, which is what a game author
-   needs the first time a script misbehaves.
+   in place (M7), and the in-engine debugging surface has landed ([ADR-0109](adr/0109-in-engine-debugging-surface.md)):
+   a bounded log buffer, recorded script failures, and an editor console. What
+   remains is a debugger-integration story for a developer with a local build.
 4. **Guard the performance claims** — the benchmark as a CI regression gate
    (M9) and sanitizer builds (ASan/UBSan, TSan), while the codebase is still
    small enough to keep them cheaply green.
@@ -266,12 +267,12 @@ the wrong language is a rewrite of everything that named it.
 - [x] C++ native gameplay modules: compile against the engine, load, and hot-reload without restarting the editor — a module is a shared library that registers behaviours through a versioned entry point (`ScriptModuleApi.h`); `ScriptLibrary` opens it through the platform layer's `DynamicLibrary` seam and reloads it by destroying the live scripts first and rebinding them to the new code ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Automatic file-watching landed with editor integration ([ADR-0066](adr/0066-editor-driven-module-hot-reload.md))
 - [x] Reflection-backed bindings, so a script's exposed properties flow through the existing reflection and serialization path ([ADR-0063](adr/0063-reflection-backed-script-properties.md))
 - [x] Editor integration (attach, inspect, hot reload) — the editor owns a `ScriptCatalog` (a `ScriptHost` plus a `ScriptRegistry`) and the document persists its bindings through the serializer's `ScriptBinding` seam, so a scene saved from the editor comes back scripted; the inspector lists a node's behaviour and its reflected properties, and every reflected script field — scalar or resource reference — is an undoable `SetScriptProperty`/`SetScriptResource` operation ([ADR-0063](adr/0063-reflection-backed-script-properties.md)). File-watching hot reload has landed: `ScriptCatalog` owns a `ScriptLibrary`, loads modules named on the command line (`--module`), and polls them each frame, hot-reloading a rebuilt one and rebinding the nodes it scripted ([ADR-0066](adr/0066-editor-driven-module-hot-reload.md)). Debouncing a build has landed too: the poll reports a module only once its image's write time has held across a requested number of consecutive polls, and the frame loop asks for two ([ADR-0067](adr/0067-debouncing-a-module-build.md))
-- [ ] **Debugging support** — a script that misbehaves cannot be inspected: no breakpoints, no call stack, no watch. For C++ modules this means either a debugger integration story or an in-engine logging/assertion surface a game author can use without a debugger.
+- [x] **Debugging support** — a script that misbehaves cannot be inspected: no breakpoints, no call stack, no watch. For C++ modules this means either a debugger integration story or an in-engine logging/assertion surface a game author can use without a debugger. The in-engine surface landed first ([ADR-0109](adr/0109-in-engine-debugging-surface.md)): the engine keeps its log in a bounded `core::LogBuffer` and records every contained script failure in `script::ScriptDiagnostics` (node, behaviour, message, frame), so a failure is inspectable after it is reported once, and the editor's console panel shows both. A debugger-integration story remains future work.
 - [ ] *(Deferred)* An embedded language (Lua/Wren) or a custom engine language, only once the seam is proven and the criteria in the ADR are met.
 
 **Done when** a game's rules live in a module the engine did not compile in, the
-module hot-reloads, and its properties are editable and persisted. *Met; debugging
-is open.*
+module hot-reloads, and its properties are editable and persisted. *Met, and the
+first debugging surface is in; a debugger integration is open.*
 
 ## M8 — Ship anywhere (cross-platform targets)
 

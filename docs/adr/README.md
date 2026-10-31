@@ -114,6 +114,7 @@ rather than editing it.
 | [0106](0106-one-mark-for-the-engine.md) | One mark for the engine, the window, and the web page | Accepted |
 | [0107](0107-editor-typeface-and-palette.md) | A real typeface and a role-named palette for the editor UI | Accepted |
 | [0108](0108-appimage-ships-the-editor.md) | The AppImage ships the editor, and defaults to it | Accepted |
+| [0109](0109-in-engine-debugging-surface.md) | An in-engine debugging surface: a bounded log buffer and recorded script failures | Accepted |
 
 ## Format
 

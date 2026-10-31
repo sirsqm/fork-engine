@@ -9,6 +9,7 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/script/Script.h"
+#include "fe/script/ScriptDiagnostics.h"
 #include "fe/systems/FrameContext.h"
 
 #include <exception>
@@ -137,6 +138,7 @@ public:
     // Runs every attached, enabled script once, in attachment order. A script
     // that fails is contained and disabled; see the class comment.
     void update(const FrameContext& context) {
+        ++frame_;
         for (Entry& entry : scripts_) {
             if (entry.failed || !entry.script->enabled()) {
                 continue;
@@ -196,6 +198,12 @@ public:
         return count;
     }
 
+    // The record of contained failures, for a tool to read. The host is the only
+    // writer; a console panel or a test reads it. Bounded, and never cleared by
+    // the host, so a failure survives until a reader clears it.
+    [[nodiscard]] ScriptDiagnostics& diagnostics() noexcept { return diagnostics_; }
+    [[nodiscard]] const ScriptDiagnostics& diagnostics() const noexcept { return diagnostics_; }
+
     // Unbinds and destroys every script. The host is reusable afterwards.
     void clear() {
         for (Entry& entry : scripts_) {
@@ -244,12 +252,22 @@ private:
         FE_LOG_ERROR("script '%s' on node '%s' (%s) failed and was disabled: %s",
                      std::string(entry.script->name()).c_str(), node_name, entry.node_id.to_string().c_str(),
                      error.message().c_str());
+        // Keep the failure where a tool can read it, not only in the log: the
+        // log line scrolls away, and this is the one thing a game author needs
+        // to see when a behaviour misbehaves (M7 debugging support).
+        diagnostics_.record(entry.node_id, node_name, entry.script->name(), error.message(), frame_);
         entry.script->set_enabled(false);
         entry.failed = true;
     }
 
     std::vector<Entry> scripts_;
     std::unordered_map<Uuid, usize> index_;
+    ScriptDiagnostics diagnostics_;
+    // Counts update() calls, so a recorded failure can name the frame it
+    // happened on. Not a clock: the host has no frame context of its own, and a
+    // monotonic count is enough to order failures and to tell "the same frame"
+    // from "a later one".
+    u64 frame_ = 0;
 };
 
 } // namespace fe

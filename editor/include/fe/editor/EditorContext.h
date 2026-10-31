@@ -3,6 +3,8 @@
 #pragma once
 
 #include "fe/core/Error.h"
+#include "fe/core/Log.h"
+#include "fe/core/LogBuffer.h"
 #include "fe/core/Profiler.h"
 #include "fe/editor/Command.h"
 #include "fe/editor/Commands.h"
@@ -87,6 +89,13 @@ enum class FileRequest {
 class EditorContext {
 public:
     EditorContext();
+
+    // Removes the console's log sink. Declared because the constructor installs
+    // one; the definition is in the .cpp.
+    ~EditorContext();
+
+    EditorContext(const EditorContext&) = delete;
+    EditorContext& operator=(const EditorContext&) = delete;
 
     // Registers the copy factories for the built-in component types
     // (Camera2D, Sprite2D) on the play session, so play-in-editor sees them.
@@ -201,6 +210,19 @@ public:
     // The path the current project was loaded from or saved to; "" for a project
     // that has never been persisted (including "no project").
     [[nodiscard]] const std::string& project_path() const noexcept { return project_path_; }
+
+    // --- Console -----------------------------------------------------------
+    // The engine log, kept in memory for the console panel. The context installs
+    // it as a logger sink when it is constructed and removes it when destroyed,
+    // so what the console shows is the engine's own log rather than a second,
+    // parallel one. It is always present (never null), because the sink has to
+    // be installed for the panel to have anything to read; a host that never
+    // shows the console simply pays for a bounded ring.
+    //
+    // A test constructs an EditorContext with no window, so this is also how a
+    // headless test reads what the editor logged.
+    [[nodiscard]] LogBuffer& log_buffer() noexcept { return log_buffer_; }
+    [[nodiscard]] const LogBuffer& log_buffer() const noexcept { return log_buffer_; }
 
     // Opens a project file: reads and validates its settings, adopts its
     // directory, and points the asset root at the database through `resources`
@@ -392,6 +414,13 @@ private:
     // comfortable scheme so a panel drawn before the first apply_theme (never in
     // practice, but a test can) still reads sane values.
     EditorScheme scheme_ = EditorScheme::for_theme(EditorTheme::Dark, EditorDensity::Comfortable);
+    // The console's record of the engine log. Declared last so it outlives
+    // nothing that could log during teardown; the sink is removed in the
+    // destructor, before this member is destroyed.
+    LogBuffer log_buffer_;
+    // The shared_ptr the sink was added as, so the destructor can remove exactly
+    // this one rather than clearing every sink the process installed.
+    std::shared_ptr<LogSink> log_sink_;
 };
 
 } // namespace editor

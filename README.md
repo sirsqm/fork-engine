@@ -64,7 +64,7 @@ tests. Everything else is planned in those three documents.
 | 2D physics (colliders, rigid bodies, solver, queries, contact events) | Working |
 | 3D physics (box/sphere colliders, linear solver, broad phase, distance joints, queries, contact events) | Working (first cut, see [ADR-0031](docs/adr/0031-physics3d-and-backend-seam.md)) |
 | Audio (device seam, WAV loader, pure mixer, mixing system) | Working (first pass) |
-| Editor (docking shell, hierarchy, inspector, asset browser, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
+| Editor (docking shell, hierarchy, inspector, asset browser, console, 2D viewport, play-in-editor, undo/redo) | Working (foundation) |
 | Project file (settings, asset root, startup scene) | Working |
 | Runtime frame loop + sandbox example | Working |
 | A complete example game (breakout, the M2.5 vertical slice) | Working (see [ADR-0036](docs/adr/0036-breakout-vertical-slice.md)) |
@@ -248,7 +248,8 @@ Interactive controls: `WASD`/arrows move the camera, `Q`/`E` zoom, `Esc` quits.
 ### Try the editor
 
 The editor shell opens a project, loads its startup scene, and shows the scene
-hierarchy, inspector, viewport, and asset browser. A minimal project ships in
+hierarchy, inspector, viewport, asset browser, and console (the engine log plus
+any script failure the host contained). A minimal project ships in
 `examples/demo_project`, so you can try it without authoring anything first:
 
 ```bash

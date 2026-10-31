@@ -6,6 +6,7 @@
 #include "fe/core/Log.h"
 #include "fe/editor/AssetBrowserPanel.h"
 #include "fe/editor/ConfirmPanel.h"
+#include "fe/editor/ConsolePanel.h"
 #include "fe/editor/FileDialogPanel.h"
 #include "fe/editor/HierarchyPanel.h"
 #include "fe/editor/InspectorPanel.h"
@@ -102,6 +103,10 @@ Error EditorHost::initialize() {
     ui_.add_panel(std::make_unique<AssetBrowserPanel>());
     ui_.add_panel(std::make_unique<PlayPanel>());
     ui_.add_panel(std::make_unique<ProfilerPanel>());
+    // The console reads the engine log (through the context's buffer) and the
+    // script host's contained failures, so a misbehaving script is visible
+    // without a debugger (M7 debugging support).
+    ui_.add_panel(std::make_unique<ConsolePanel>());
 
     // The file dialog and the confirmation prompt are modals: they draw nothing
     // until asked, so they can sit in the panel set from the start. They are held

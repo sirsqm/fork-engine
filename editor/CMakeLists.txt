@@ -26,6 +26,7 @@ add_library(fork_editor_core STATIC
     src/PlaySession.cpp
     src/PropertyEditor.cpp
     src/ProfilerPanelViewModel.cpp
+    src/ConsolePanelViewModel.cpp
     src/Viewport.cpp
     src/Viewport3D.cpp
     src/Command.cpp
@@ -55,6 +56,7 @@ add_library(fork_editor STATIC
     src/PlayPanel.cpp
     src/InspectorPanel.cpp
     src/ProfilerPanel.cpp
+    src/ConsolePanel.cpp
     src/FileDialogPanel.cpp
     src/ConfirmPanel.cpp
     src/ViewportPanel.cpp

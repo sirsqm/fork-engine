@@ -11,6 +11,7 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/script/Script.h"
+#include "fe/script/ScriptDiagnostics.h"
 #include "fe/script/ScriptHost.h"
 #include "fe/script/ScriptRegistry.h"
 #include "fe/script/ScriptSystem.h"
@@ -457,4 +458,75 @@ TEST_CASE("ScriptRegistry creates behaviours by name") {
     REQUIRE(names.size() == 2);
     CHECK(names[0] == "spin");
     CHECK(names[1] == "plain");
+}
+
+TEST_CASE("a contained script failure is recorded in the host diagnostics") {
+    Scene scene;
+    Node* node = scene.create_node("Bad");
+    Probe probe;
+    ScriptHost host;
+    CHECK(host.attach_script(*node, std::make_unique<FailingScript>(&probe)).ok());
+
+    REQUIRE(host.diagnostics().size() == 0);
+    const FrameContext context;
+    host.update(context);
+
+    // The failure is structured, not only a log line: which node, which
+    // behaviour, and what went wrong, so a console can show it after the log
+    // line has scrolled away.
+    const std::vector<ScriptDiagnostics::Failure> failures = host.diagnostics().snapshot();
+    REQUIRE(failures.size() == 1);
+    CHECK((failures[0].node_id == node->id()));
+    CHECK(failures[0].node_name == "Bad");
+    CHECK(failures[0].behaviour == "Failing");
+    CHECK(failures[0].message == "boom");
+    CHECK(failures[0].sequence > 0);
+
+    // A failure is recorded once; later frames do not append duplicates.
+    host.update(context);
+    host.update(context);
+    CHECK(host.diagnostics().size() == 1);
+}
+
+TEST_CASE("a throwing script's failure is recorded too") {
+    Scene scene;
+    Node* node = scene.create_node("Thrower");
+    Probe probe;
+    ScriptHost host;
+    CHECK(host.attach_script(*node, std::make_unique<ThrowingScript>(&probe)).ok());
+
+    const FrameContext context;
+    host.update(context);
+
+    const std::vector<ScriptDiagnostics::Failure> failures = host.diagnostics().snapshot();
+    REQUIRE(failures.size() == 1);
+    CHECK(failures[0].node_name == "Thrower");
+    CHECK(failures[0].behaviour == "Throwing");
+    // The exception's what() is what the host reports, prefixed so a reader can
+    // tell a thrown exception from a returned Error.
+    CHECK(failures[0].message == "threw: kaboom");
+}
+
+TEST_CASE("script diagnostics is bounded and reports drops") {
+    ScriptDiagnostics diagnostics(2);
+    const Uuid id = Uuid::generate();
+
+    diagnostics.record(id, "n0", "b", "m0", 1);
+    diagnostics.record(id, "n1", "b", "m1", 2);
+    diagnostics.record(id, "n2", "b", "m2", 3);
+
+    const std::vector<ScriptDiagnostics::Failure> failures = diagnostics.snapshot();
+    REQUIRE(failures.size() == 2);
+    CHECK(failures[0].node_name == "n1");
+    CHECK(failures[1].node_name == "n2");
+    CHECK(diagnostics.dropped_count() == 1);
+
+    // Sequences are monotonic and the newest is reported.
+    CHECK(failures[0].sequence < failures[1].sequence);
+    CHECK(diagnostics.newest_sequence() == failures[1].sequence);
+
+    diagnostics.clear();
+    CHECK(diagnostics.size() == 0);
+    CHECK(diagnostics.newest_sequence() == 0);
+    CHECK(diagnostics.dropped_count() == 0);
 }

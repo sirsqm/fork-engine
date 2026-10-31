@@ -849,8 +849,8 @@ never back. It is built as three targets:
 
 | Target | Responsibility | Depends on |
 | --- | --- | --- |
-| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, asset browser view model (`AssetBrowserViewModel`), play-in-editor (`PlaySession`), the script catalogue (`ScriptCatalog`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
-| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), the `AssetBrowserPanel`, and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
+| `fork_editor_core` | Document (`EditorContext`), scene hierarchy view model, asset browser view model (`AssetBrowserViewModel`), console view model (`ConsolePanelViewModel`), play-in-editor (`PlaySession`), the script catalogue (`ScriptCatalog`), the headless property helpers (`PropertyEditor`), and the headless viewport maths and picking (`Viewport`). No toolkit, no window. | `fork_engine` |
+| `fork_editor` | The Dear ImGui panels and the dock space (`EditorUi`), the 2D `ViewportPanel` (renders into an off-screen target and shows it as an image), the `AssetBrowserPanel`, the `ConsolePanel`, and `EditorHost`, which embeds an `Engine` and runs the editor loop. | `fork_editor_core`, ImGui |
 | `fork_editor_shell` | The executable entry point. | `fork_editor` |
 
 The split exists so the editable, testable logic has no UI dependency: the
@@ -935,6 +935,18 @@ imported as; editing those settings in the editor is a follow-up.
 
 The remaining M2 groundwork item is done: per-asset import settings live in the
 sidecar and are applied at load ([ADR-0027](adr/0027-asset-import-settings.md)).
+
+The console shows the engine's own log and any script failure the host
+contained ([ADR-0109](adr/0109-in-engine-debugging-surface.md)). The engine keeps
+the log in a bounded `core::LogBuffer` sink, and `ScriptHost` records each
+contained failure — node, behaviour, message, frame — in
+`script::ScriptDiagnostics` in addition to the log line it already writes, so a
+failure is still inspectable after it is reported once and the script is
+disabled. `EditorContext` installs a `LogBuffer` for its own lifetime, and the
+headless `ConsolePanelViewModel` polls both sources incrementally, merges them
+into one bounded ring, and filters by level; `ConsolePanel` is the thin widget
+layer over it. This is the read-out half of M7's debugging support; breakpoints
+and a call stack are future work.
 
 ### The project file
 

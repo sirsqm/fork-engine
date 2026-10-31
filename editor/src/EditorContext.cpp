@@ -25,12 +25,28 @@
 namespace fe::editor {
 namespace {
 
+// Forwards log records into an existing `LogBuffer`.
+//
+// The buffer is owned by `EditorContext` as a plain member (it holds a mutex and
+// is neither copyable nor movable), while the logger takes sinks as
+// `shared_ptr<LogSink>`. This adapter is the shared_ptr the logger holds; it
+// keeps only a reference to the buffer, so the context must outlive the sink,
+// which the destructor guarantees by removing the sink first.
+class LogBufferSink final : public LogSink {
+public:
+    explicit LogBufferSink(LogBuffer& buffer) : buffer_(&buffer) {}
+
+    void write(LogLevel level, std::string_view message) override { buffer_->write(level, message); }
+
+private:
+    LogBuffer* buffer_;
+};
+
 // Component copy factories for the built-in types. These are the scene-specific
 // knowledge that lets play-in-editor clone a scene without the editor depending
 // on reflection: the serializer's per-type switch (ADR-0005) has the same shape
 // and is deliberately not shared, because serialization and cloning have
 // different targets and will diverge.
-
 void copy_camera(const Node& source_node, Node& destination_node) {
     const auto* source = source_node.get_component<Camera2D>();
     if (source == nullptr) {
@@ -179,7 +195,27 @@ void copy_audio_source(const Node& source_node, Node& destination_node) {
 
 } // namespace
 
-EditorContext::EditorContext() = default;
+EditorContext::EditorContext() {
+    // Install the in-memory log sink so the console panel can show the engine's
+    // own log. Done here rather than by the panel so a panel that is never
+    // opened still leaves the log available to a test, and so exactly one sink
+    // is installed per document rather than one per panel draw.
+    //
+    // The buffer is a member held by value (it carries a mutex and is neither
+    // copyable nor movable), so the sink is a thin forwarder that references it;
+    // the destructor removes the sink before the member is destroyed.
+    log_sink_ = std::make_shared<LogBufferSink>(log_buffer_);
+    log::add_sink(log_sink_);
+}
+
+EditorContext::~EditorContext() {
+    // Remove exactly the sink this context installed, so a test that installs
+    // its own capture sink and then destroys a context does not lose it.
+    if (log_sink_ != nullptr) {
+        log::remove_sink(log_sink_);
+        log_sink_.reset();
+    }
+}
 
 void EditorContext::register_default_component_factories() {
     play_.register_component_factory(Camera2D::kTypeName, copy_camera);
