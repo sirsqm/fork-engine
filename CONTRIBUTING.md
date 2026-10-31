@@ -171,6 +171,20 @@ Write a short imperative subject line ("Add 2D sprite batching"), and a body tha
 explains the motivation and any non-obvious decisions when the change is not
 self-evident. Reference issues where relevant (`Fixes #12`).
 
+## Commit attribution
+
+Commit under your own name and email — the identity in your local `user.name` and
+`user.email` — so the history credits the person who did the work. If you use an
+automated tool to produce a commit, either commit under the tool's own identity or
+say so in the message; do not commit under another person's name. Do not add a
+`Co-authored-by` trailer naming someone who did not co-author or review the
+commit.
+
+The maintainer does not rewrite a contributor's commit to a project identity. A
+genuinely misattributed commit is corrected with `git filter-repo` and a
+force-push of the affected branch, which is a last resort for fixing attribution
+rather than a routine step.
+
 ## Reporting bugs and requesting features
 
 Use the GitHub issue tracker. For bugs, include:

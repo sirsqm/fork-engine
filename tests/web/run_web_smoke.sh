@@ -56,6 +56,7 @@ fi
 # run without a configured web build tree.
 SOURCES=(
   "${ROOT_DIR}/engine/src/platform/Window.cpp"
+  "${ROOT_DIR}/engine/src/platform/WindowIcon.cpp"
   "${ROOT_DIR}/engine/src/platform/NullWindow.cpp"
   "${ROOT_DIR}/engine/src/platform/InputState.cpp"
   "${ROOT_DIR}/engine/src/platform/InputActions.cpp"

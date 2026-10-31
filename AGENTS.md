@@ -288,14 +288,27 @@ defect, not noise.
   `ubuntu-latest`. This fired for real when the runner rotated to 26.04 (glibc
   2.43) against a pinned `ubuntu:24.04` (glibc 2.39) smoke container.
 
-## Commit identity
+## Commit attribution
 
-Every commit in this repository is authored and committed by
-`sqm <sirsamyoudev@gmail.com>`. Do not add a `Co-authored-by` trailer, and do
-not let an automated agent's identity (`openhands <openhands@all-hands.dev>`,
-`GitHub <noreply@github.com>`, or any other) appear in the author, committer, or
-message. If such a commit is found, rewrite it with `git filter-repo --mailmap`
-(identity) and a `--message-callback` (trailer/body), then force-push `main`.
+A commit records who wrote the change, so attribute it to the person who
+actually made it. Set `user.name` and `user.email` to your own identity before
+committing, and never commit under another person's name.
+
+- **Contributors** commit under their own name and email. Their work keeps their
+  authorship; do not rewrite a contributor's commit to a project or maintainer
+  identity.
+- **Automated agents** commit under their own identity (for example
+  `openhands <openhands@all-hands.dev>`) rather than the maintainer's, so the
+  history says honestly that a machine produced the change. Do not add a
+  `Co-authored-by` trailer naming a person who did not write or review the
+  commit.
+- **A misattributed commit** — the wrong author, or an agent's identity standing
+  in for a person — is corrected with `git filter-repo --mailmap` for the
+  identity and a `--message-callback` for the message, then a force-push of the
+  affected branch. Rewriting published history is a last resort for fixing
+  attribution, not a routine step.
+
+The same expectations for people are in `CONTRIBUTING.md`.
 
 ## ADR numbering
 

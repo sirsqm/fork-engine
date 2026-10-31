@@ -1,13 +1,13 @@
+# Fork Engine
+
+A modular, open-source 2D and 3D game engine written in C++20.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="branding/forkengine-banner-white.png">
     <img alt="Fork Engine — a modular, open-source 2D and 3D game engine written in C++20" src="branding/forkengine-banner-black.png" width="760">
   </picture>
 </p>
-
-# Fork Engine
-
-A modular, open-source 2D and 3D game engine written in C++20.
 
 [![CI](https://github.com/sirsqm/forkengine/actions/workflows/ci.yml/badge.svg)](https://github.com/sirsqm/forkengine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
