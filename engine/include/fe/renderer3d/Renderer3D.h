@@ -12,6 +12,7 @@
 #include "fe/rhi/Device.h"
 
 #include <array>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -329,6 +330,11 @@ private:
     // the two caches never alias.
     [[nodiscard]] Result<const GpuMesh*> acquire_skinned_mesh(rhi::Device& device, const anim::SkinnedMesh& mesh);
 
+    // Warns once (per mesh) when a rig's palette exceeds the shader's
+    // kMaxPaletteJoints, so a character drawn with only part of its skeleton is
+    // reported rather than silently mis-posed.
+    void report_oversized_palette(const anim::SkinnedMesh& mesh, usize joints);
+
     // The frame's resolved lighting, captured by draw() so the skinned pass can
     // set the identical uniforms on its own shader without a second scene walk.
     // The packed point/spot arrays are members already (point_light_data_ etc.),
@@ -403,6 +409,13 @@ private:
     rhi::BufferRef skinned_instance_buffer_;
     u32 skinned_instance_capacity_ = 0;
     std::vector<Instance> frame_skinned_instance_data_;
+
+    // The rigs already reported as too large for the shader's joint palette.
+    // Keyed by SkinnedMesh pointer (stable while the mesh is alive), so a scene
+    // full of one oversized rig warns once rather than once per instance per
+    // frame. A rig past the cap is still drawn, with its first kMaxPaletteJoints
+    // joints, but a silent truncation is the one thing that should not be silent.
+    std::unordered_set<const anim::SkinnedMesh*> warned_large_rigs_;
 
     // Bound for untextured meshes so the sampler always reads a valid object.
     // A white texel makes the shader's albedo equal to the base colour, which
@@ -492,7 +505,14 @@ private:
     // The per-frame texture-resolution memo: reference -> loaded texture (null
     // when the reference failed to load). Cleared at the top of each draw, so a
     // hot-reloaded asset is picked up on the next frame rather than pinned.
-    std::unordered_map<std::string, const Texture2D*> texture_cache_;
+    //
+    // It holds the shared_ptr, not a raw pointer, because it is the *only* owner
+    // of a material texture. The ResourceManager caches weakly and a
+    // `Material::base_color_texture` is just a reference string, so nothing else
+    // keeps the texture alive; a raw pointer here would dangle the moment the
+    // load's temporary shared_ptr went out of scope, and the draw would read a
+    // freed GPU texture.
+    std::unordered_map<std::string, std::shared_ptr<const Texture2D>> texture_cache_;
 
     // Reused across frames to avoid per-frame allocation. Each holds one vec4
     // per light in a fixed-size array, packed as the shader expects:

@@ -14,6 +14,8 @@
 #include "fe/mesh/Mesh.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/renderer3d/Renderer3D.h"
+#include "fe/resources/Resource.h"
+#include "fe/resources/ResourceManager.h"
 #include "fe/resources/Texture2D.h"
 #include "fe/rhi/Device.h"
 #include "fe/rhi/Resources.h"
@@ -28,6 +30,8 @@
 #include "fe/scene3d/DirectionalLight3D.h"
 #include "fe/scene3d/MeshRenderer3D.h"
 
+#include <array>
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -44,6 +48,35 @@ namespace {
     config.headless_render = true;
     return config;
 }
+
+// A loader that fabricates a real GPU Texture2D through the device, so a test
+// can drive the renderer's material-texture path with no asset file on disk.
+// Registered under the "tex" scheme, which is the reference form a material
+// stores.
+class FakeTextureLoader final : public ResourceLoader {
+public:
+    explicit FakeTextureLoader(rhi::Device& device) : device_(&device) {}
+
+    [[nodiscard]] std::string_view scheme() const noexcept override { return "tex"; }
+    [[nodiscard]] bool supports(std::string_view) const noexcept override { return true; }
+
+    [[nodiscard]] Result<std::shared_ptr<Resource>> load(std::string_view path) override {
+        rhi::TextureDesc desc;
+        desc.name = std::string(path);
+        desc.width = 2;
+        desc.height = 2;
+        const std::array<u8, 16> pixels{255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+        desc.pixels = pixels.data();
+        auto texture = device_->create_texture(desc);
+        if (!texture) {
+            return texture.error();
+        }
+        return std::static_pointer_cast<Resource>(std::make_shared<Texture2D>(std::string(path), texture.value()));
+    }
+
+private:
+    rhi::Device* device_;
+};
 
 // A minimal Application that builds a scene with sprites (so the 2D pass has
 // geometry to batch) and records what the headless render loop did.
@@ -227,6 +260,60 @@ TEST_CASE("the 3D renderer runs its shadow pass against a null device") {
     // The shadow pass restored the caller's target, so the main pass drew where
     // the frame began: the default target.
     CHECK(device.bound_render_target() == nullptr);
+    device.end_frame();
+}
+
+// A material's texture is named by a reference string, not by a shared_ptr, and
+// the ResourceManager caches weakly. The renderer's per-frame memo is therefore
+// the only owner of a material texture; if it stored a raw pointer instead, the
+// shared_ptr returned by load() would die at the end of load_texture() and the
+// next frame's draw would read a freed GPU texture. This asserts the ownership
+// the fix establishes: the loaded texture is still alive after the load() result
+// is gone, which `loaded_count()` reports by counting non-expired weak entries.
+TEST_CASE("a material texture stays alive after the draw that loaded it") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+
+    ResourceManager resources;
+    resources.register_loader(std::make_unique<FakeTextureLoader>(device));
+
+    renderer3d::Renderer3D renderer;
+    REQUIRE(renderer.initialize(device).ok() == true);
+    renderer.set_resource_manager(&resources);
+
+    Scene scene;
+    Node* camera = scene.create_node("Camera");
+    camera->add_component<Camera3D>();
+
+    Node* light = scene.create_node("Sun");
+    light->add_component<DirectionalLight3D>();
+
+    Node* cube = scene.create_node("Cube");
+    auto* mesh_renderer = cube->add_component<MeshRenderer3D>();
+    mesh_renderer->mesh = Mesh::make_cube();
+    // A material that names a texture, which is the reference the renderer
+    // resolves through the manager. The reference is only a string, so nothing
+    // but the renderer's memo holds the resulting Texture2D.
+    mesh_renderer->override_material = true;
+    mesh_renderer->material.base_color_texture = "tex:test_albedo";
+
+    device.begin_frame(320, 200, rhi::ClearColor{});
+    auto first = renderer.render(device, scene, 320, 200);
+    REQUIRE(first.ok());
+    CHECK(first.value() == 1);
+    device.end_frame();
+
+    // The load's shared_ptr is long gone; only the renderer's memo remains.
+    CHECK(resources.loaded_count() == 1);
+
+    // Draw again so a second load_texture() lookup runs against the memo. The
+    // texture must still be alive and still resolve to the same instance.
+    device.begin_frame(320, 200, rhi::ClearColor{});
+    auto second = renderer.render(device, scene, 320, 200);
+    REQUIRE(second.ok());
+    CHECK(second.value() == 1);
+    CHECK(resources.loaded_count() == 1);
     device.end_frame();
 }
 

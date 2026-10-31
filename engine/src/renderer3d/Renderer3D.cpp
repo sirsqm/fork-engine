@@ -122,14 +122,18 @@ float shadow_factor(vec3 world_position, vec3 to_light) {
     projected = projected * 0.5 + 0.5; // Clip [-1, 1] to texture [0, 1].
 
     // Outside the map there is no occlusion information, so treat it as lit.
-    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 || projected.z > 1.0) {
+    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 || projected.z < 0.0 ||
+        projected.z > 1.0) {
         return 1.0;
     }
 
     // Slope-scaled bias: a surface nearly edge-on to the light needs a larger
-    // offset to avoid self-shadowing acne.
-    float slope = max(1.0 - dot(to_light, vec3(0.0, 0.0, 1.0)), 0.5);
-    float bias = u_shadow_bias * slope;
+    // offset to avoid self-shadowing acne. The slope is how edge-on the surface
+    // is to the light, so it is the surface normal against the light direction,
+    // not a fixed world axis - a constant axis would bias a floor and a wall
+    // differently for no reason.
+    float slope = max(1.0 - dot(normalize(v_normal), to_light), 0.0);
+    float bias = u_shadow_bias * (0.5 + slope);
 
     float occluded = 0.0;
     vec2 texel = 1.0 / vec2(textureSize(u_shadow_map, 0));
@@ -607,6 +611,13 @@ Result<const Renderer3D::GpuMesh*> Renderer3D::acquire_skinned_mesh(rhi::Device&
     return &inserted->second;
 }
 
+void Renderer3D::report_oversized_palette(const anim::SkinnedMesh& mesh, usize joints) {
+    if (warned_large_rigs_.insert(&mesh).second) {
+        FE_LOG_WARN("renderer3d: skinned mesh has %zu joints, more than the shader's %u; drawing the first %u", joints,
+                    kMaxPaletteJoints, kMaxPaletteJoints);
+    }
+}
+
 void Renderer3D::ensure_skinned_instance_capacity(rhi::Device& device, u32 count) {
     // Same rule as the static path: the record must match the layout's stride, or
     // every instance after the first reads its transform shifted. The skinned
@@ -709,7 +720,11 @@ Result<usize> Renderer3D::draw_skinned(rhi::Device& device, const Mat4& view_pro
         // The palette. A missing palette is the bind pose: the identity, which
         // leaves the vertex where the bind shape put it. The array is uploaded at
         // the joint count, never more than the shader's cap; a larger rig is drawn
-        // with its first kMaxPaletteJoints joints rather than reading past the end.
+        // with its first kMaxPaletteJoints joints rather than reading past the end,
+        // and reported once so the truncation is not silent.
+        if (instance.palette != nullptr && instance.palette->size() > kMaxPaletteJoints) {
+            report_oversized_palette(*instance.mesh, instance.palette->size());
+        }
         const u32 joint_count = instance.palette != nullptr
                                     ? std::min<u32>(static_cast<u32>(instance.palette->size()), kMaxPaletteJoints)
                                     : 0;
@@ -739,24 +754,27 @@ const Texture2D* Renderer3D::load_texture(const std::string& reference) {
         return nullptr;
     }
     if (const auto it = texture_cache_.find(reference); it != texture_cache_.end()) {
-        return it->second;
+        return it->second.get();
     }
-    // A renderer with no manager cannot resolve a reference; remember the miss so
-    // the lookup is not repeated for every instance in the frame.
-    if (resources_ == nullptr) {
-        texture_cache_.emplace(reference, nullptr);
-        return nullptr;
-    }
-    const Texture2D* resolved = nullptr;
-    if (auto loaded = resources_->load(reference)) {
-        resolved = dynamic_cast<const Texture2D*>(loaded.value().get());
-        if (resolved == nullptr) {
-            FE_LOG_WARN("renderer3d: material texture '%s' is not a Texture2D", reference.c_str());
+    // The memo, not the ResourceManager, owns a material texture (the manager
+    // caches weakly and the reference is only a string), so the entry keeps the
+    // shared_ptr alive for as long as the cache entry does. An entry that
+    // resolved to null records the miss, so it is not retried for every instance
+    // in the frame.
+    std::shared_ptr<const Texture2D> texture;
+    if (resources_ != nullptr) {
+        if (auto loaded = resources_->load(reference)) {
+            texture = std::dynamic_pointer_cast<const Texture2D>(loaded.value());
+            if (texture == nullptr) {
+                FE_LOG_WARN("renderer3d: material texture '%s' is not a Texture2D", reference.c_str());
+            }
+        } else {
+            FE_LOG_WARN("renderer3d: could not load material texture '%s'", reference.c_str());
         }
-    } else {
-        FE_LOG_WARN("renderer3d: could not load material texture '%s'", reference.c_str());
     }
-    texture_cache_.emplace(reference, resolved);
+
+    const Texture2D* resolved = texture.get();
+    texture_cache_.emplace(reference, std::move(texture));
     return resolved;
 }
 
@@ -1247,6 +1265,9 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
                             instance.palette != nullptr
                                 ? std::min<u32>(static_cast<u32>(instance.palette->size()), kMaxPaletteJoints)
                                 : 0;
+                        if (instance.palette != nullptr && instance.palette->size() > kMaxPaletteJoints) {
+                            report_oversized_palette(*instance.mesh, instance.palette->size());
+                        }
                         if (joint_count > 0) {
                             skinned_shadow_shader_->set_mat4_array("u_palette", instance.palette->data(), joint_count);
                         } else {
