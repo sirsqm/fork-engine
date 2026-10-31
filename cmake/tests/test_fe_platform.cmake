@@ -61,7 +61,30 @@ foreach(_case IN LISTS _cases)
     message(FATAL_ERROR "CMAKE_SYSTEM_NAME=${_system_name}: fe_platform_is_android() returned TRUE")
   endif()
 
-  message(STATUS "  ${_system_name} -> ${_detected} (web=${_is_web} android=${_is_android})")
+  # iOS is the same shape: its own cross build and its own backend. The trap it
+  # guards is an `APPLE` check classifying it as macOS, so macOS must *not* be iOS
+  # and iOS must not be macOS.
+  fe_platform_is_ios(_is_ios)
+  if(_system_name STREQUAL "iOS")
+    if(NOT _is_ios)
+      message(FATAL_ERROR "CMAKE_SYSTEM_NAME=iOS: fe_platform_is_ios() returned FALSE")
+    endif()
+  elseif(_is_ios)
+    message(FATAL_ERROR "CMAKE_SYSTEM_NAME=${_system_name}: fe_platform_is_ios() returned TRUE")
+  endif()
+
+  # A source that cares only "is this a phone?" asks once. Both mobile platforms
+  # answer yes and nothing else does.
+  fe_platform_is_mobile(_is_mobile)
+  if(_system_name STREQUAL "Android" OR _system_name STREQUAL "iOS")
+    if(NOT _is_mobile)
+      message(FATAL_ERROR "CMAKE_SYSTEM_NAME=${_system_name}: fe_platform_is_mobile() returned FALSE")
+    endif()
+  elseif(_is_mobile)
+    message(FATAL_ERROR "CMAKE_SYSTEM_NAME=${_system_name}: fe_platform_is_mobile() returned TRUE")
+  endif()
+
+  message(STATUS "  ${_system_name} -> ${_detected} (web=${_is_web} android=${_is_android} ios=${_is_ios} mobile=${_is_mobile})")
 endforeach()
 
 # A plain desktop configure sets no CMAKE_SYSTEM_NAME; the host variables decide.

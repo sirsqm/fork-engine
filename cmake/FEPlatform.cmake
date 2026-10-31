@@ -2,8 +2,8 @@
 #
 # The single place that decides which platform the build targets, and the only
 # place that defines the `FE_PLATFORM_*` macros. The desktop build and the
-# Emscripten and Android toolchains all funnel through it, so they cannot disagree
-# about what "web" or "android" means.
+# Emscripten, Android, and iOS toolchains all funnel through it, so they cannot
+# disagree about what "web", "android", or "ios" means.
 #
 # Detection is a pure function of CMake's own platform variables: it creates no
 # target and calls no `add_*`, so tests/cmake/test_fe_platform.cmake can drive it
@@ -12,16 +12,17 @@
 # half, called once from the root CMakeLists.
 #
 # Why a macro rather than a compiler check: the platform layer's OS-specific
-# implementations (the GLFW window backend, and the web and Android ones) must be
-# *absent* from a target they cannot compile for, not merely unused — GLFW cannot
-# be compiled to wasm. The build already knows the target platform from
-# CMAKE_SYSTEM_NAME, so it is the build's job to say so, not a `#ifdef
+# implementations (the GLFW window backend, and the web, Android, and iOS ones)
+# must be *absent* from a target they cannot compile for, not merely unused —
+# GLFW cannot be compiled to wasm. The build already knows the target platform
+# from CMAKE_SYSTEM_NAME, so it is the build's job to say so, not a `#ifdef
 # __EMSCRIPTEN__` scattered through the sources. See
-# docs/adr/0073-emscripten-toolchain.md and
-# docs/adr/0105-android-window-backend.md.
+# docs/adr/0073-emscripten-toolchain.md,
+# docs/adr/0105-android-window-backend.md, and
+# docs/adr/0114-ios-window-backend.md.
 
-# Included from FESettings.cmake, FEDependencies.cmake, and the web and Android
-# toolchains; a second include is a no-op rather than a redefinition of the
+# Included from FESettings.cmake, FEDependencies.cmake, and the web, Android, and
+# iOS toolchains; a second include is a no-op rather than a redefinition of the
 # functions below.
 include_guard(GLOBAL)
 
@@ -125,6 +126,49 @@ function(fe_platform_is_android out_var)
   endif()
 endfunction()
 
+# True when the build targets iOS. Like web and Android, iOS is a cross build
+# with its own window backend (a Metal or GLES surface), so it must not be handed
+# the GLFW/desktop backend. It is not a *desktop* Apple build either, which is the
+# mistake this predicate exists to prevent: a plain `APPLE` check would classify
+# iOS as macOS and hand it the GLFW backend, which cannot open a window on iOS.
+# The build selects its backend on this predicate (engine/CMakeLists.txt). See
+# docs/adr/0114-ios-window-backend.md.
+function(fe_platform_is_ios out_var)
+  fe_detect_platform(_fe_platform)
+  if(_fe_platform STREQUAL "ios")
+    set(${out_var}
+        TRUE
+        PARENT_SCOPE
+    )
+  else()
+    set(${out_var}
+        FALSE
+        PARENT_SCOPE
+    )
+  endif()
+endfunction()
+
+# True when the build targets a mobile platform (Android or iOS). A game that
+# ships to a phone shares the parts that are mobile rather than desktop: a touch
+# input path, a fullscreen surface with a lifecycle, and a package the store
+# installs. This predicate is what such a source asks for, so it does not have to
+# name both platforms and cannot forget one. See
+# docs/adr/0114-ios-window-backend.md.
+function(fe_platform_is_mobile out_var)
+  fe_detect_platform(_fe_platform)
+  if(_fe_platform STREQUAL "android" OR _fe_platform STREQUAL "ios")
+    set(${out_var}
+        TRUE
+        PARENT_SCOPE
+    )
+  else()
+    set(${out_var}
+        FALSE
+        PARENT_SCOPE
+    )
+  endif()
+endfunction()
+
 # The compile definitions for the configured target, as a list, *without* applying
 # them. Pure, like fe_detect_platform(): add_compile_definitions() does not exist
 # in `cmake -P` script mode, so a test cannot call the applying half, and the
@@ -132,12 +176,13 @@ endfunction()
 # desktop and only misbehaves on the cross target. Keeping it pure is what lets
 # cmake/tests/test_fe_platform_definitions.cmake assert it.
 #
-# Exactly one of FE_PLATFORM_DESKTOP / FE_PLATFORM_WEB / FE_PLATFORM_ANDROID is
-# returned: a source that branches on "is there a desktop OS?" cannot accidentally
-# take both paths. Android and web are their own platforms, not desktop and not
-# each other; a source that needs the Android backend asks for FE_PLATFORM_ANDROID
-# and a source that needs the browser backend asks for FE_PLATFORM_WEB, and no
-# build defines both.
+# Exactly one of FE_PLATFORM_DESKTOP / FE_PLATFORM_WEB / FE_PLATFORM_ANDROID /
+# FE_PLATFORM_IOS is returned: a source that branches on "is there a desktop OS?"
+# cannot accidentally take both paths. Android, iOS, and web are their own
+# platforms, not desktop and not each other; a source that needs the iOS backend
+# asks for FE_PLATFORM_IOS and a source that needs the Android backend asks for
+# FE_PLATFORM_ANDROID, and no build defines both. Both mobile platforms also get
+# FE_PLATFORM_MOBILE, so a source that cares only "is this a phone?" asks once.
 function(fe_platform_definitions out_var)
   fe_detect_platform(_fe_platform)
   if(_fe_platform STREQUAL "web")
@@ -150,6 +195,15 @@ function(fe_platform_definitions out_var)
   if(_fe_platform STREQUAL "android")
     set(${out_var}
         FE_PLATFORM_ANDROID=1
+        FE_PLATFORM_MOBILE=1
+        PARENT_SCOPE
+    )
+    return()
+  endif()
+  if(_fe_platform STREQUAL "ios")
+    set(${out_var}
+        FE_PLATFORM_IOS=1
+        FE_PLATFORM_MOBILE=1
         PARENT_SCOPE
     )
     return()

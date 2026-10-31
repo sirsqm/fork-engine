@@ -367,6 +367,15 @@ Implement the iOS window backend: a Metal or GLES surface, lifecycle, and touch.
 **Done when** the iOS target builds and produces a runnable app bundle. Note:
 this needs a macOS host; record the constraint rather than stubbing it.
 
+Landed so far is the *seam*: `cmake/toolchains/ios.cmake` (which refuses on a
+non-macOS host with the reason, and records that Xcode is macOS-only) and the
+`FE_PLATFORM_IOS` / `FE_PLATFORM_MOBILE` macros with `fe_platform_is_ios()` and
+`fe_platform_is_mobile()` ([ADR-0114](adr/0114-ios-window-backend.md)). The
+surface, the lifecycle, the touch handling, and the app bundle are still to
+write, so an iOS configure is a build-system path, not a runnable target, and the
+build fails loudly on a mobile target until the backend exists. This is the first
+half of the item, not the item.
+
 ### `ios-export-template`
 
 Extend `fork_export` to produce an iOS build.

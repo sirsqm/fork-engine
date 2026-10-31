@@ -37,16 +37,35 @@
 # ---------------------------------------------------------------------------
 # The context-bearing window backend.
 #
-# Exactly one of these two is compiled. GLFW cannot be compiled to wasm at all,
-# so a web build must not merely refrain from *calling* it — it must not compile
-# it. The platform classifier (cmake/FEPlatform.cmake) already knows which target
+# Exactly one of these is compiled. GLFW cannot be compiled to wasm at all, so a
+# web build must not merely refrain from *calling* it — it must not compile it.
+# The platform classifier (cmake/FEPlatform.cmake) already knows which target
 # this is, so the choice is made there, and Window.cpp's factory takes the same
 # branch from the same FE_PLATFORM_WEB macro. See
 # docs/adr/0074-web-window-backend.md.
+#
+# A mobile target has its own backend too (a native activity on Android, a UIKit
+# surface on iOS), and it is not written yet: the toolchain and the macro are the
+# seam (docs/adr/0105-android-window-backend.md,
+# docs/adr/0114-ios-window-backend.md). Failing here, with the reason, is better
+# than silently selecting GLFW and producing a compile error a caller has to
+# decode — GLFW cannot open a window on a phone at all.
 # ---------------------------------------------------------------------------
 fe_platform_is_web(FE_TARGETS_WEB)
+fe_platform_is_mobile(FE_TARGETS_MOBILE)
 if(FE_TARGETS_WEB)
   set(FE_WINDOW_BACKEND_SOURCE src/platform/WebWindow.cpp)
+elseif(FE_TARGETS_MOBILE)
+  message(
+    FATAL_ERROR
+      "The mobile window backend is not written yet, so this target cannot be "
+      "built.\n"
+      "The toolchain and the platform macro are in place; the native activity, "
+      "the surface, and the lifecycle are the remaining half of "
+      "docs/SHIPPING_QUEUE.md (`android-window-backend` / `ios-window-backend`). "
+      "See docs/adr/0105-android-window-backend.md and "
+      "docs/adr/0114-ios-window-backend.md."
+  )
 else()
   set(FE_WINDOW_BACKEND_SOURCE src/platform/GlfwWindow.cpp)
 endif()

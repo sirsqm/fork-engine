@@ -13,8 +13,11 @@
 # fe_apply_platform_definitions() to be reachable from here.
 #
 # The macro contract is "exactly one of FE_PLATFORM_DESKTOP / FE_PLATFORM_WEB /
-# FE_PLATFORM_ANDROID": Android must not also be handed the desktop backend (it
-# cannot compile GLFW), and it must not be handed the web backend either.
+# FE_PLATFORM_ANDROID / FE_PLATFORM_IOS, plus FE_PLATFORM_MOBILE on both mobile
+# platforms": Android must not also be handed the desktop backend (it cannot
+# compile GLFW), it must not be handed the web backend, and neither mobile
+# platform may be handed the other's macro. iOS must not be classified as desktop
+# just because it is Apple.
 #
 # Run by tests/CMakeLists.txt:
 #   cmake -DFE_PLATFORM_CMAKE=<path> -P cmake/tests/test_fe_platform_definitions.cmake
@@ -29,7 +32,8 @@ include("${FE_PLATFORM_CMAKE}")
 # separator inside set() and `=` appears inside a macro name.
 set(_cases
     "Emscripten:FE_PLATFORM_WEB=1"
-    "Android:FE_PLATFORM_ANDROID=1"
+    "Android:FE_PLATFORM_ANDROID=1|FE_PLATFORM_MOBILE=1"
+    "iOS:FE_PLATFORM_IOS=1|FE_PLATFORM_MOBILE=1"
     "Linux:FE_PLATFORM_DESKTOP=1|FE_PLATFORM_LINUX=1"
     "Windows:FE_PLATFORM_DESKTOP=1|FE_PLATFORM_WINDOWS=1"
     "Darwin:FE_PLATFORM_DESKTOP=1|FE_PLATFORM_MACOS=1"
@@ -37,11 +41,14 @@ set(_cases
 
 # Every platform macro this project defines. A define that is present but not
 # expected, or expected but absent, fails the case; the per-platform mutual
-# exclusion (Android is not desktop, web is not desktop) falls out of this.
+# exclusion (Android is not desktop, iOS is not macOS, web is not desktop) falls
+# out of this.
 set(_all_macros
     FE_PLATFORM_DESKTOP=1
     FE_PLATFORM_WEB=1
     FE_PLATFORM_ANDROID=1
+    FE_PLATFORM_IOS=1
+    FE_PLATFORM_MOBILE=1
     FE_PLATFORM_WINDOWS=1
     FE_PLATFORM_MACOS=1
     FE_PLATFORM_LINUX=1
