@@ -130,6 +130,19 @@ add_test(
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_fe_platform.cmake
 )
 
+# The classification is only half the contract: what a source file branches on is
+# the macro the classification turns into. This drives
+# fe_apply_platform_definitions() in script mode and asserts the macro set for
+# each target, including that Android gets FE_PLATFORM_ANDROID and *not* the
+# desktop or web macros. Without it a wrong mapping compiles on desktop and only
+# misbehaves on a phone. (docs/SHIPPING_QUEUE.md, `android-window-backend`).
+add_test(
+  NAME platform_definitions
+  COMMAND
+    ${CMAKE_COMMAND} -DFE_PLATFORM_CMAKE=${CMAKE_SOURCE_DIR}/cmake/FEPlatform.cmake -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_fe_platform_definitions.cmake
+)
+
 # The web CI job is another decision the desktop suite cannot observe by
 # building: a green desktop build says nothing about whether the wasm job still
 # builds the player or still runs the browser smoke test. Like the platform

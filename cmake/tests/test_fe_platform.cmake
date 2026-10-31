@@ -50,7 +50,18 @@ foreach(_case IN LISTS _cases)
     message(FATAL_ERROR "CMAKE_SYSTEM_NAME=${_system_name}: fe_platform_is_web() returned TRUE")
   endif()
 
-  message(STATUS "  ${_system_name} -> ${_detected} (web=${_is_web})")
+  # Android is a cross build with its own window backend: it is not web, but it
+  # is not desktop either, and the build picks the backend on this predicate.
+  fe_platform_is_android(_is_android)
+  if(_system_name STREQUAL "Android")
+    if(NOT _is_android)
+      message(FATAL_ERROR "CMAKE_SYSTEM_NAME=Android: fe_platform_is_android() returned FALSE")
+    endif()
+  elseif(_is_android)
+    message(FATAL_ERROR "CMAKE_SYSTEM_NAME=${_system_name}: fe_platform_is_android() returned TRUE")
+  endif()
+
+  message(STATUS "  ${_system_name} -> ${_detected} (web=${_is_web} android=${_is_android})")
 endforeach()
 
 # A plain desktop configure sets no CMAKE_SYSTEM_NAME; the host variables decide.

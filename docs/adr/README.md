@@ -110,6 +110,7 @@ rather than editing it.
 | [0102](0102-downloadable-release-builds.md) | Downloadable release builds, and an installed SDK a consumer can link | Accepted |
 | [0103](0103-linux-appimage.md) | A single-file Linux download: the AppImage | Accepted |
 | [0104](0104-skeletal-animation.md) | Skeletal animation and skinning | Accepted |
+| [0105](0105-android-window-backend.md) | The Android target's toolchain and platform macro | Accepted |
 
 ## Format
 
