@@ -8,18 +8,22 @@
 #   cmake -DFE_BUILD_DIR=build -DFE_OUT_DIR=dist -DFE_PLATFORM=linux \
 #         -DFE_ARCH=x86_64 -P packaging/package_release.cmake
 #
-# It produces two archives plus a checksum file, all named after the engine
+# It produces three archives plus a checksum file, all named after the engine
 # version, the platform, and the architecture:
 #
-#   fork-engine-<ver>-<platform>-<arch>-game.<ext>   the playable breakout build
-#   fork-engine-<ver>-<platform>-<arch>-sdk.<ext>    the installed engine tree
-#   SHA256SUMS                                       one line per archive
+#   fork-engine-<ver>-<platform>-<arch>-game.<ext>     the playable breakout build
+#   fork-engine-<ver>-<platform>-<arch>-sdk.<ext>      the installed engine tree
+#   fork-engine-<ver>-<platform>-<arch>-runtime.<ext>  a prebuilt fork_player
+#   SHA256SUMS                                         one line per archive
 #
 # The `game` archive is what a player downloads: the breakout binary, the assets
 # and scene it loads, and a launcher that runs it from the archive root, which is
 # the working directory the game resolves its paths against. The `sdk` archive is
 # the `cmake --install` tree (ADR-0084): the library, the public headers, and the
-# shipping tools, for a developer who wants the engine without the checkout.
+# shipping tools, for a developer who wants the engine without the checkout. The
+# `runtime` archive is a prebuilt `fork_player` a developer without the engine's
+# toolchain can hand to `fork_export --player`, so exporting a game does not need
+# a compiler (ADR-0116).
 #
 # A `.tar.gz` is produced everywhere but Windows, where a `.zip` is what a
 # downloader expects to be able to open without extra tooling. The extension is
@@ -125,6 +129,7 @@ endif()
 set(FE_STEM "fork-engine-${FE_VERSION}-${FE_PLATFORM}-${FE_ARCH}")
 set(FE_GAME_ARCHIVE "${FE_OUT_DIR}/${FE_STEM}-game.${FE_ARCHIVE_EXT}")
 set(FE_SDK_ARCHIVE "${FE_OUT_DIR}/${FE_STEM}-sdk.${FE_ARCHIVE_EXT}")
+set(FE_RUNTIME_ARCHIVE "${FE_OUT_DIR}/${FE_STEM}-runtime.${FE_ARCHIVE_EXT}")
 
 # The executable suffix comes from the target platform, not from the host: this
 # script may run on Linux while packaging a Windows build, and `cmake -P` script
@@ -145,7 +150,7 @@ function(fe_run)
 endfunction()
 
 file(MAKE_DIRECTORY "${FE_OUT_DIR}")
-file(REMOVE "${FE_GAME_ARCHIVE}" "${FE_SDK_ARCHIVE}")
+file(REMOVE "${FE_GAME_ARCHIVE}" "${FE_SDK_ARCHIVE}" "${FE_RUNTIME_ARCHIVE}")
 
 # The archive is compressed, not merely named as if it were. `cmake -E tar cf`
 # writes an uncompressed tar that `cmake -E tar xf` still reads by sniffing the
@@ -250,13 +255,82 @@ file(REMOVE_RECURSE "${FE_OUT_DIR}/stage-game")
 fe_assert_archive_format("${FE_GAME_ARCHIVE}")
 
 # ---------------------------------------------------------------------------
+# The runtime archive: a prebuilt fork_player for `fork_export --player`.
+#
+# The export path copies the player built beside it, so a developer without the
+# engine's toolchain could not export at all. This archive is that player, built
+# once per OS by this same release build, for a developer to hand to
+# `fork_export --player`. The runtime is generic and driven by the pack
+# (ADR-0064), so one prebuilt player serves every game and the export still has
+# no compiler in it.
+#
+# It is staged from the *installed* tree, not the build tree: the installed
+# player carries the `$ORIGIN/../lib` RPATH (ADR-0084), so it finds a shared
+# engine beside it after unpacking anywhere, while the build tree's player has an
+# absolute build-path RPATH that would break the moment it was moved. The shared
+# libraries are carried too, in the layout that RPATH expects (beside the
+# executable on Windows, in `lib/` elsewhere), so a shared engine still works;
+# today the engine is static and there are none.
+# ---------------------------------------------------------------------------
+set(FE_RUNTIME_PREFIX "${FE_OUT_DIR}/stage-runtime-prefix")
+set(FE_RUNTIME_STAGE "${FE_OUT_DIR}/stage-runtime/${FE_STEM}")
+file(REMOVE_RECURSE "${FE_OUT_DIR}/stage-runtime-prefix" "${FE_OUT_DIR}/stage-runtime")
+file(MAKE_DIRECTORY "${FE_RUNTIME_STAGE}")
+fe_run("${CMAKE_COMMAND}" --install "${FE_BUILD_DIR}" ${FE_INSTALL_CONFIG_ARG} --prefix "${FE_RUNTIME_PREFIX}")
+
+set(FE_RUNTIME_PLAYER "fork_player${FE_EXE_SUFFIX}")
+if(NOT EXISTS "${FE_RUNTIME_PREFIX}/bin/${FE_RUNTIME_PLAYER}")
+  message(FATAL_ERROR "the installed tree has no bin/${FE_RUNTIME_PLAYER}; is FE_INSTALL on?")
+endif()
+file(COPY "${FE_RUNTIME_PREFIX}/bin/${FE_RUNTIME_PLAYER}" DESTINATION "${FE_RUNTIME_STAGE}")
+
+# The shared libraries the player needs, if the engine was built shared. On
+# Windows a DLL must sit beside the executable (the DLL-search rule); everywhere
+# else `lib/` is where the RPATH looks. `file(COPY)` follows a symlink to its
+# target, so a versioned `libfoo.so.1` is carried as a real file rather than as a
+# dangling link, which is the mistake the AppImage packaging already names.
+file(GLOB FE_RUNTIME_SHARED_BIN "${FE_RUNTIME_PREFIX}/bin/*.dll")
+file(GLOB FE_RUNTIME_SHARED_LIB "${FE_RUNTIME_PREFIX}/lib/*.so" "${FE_RUNTIME_PREFIX}/lib/*.so.*"
+     "${FE_RUNTIME_PREFIX}/lib/*.dylib")
+if(FE_RUNTIME_SHARED_BIN)
+  file(COPY ${FE_RUNTIME_SHARED_BIN} DESTINATION "${FE_RUNTIME_STAGE}")
+endif()
+if(FE_RUNTIME_SHARED_LIB)
+  file(MAKE_DIRECTORY "${FE_RUNTIME_STAGE}/lib")
+  file(COPY ${FE_RUNTIME_SHARED_LIB} DESTINATION "${FE_RUNTIME_STAGE}/lib")
+endif()
+
+# A README, so the archive explains itself the way the game archive does.
+file(WRITE "${FE_RUNTIME_STAGE}/README.txt"
+"Fork Engine ${FE_VERSION} - prebuilt runtime (${FE_PLATFORM}/${FE_ARCH})
+
+This is a prebuilt fork_player, the runtime an exported game runs. Export a game
+without the engine's toolchain by passing it to fork_export:
+
+  fork_export --project DIR --out DIR --player /path/to/fork_player
+
+Then hand the export directory to this player:
+
+  ./fork_player --export DIR
+
+The runtime is generic and driven by the pack, so one player serves every game
+(ADR-0064). Keep the shared libraries (if any) in the layout they are in here.
+
+Fork Engine is MIT licensed; see the SDK or the source tree for the license.
+")
+fe_run("${CMAKE_COMMAND}" -E tar "${FE_TAR_OP}" "${FE_RUNTIME_ARCHIVE}" "--format=${FE_ARCHIVE_FORMAT}" "${FE_STEM}"
+       WORKING_DIRECTORY "${FE_OUT_DIR}/stage-runtime")
+file(REMOVE_RECURSE "${FE_OUT_DIR}/stage-runtime" "${FE_OUT_DIR}/stage-runtime-prefix")
+fe_assert_archive_format("${FE_RUNTIME_ARCHIVE}")
+
+# ---------------------------------------------------------------------------
 # Checksums.
 #
 # Written from the archives that were just produced, so a download can be
 # verified against the release rather than against a remembered hash.
 # ---------------------------------------------------------------------------
 set(FE_SUMS "")
-foreach(_archive "${FE_GAME_ARCHIVE}" "${FE_SDK_ARCHIVE}")
+foreach(_archive "${FE_GAME_ARCHIVE}" "${FE_SDK_ARCHIVE}" "${FE_RUNTIME_ARCHIVE}")
   execute_process(COMMAND "${CMAKE_COMMAND}" -E sha256sum "${_archive}"
                   OUTPUT_VARIABLE _line OUTPUT_STRIP_TRAILING_WHITESPACE)
   string(REGEX REPLACE "^([0-9a-f]+) .*" "\\1" _hash "${_line}")
@@ -346,9 +420,61 @@ if(FE_SMOKE)
     message(STATUS "release: the packaged game played ${FE_SMOKE_FRAMES} headless frames")
   endif()
 
+  # -------------------------------------------------------------------------
+  # The runtime archive's acceptance: unpack the prebuilt player, export a game
+  # with it through `fork_export --player`, and play the export. This is the
+  # claim the queue item makes - a developer without the toolchain can export -
+  # checked as a flow rather than as "the archive has a file in it".
+  #
+  # It is the same shape as the game smoke: unpack (reproducing a download), run
+  # from the unpacked directory (so a moved binary with a stale RPATH fails), and
+  # play the result. It needs a GL context for the play step, so the play is
+  # gated on FE_SMOKE_GAME like the game smoke; the export and the structural
+  # checks run everywhere.
+  # -------------------------------------------------------------------------
+  set(FE_RUNTIME_SMOKE "${FE_SMOKE_DIR}/runtime")
+  file(MAKE_DIRECTORY "${FE_RUNTIME_SMOKE}")
+  fe_run("${CMAKE_COMMAND}" -E tar "xf" "${FE_RUNTIME_ARCHIVE}" WORKING_DIRECTORY "${FE_RUNTIME_SMOKE}")
+  set(FE_RUNTIME_ROOT "${FE_RUNTIME_SMOKE}/${FE_STEM}")
+  if(NOT EXISTS "${FE_RUNTIME_ROOT}/${FE_RUNTIME_PLAYER}")
+    message(FATAL_ERROR "the runtime archive does not carry ${FE_RUNTIME_PLAYER} at its root")
+  endif()
+  message(STATUS "release: the runtime archive carries ${FE_RUNTIME_PLAYER}")
+
+  # Export a game with the prebuilt player, the way a developer without the
+  # toolchain does. `fork_export` is run from the build tree here (it is a
+  # developer's tool, not part of the runtime archive), but the *player* it
+  # records is the one from the archive, so the archive is what is exercised.
+  set(FE_RUNTIME_EXPORT "${FE_RUNTIME_SMOKE}/export")
+  if(NOT EXISTS "${FE_BIN_DIR}/fork_export${FE_EXE_SUFFIX}")
+    message(FATAL_ERROR "no fork_export in ${FE_BIN_DIR}; the runtime smoke needs it")
+  endif()
+  file(REMOVE_RECURSE "${FE_RUNTIME_EXPORT}")
+  fe_run("${FE_BIN_DIR}/fork_export${FE_EXE_SUFFIX}"
+         --project "${CMAKE_CURRENT_LIST_DIR}/../examples/demo_project"
+         --out "${FE_RUNTIME_EXPORT}"
+         --player "${FE_RUNTIME_ROOT}/${FE_RUNTIME_PLAYER}")
+  foreach(_entry "${FE_RUNTIME_PLAYER}" "game.fepack" "fork.export.json")
+    if(NOT EXISTS "${FE_RUNTIME_EXPORT}/${_entry}")
+      message(FATAL_ERROR "exporting with the prebuilt runtime did not write ${_entry}")
+    endif()
+  endforeach()
+  message(STATUS "release: fork_export accepted the prebuilt runtime via --player")
+
+  if(FE_SMOKE_GAME)
+    execute_process(COMMAND ${FE_SMOKE_PREFIX} "${FE_RUNTIME_EXPORT}/${FE_RUNTIME_PLAYER}"
+                    --export "${FE_RUNTIME_EXPORT}" --headless "${FE_SMOKE_FRAMES}"
+                    RESULT_VARIABLE _runtime_rc)
+    if(NOT _runtime_rc EQUAL 0)
+      message(FATAL_ERROR "the prebuilt runtime did not play the game it exported (${_runtime_rc})")
+    endif()
+    message(STATUS "release: the prebuilt runtime played a game it exported")
+  endif()
+
   file(REMOVE_RECURSE "${FE_SMOKE_DIR}")
 endif()
 
 message(STATUS "release: ${FE_GAME_ARCHIVE}")
 message(STATUS "release: ${FE_SDK_ARCHIVE}")
+message(STATUS "release: ${FE_RUNTIME_ARCHIVE}")
 message(STATUS "release: ${FE_OUT_DIR}/SHA256SUMS")

@@ -40,7 +40,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # Build and package on each desktop target.
   #
-  # Each job produces the two archives for its platform through the one packaging
+  # Each job produces the three archives for its platform through the one packaging
   # script, smoke-runs the packaged game, and uploads the result. Nothing is
   # published here: a Release is only created once every platform has succeeded,
   # so a partially-built release is never visible.
@@ -130,7 +130,7 @@ jobs:
             exit 1
           fi
 
-      # One script, both archives, the checksums, and a smoke run of the unpacked
+      # One script, all three archives, the checksums, and a smoke run of the unpacked
       # game. The prefix (empty off Linux) supplies the virtual display the game
       # needs to open a GL context.
       - name: Package

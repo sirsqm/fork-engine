@@ -114,14 +114,40 @@ if(NOT _package MATCHES "fe_assert_archive_format")
     "check is what makes an uncompressed `.tar.gz` fail loudly.")
 endif()
 
-# Both archives the release promises must be produced, and the game archive must
-# carry the scene and the assets the game loads or it will not run from a download.
-foreach(_needle "FE_GAME_ARCHIVE" "FE_SDK_ARCHIVE" "SHA256SUMS")
+# All three archives the release promises must be produced, and the game archive
+# must carry the scene and the assets the game loads or it will not run from a
+# download.
+foreach(_needle "FE_GAME_ARCHIVE" "FE_SDK_ARCHIVE" "FE_RUNTIME_ARCHIVE" "SHA256SUMS")
   string(FIND "${_package}" "${_needle}" _at)
   if(_at EQUAL -1)
     message(FATAL_ERROR "the packaging script no longer produces ${_needle}")
   endif()
 endforeach()
+
+# The runtime archive is a prebuilt fork_player for `fork_export --player`, and
+# the queue item is only satisfied if the export path actually accepts it. Assert
+# the script checks that flow, not merely that it writes a file: it must invoke
+# fork_export with --player against the unpacked runtime, or "a developer without
+# the toolchain can export" is an assumption rather than a tested claim.
+if(NOT _package MATCHES "--player")
+  message(FATAL_ERROR
+    "the packaging script no longer exports a game with the prebuilt runtime via "
+    "--player; the runtime archive's whole purpose is that export flow.")
+endif()
+if(NOT _package MATCHES "fork_export accepted the prebuilt runtime")
+  message(FATAL_ERROR
+    "the packaging script no longer asserts that fork_export accepted the "
+    "prebuilt runtime; the runtime smoke must check the export flow, not just "
+    "that the archive carries a binary.")
+endif()
+# The runtime is staged from the installed tree, whose RPATH is relative, so it
+# works after unpacking anywhere; the build tree's player has an absolute RPATH
+# that would break the moment it was moved.
+if(NOT _package MATCHES "stage-runtime-prefix")
+  message(FATAL_ERROR
+    "the runtime archive is no longer staged from an installed prefix; a player "
+    "copied from the build tree carries an absolute RPATH and breaks when moved.")
+endif()
 
 # The game archive is staged by copying the example's content, so the script must
 # still name the example and the subdirectories the game loads from. A rename of

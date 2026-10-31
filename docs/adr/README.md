@@ -121,6 +121,7 @@ rather than editing it.
 | [0113](0113-android-export-template.md) | The Android export template | Accepted |
 | [0114](0114-ios-window-backend.md) | The iOS target's toolchain and platform macro | Accepted |
 | [0115](0115-ios-export-template.md) | The iOS export template | Accepted |
+| [0116](0116-prebuilt-runtime-archive.md) | A prebuilt runtime archive for `fork_export --player` | Accepted |
 
 ## Format
 

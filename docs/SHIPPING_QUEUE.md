@@ -423,6 +423,18 @@ runtime per desktop OS so a developer without the engine's toolchain can export.
 **Done when** a documented, reproducible release build produces a per-OS runtime
 artifact that `fork_export` accepts via `--player`, and the smoke test runs it.
 
+Landed: `packaging/package_release.cmake` writes a third archive,
+`fork-engine-<ver>-<platform>-<arch>-runtime.<ext>`, carrying a prebuilt
+`fork_player` staged from the *installed* tree so it is relocatable (the
+`$ORIGIN/../lib` RPATH), plus any shared libraries and a README
+([ADR-0116](adr/0116-prebuilt-runtime-archive.md)). It is produced by the same
+per-OS release job as the game and SDK archives, `SHA256SUMS` covers it, and the
+packaging smoke now checks the flow, not the file: it unpacks the runtime, runs
+`fork_export --player <unpacked player>` against `examples/demo_project`, and
+(where a GL context exists, as the Linux CI job provides) runs that player on
+that export. The `release_workflow` guard test asserts the archive, the
+`--player` flow, and the installed-prefix staging.
+
 ### `linux-appimage`
 
 Produce a single-file Linux artifact that runs on a clean machine without the
