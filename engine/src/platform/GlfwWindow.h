@@ -43,6 +43,7 @@ public:
 
     void set_title(const std::string& title) override;
     void set_vsync(bool enabled) override;
+    void set_icon(const WindowIcon& icon) override;
 
     // Resolves an OpenGL entry point through GLFW's loader, which asks the
     // current context's driver. This is what the graphics backend loads its

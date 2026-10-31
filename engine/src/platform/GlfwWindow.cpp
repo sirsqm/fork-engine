@@ -320,6 +320,10 @@ Result<std::unique_ptr<Window>> GlfwWindow::create(const WindowDesc& desc) {
     glfwMakeContextCurrent(handle);
     glfwSwapInterval(desc.vsync ? 1 : 0);
 
+    // The icon is set after the window exists (GLFW has no hint for it). An
+    // empty descriptor icon leaves the OS default.
+    window->set_icon(desc.icon);
+
     // Seed the mouse position so the first delta is not measured from (0, 0).
     double cursor_x = 0.0;
     double cursor_y = 0.0;
@@ -380,6 +384,18 @@ void GlfwWindow::set_title(const std::string& title) {
 
 void GlfwWindow::set_vsync(bool enabled) {
     glfwSwapInterval(enabled ? 1 : 0);
+}
+
+void GlfwWindow::set_icon(const WindowIcon& icon) {
+    if (icon.empty()) {
+        return;
+    }
+    // GLFW takes the icon as 32-bit RGBA with the top row first, which is the
+    // layout WindowIcon already uses, so the pixels are handed over directly.
+    // GLFW copies them, so the icon need not outlive the call.
+    const GLFWimage image{static_cast<int>(icon.width()), static_cast<int>(icon.height()),
+                          const_cast<unsigned char*>(icon.pixels().data())};
+    glfwSetWindowIcon(static_cast<GLFWwindow*>(native_handle()), 1, &image);
 }
 
 void* GlfwWindow::get_proc_address(const char* name) const {

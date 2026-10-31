@@ -23,6 +23,7 @@ add_executable(fork_engine_tests
     src/test_key_code.cpp
     src/test_canvas_scale.cpp
     src/test_platform_null.cpp
+    src/test_window_icon.cpp
     src/test_user_data.cpp
     src/test_null_device.cpp
     src/test_shader_dialect.cpp

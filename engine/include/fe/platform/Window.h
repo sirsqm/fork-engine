@@ -5,6 +5,7 @@
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
 #include "fe/platform/InputState.h"
+#include "fe/platform/WindowIcon.h"
 
 #include <memory>
 #include <string>
@@ -60,6 +61,12 @@ struct WindowDesc {
     // shell that provides its own canvas only needs this when it uses another
     // id.
     std::string canvas = "#canvas";
+
+    // The icon shown in the title bar and the task bar. The default is the
+    // engine's own mark, so a window looks like the engine without a caller
+    // having to ask; an empty icon leaves the OS default. A backend that cannot
+    // set an icon ignores it.
+    WindowIcon icon = WindowIcon::white();
 };
 
 // An operating-system window with an associated graphics context.
@@ -117,6 +124,11 @@ public:
 
     virtual void set_title(const std::string& title);
     virtual void set_vsync(bool enabled);
+
+    // Sets the window's icon. The default does nothing: a backend with no OS has
+    // no icon to set. Called by Window::create() with the descriptor's icon, so
+    // a caller normally sets WindowDesc::icon rather than calling this.
+    virtual void set_icon(const WindowIcon& icon);
 
     [[nodiscard]] InputState& input() noexcept { return input_; }
     [[nodiscard]] const InputState& input() const noexcept { return input_; }

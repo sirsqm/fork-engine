@@ -111,6 +111,7 @@ rather than editing it.
 | [0103](0103-linux-appimage.md) | A single-file Linux download: the AppImage | Accepted |
 | [0104](0104-skeletal-animation.md) | Skeletal animation and skinning | Accepted |
 | [0105](0105-android-window-backend.md) | The Android target's toolchain and platform macro | Accepted |
+| [0106](0106-one-mark-for-the-engine.md) | One mark for the engine, the window, and the web page | Accepted |
 
 ## Format
 

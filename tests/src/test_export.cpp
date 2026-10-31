@@ -321,6 +321,12 @@ TEST_CASE("the web shell is mobile-shaped: full-bleed canvas and viewport meta")
     CHECK(web_index_html(versioned).find("<title>Phone 9.8.7</title>") != std::string::npos);
     CHECK(web_index_html(manifest).find("<title>Phone</title>") != std::string::npos);
 
+    // The page carries the project's mark as an SVG favicon, inline so the export
+    // stays one page plus its module and pack. It follows the browser's colour
+    // scheme, because a white mark on a white tab bar would be invisible.
+    CHECK(html.find("<link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml,") != std::string::npos);
+    CHECK(html.find("prefers-color-scheme:dark") != std::string::npos);
+
     // The shell reports its own layout so the headless check can prove the canvas
     // fills a phone-sized window, and reads the safe-area insets from CSS.
     const std::string js = web_shell_js();

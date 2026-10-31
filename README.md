@@ -1,8 +1,17 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/forkengine-banner-white.png">
+    <img alt="Fork Engine — a modular, open-source 2D and 3D game engine written in C++20" src="branding/forkengine-banner-black.png" width="760">
+  </picture>
+</p>
+
 # Fork Engine
 
 A modular, open-source 2D and 3D game engine written in C++20.
 
-[![CI](https://github.com/sqmyou/fork-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/sqmyou/fork-engine/actions/workflows/ci.yml)
+[![CI](https://github.com/sirsqm/forkengine/actions/workflows/ci.yml/badge.svg)](https://github.com/sirsqm/forkengine/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 
 Fork Engine is an attempt to build a serious, long-lived engine from first
 principles: a clean architecture, a high-performance runtime, and an
@@ -152,13 +161,20 @@ benchmarks/       the performance benchmark and its CI regression gate
 cmake/            dependency policy, build settings, warning interface
 third_party/      vendored sources (glad, stb) with their own licenses
 assets/           sample assets used by the example
+branding/         the project's logo and banner (SVG source, PNG renders)
 tools/            small development scripts
 docs/             the architecture and plan documents, and the ADRs
 ```
 
+The logo and banner live in `branding/`. Each ships as a black and a white
+version with identical geometry, so it reads on a light or a dark background;
+the SVG is the source and the PNG is a render of it. The AppImage icon and the
+engine's window icon are generated from the same logo, so the mark is defined
+once.
+
 ## Download
 
-Prebuilt artifacts are attached to the [releases](https://github.com/sirsqm/fork-engine/releases).
+Prebuilt artifacts are attached to the [releases](https://github.com/sirsqm/forkengine/releases).
 Nothing here needs a compiler.
 
 **Linux** — one file, `fork-engine-<version>-x86_64.AppImage`. Make it executable

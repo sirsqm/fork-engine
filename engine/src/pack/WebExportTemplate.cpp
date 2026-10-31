@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/pack/WebExportTemplate.h"
 
+#include "WebFavicon.h"
 #include "fe/core/FileSystem.h"
 
 #include <nlohmann/json.hpp>
@@ -71,6 +72,14 @@ std::string web_index_html(const ExportManifest& manifest) {
     html += "  <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n";
     html += "  <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">\n";
     html += "  <meta name=\"theme-color\" content=\"#101014\">\n";
+    // The tab icon. An SVG favicon with a prefers-color-scheme rule, so the mark
+    // is black on a light tab bar and white on a dark one - a white mark on a
+    // white tab would be invisible. It is inline (a data: URL) because the export
+    // is a single page plus its module and pack: a separate favicon file would be
+    // one more thing to serve and one more way for the page to 404.
+    html += "  <link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml,";
+    html += kWebFaviconSvg;
+    html += "\">\n";
     html += "  <title>" + title + title_suffix + "</title>\n";
     html += "  <style>\n";
     html += "    html, body { margin: 0; height: 100%; background: #101014;"

@@ -79,6 +79,7 @@ set(FE_ENGINE_SOURCES
     src/platform/UserData.cpp
     src/platform/NullUserData.cpp
     src/platform/Window.cpp
+    src/platform/WindowIcon.cpp
     # The context-bearing window backend is chosen by the platform: GLFW cannot
     # be compiled to wasm, so a web build compiles the canvas backend instead and
     # never sees GlfwWindow.cpp. Window.cpp's factory picks the same way, from the

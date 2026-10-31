@@ -77,6 +77,10 @@ void Window::set_vsync(bool enabled) {
     (void)enabled;
 }
 
+void Window::set_icon(const WindowIcon& icon) {
+    (void)icon;
+}
+
 void* Window::get_proc_address(const char* name) const {
     (void)name;
     return nullptr;
