@@ -13,11 +13,11 @@ player downloads one file, runs it, and plays the game."
 The editor is the other half of the product, and it was not in that file. The
 editor shell installs into the SDK archive's `bin/`, so a developer who downloads
 the SDK and has a display can run `fork_editor_shell` — but the README describes
-the SDK as "the installed engine for building against," and a friend who wants to
-*try the engine* downloads the one file, the AppImage, and gets the game. The
-editor was also the subsystem just given a real typeface, a role-named palette,
-and a density toggle ([ADR-0107](0107-editor-typeface-and-palette.md)), so the
-thing worth showing was the thing the download did not contain.
+the SDK as "the installed engine for building against," and the single-file
+download, the AppImage, contained only the game. The editor was also the
+subsystem just given a real typeface, a role-named palette, and a density toggle
+([ADR-0107](0107-editor-typeface-and-palette.md)), so the thing worth shipping was
+the thing the download did not contain.
 
 There is a second, sharper problem that shipping the editor exposed. The demo
 project's startup scene stores its sprite texture as a path-keyed reference,

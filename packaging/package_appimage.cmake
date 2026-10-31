@@ -34,8 +34,8 @@
 #   fork-engine.desktop, fork-engine.png, LICENSE
 #
 # One file carries both the game and the editor. They are separate entry points
-# but one download: a friend who wants to "try it" should not have to know which
-# artifact is which, and the editor is the thing that was just polished. The
+# but one artifact: a downloader should not have to know which file is which,
+# and the editor is the subsystem the download did not previously contain. The
 # default entry point is the editor, because opening a tool with something in it
 # is the better first impression; `--game` (or the desktop entry's game action)
 # runs the slice.
@@ -424,7 +424,7 @@ endif()
 # Both entry points are checked, because both are shipped: the editor is the
 # default, so its failure would be the one a downloader hits first. The editor
 # runs headless frames (`--headless`) so a bundle that starts the editor but
-# cannot draw is caught here rather than by the friend.
+# cannot draw is caught here rather than at a downloader's first run.
 # ---------------------------------------------------------------------------
 if(FE_SMOKE)
   execute_process(COMMAND ${CMAKE_COMMAND} -E env "APPIMAGE_EXTRACT_AND_RUN=1"
