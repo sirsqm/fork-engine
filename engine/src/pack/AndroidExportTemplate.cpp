@@ -164,7 +164,6 @@ std::string android_app_build_gradle(const ExportManifest& manifest, const Andro
 }
 
 std::string android_manifest_xml(const ExportManifest& manifest, const AndroidProjectOptions& options) {
-    const std::string application_id = resolve_application_id(manifest, options);
     const std::string label = manifest.name.empty() ? std::string("Fork Engine Game") : manifest.name;
 
     // A native activity: the app's entry point is the player's `android_main`,
@@ -200,9 +199,6 @@ std::string android_manifest_xml(const ExportManifest& manifest, const AndroidPr
     xml += "    </activity>\n";
     xml += "  </application>\n";
     xml += "</manifest>\n";
-    // The application id is the namespace; the manifest itself carries no
-    // package attribute, which the Android Gradle Plugin derives from it.
-    (void)application_id;
     return xml;
 }
 
