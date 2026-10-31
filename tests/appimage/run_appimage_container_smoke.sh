@@ -21,7 +21,9 @@
 #   2. `--headless N` in a container with a virtual display and Mesa's software
 #      driver. This proves the game *plays*: it initialises the engine, creates a
 #      GL context, and runs frames. The GL packages are the only thing the
-#      container needs, and they are the ones a desktop already has.
+#      container needs, and they are the ones a desktop already has. The editor
+#      is run the same way (`--editor --headless --frames N`), because it is the
+#      default entry point and the path a downloader takes first.
 #
 # It is opt-in rather than part of ctest because it needs Docker and a network to
 # pull the image, which the unit-test matrix does not have. CI calls it in the
@@ -124,9 +126,14 @@ done
 xdpyinfo -display :99 >/dev/null 2>&1 || { echo "Xvfb never came up" >&2; cat /tmp/xvfb.log >&2; exit 1; }
 
 DISPLAY=:99 /fork-engine.AppImage --headless 60
+
+# The editor is the default entry point, so a downloader meets it first; run it
+# too, on the project the AppImage ships. `--editor` is explicit here because the
+# script passes an argument (the argument would otherwise go to the game).
+DISPLAY=:99 /fork-engine.AppImage --editor --headless --frames 60
 '
 if ! run_in_container "${play_script}"; then
   fail "the AppImage did not play on a clean ${IMAGE}"
 fi
 
-echo "appimage container smoke: PASS (runs and plays on a clean ${IMAGE})"
+echo "appimage container smoke: PASS (runs, plays, and opens the editor on a clean ${IMAGE})"

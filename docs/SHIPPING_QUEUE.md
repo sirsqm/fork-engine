@@ -419,6 +419,15 @@ container build image, which is separate work. The build host is pinned
 runner-image rotation, and both the container smoke test and the workflow guards
 fail if it does.
 
+The artifact now carries the editor as well as the game, and defaults to the
+editor on the bundled demo project ([ADR-0108](adr/0108-appimage-ships-the-editor.md)):
+the download is the whole product rather than the game alone, and the sample
+`assets/` tree ships so the demo scene's path-keyed `tex:` reference resolves from
+the AppDir root the way it does from the repository root. Resolving a path-keyed
+reference against the project's asset root, rather than the working directory, is
+named there as the follow-up; this entry ships the packaging fix, not that
+resource-system change.
+
 ### `windows-zip`
 
 Produce a Windows artifact a player can unzip and run.

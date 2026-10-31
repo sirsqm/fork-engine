@@ -183,20 +183,28 @@ and run it; there is no unpack step and no library to install:
 
 ```bash
 chmod +x fork-engine-0.1.0-x86_64.AppImage
-./fork-engine-0.1.0-x86_64.AppImage
+./fork-engine-0.1.0-x86_64.AppImage            # the editor, on the demo project
+./fork-engine-0.1.0-x86_64.AppImage --game     # play the breakout slice
 ```
+
+It opens the **editor** on the bundled demo project, so the first thing you see
+is the tool with something in it. `--game` plays the breakout slice instead, and
+`--editor` names the editor explicitly. The file carries both, so there is one
+download and no decision about which artifact to pick.
 
 It carries the C++ runtime with it, so a distribution older than the one that
 built it still runs. It does *not* carry glibc or a graphics driver: those come
-from your system, because the AppImage runtime uses your loader and the game must
-use your GPU's driver. On a machine with no display it runs headless with
-`--headless 300`, and it accepts the same flags as the sandbox.
+from your system, because the AppImage runtime uses your loader and the editor
+must use your GPU's driver. On a machine with no display it runs headless —
+`--editor --headless --frames 60` for the editor, `--headless 300` for the game —
+and the binaries accept the same flags as their build-tree counterparts.
 
 **Other platforms** — `fork-engine-<version>-<platform>-<arch>-game.tar.gz` (or
 `.zip`) is a directory holding the game, a launcher, and the example's content;
 unpack it and run the launcher from inside the directory. The matching `-sdk`
-archive is the installed engine for building against, and `SHA256SUMS` covers
-every published file.
+archive is the installed engine for building against — it also contains the
+editor shell (`bin/fork_editor_shell`), which needs a display and a project to
+open. `SHA256SUMS` covers every published file.
 
 ## Building and testing
 

@@ -20,13 +20,25 @@
 # What goes in the AppDir:
 #
 #   AppRun                        the entry point; sets the library path, cd's to
-#                                 the content root, and execs the game
+#                                 the content root, and execs the game (default)
+#                                 or the editor (`--editor`)
 #   usr/bin/fork_breakout         the game
+#   usr/bin/fork_editor_shell     the editor
 #   usr/lib/<bundled libs>        the C++ runtime, so an older host still runs it
 #   examples/breakout/{assets,scenes}
-#                                 the content, at the paths the game already
-#                                 loads them from
+#                                 the game's content, at the paths it loads them
+#   examples/demo_project/        a small project the editor opens, so the
+#                                 editor has something to show on first run
+#   assets/                       the editor's built-in sample assets, at the
+#                                 path the binaries resolve them from (see below)
 #   fork-engine.desktop, fork-engine.png, LICENSE
+#
+# One file carries both the game and the editor. They are separate entry points
+# but one download: a friend who wants to "try it" should not have to know which
+# artifact is which, and the editor is the thing that was just polished. The
+# default entry point is the editor, because opening a tool with something in it
+# is the better first impression; `--game` (or the desktop entry's game action)
+# runs the slice.
 #
 # The libraries are the interesting decision. `ldd` names what the binary needs;
 # everything is bundled *except* glibc and the graphics driver stack. Bundling
@@ -133,24 +145,47 @@ file(REMOVE_RECURSE "${FE_APPDIR}")
 file(REMOVE "${FE_APPIMAGE}")
 
 # ---------------------------------------------------------------------------
-# The game.
+# The binaries: the game and the editor.
+#
+# Both ship in the one AppImage. The editor is the default entry point (see
+# AppRun below), so the download opens a tool with a project in it rather than a
+# game with no obvious way to change it.
 # ---------------------------------------------------------------------------
 set(FE_GAME_BINARY "fork_breakout")
+set(FE_EDITOR_BINARY "fork_editor_shell")
 file(MAKE_DIRECTORY "${FE_APPDIR}/usr/bin")
-if(NOT EXISTS "${FE_BIN_DIR}/${FE_GAME_BINARY}")
-  message(FATAL_ERROR "no ${FE_GAME_BINARY} in ${FE_BIN_DIR}; build with FE_BUILD_EXAMPLES=ON")
-endif()
-file(COPY "${FE_BIN_DIR}/${FE_GAME_BINARY}" DESTINATION "${FE_APPDIR}/usr/bin")
-file(CHMOD "${FE_APPDIR}/usr/bin/${FE_GAME_BINARY}"
-     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+foreach(_binary IN ITEMS "${FE_GAME_BINARY}" "${FE_EDITOR_BINARY}")
+  if(NOT EXISTS "${FE_BIN_DIR}/${_binary}")
+    message(FATAL_ERROR "no ${_binary} in ${FE_BIN_DIR}; build with FE_BUILD_EXAMPLES=ON and FE_BUILD_EDITOR=ON")
+  endif()
+  file(COPY "${FE_BIN_DIR}/${_binary}" DESTINATION "${FE_APPDIR}/usr/bin")
+  file(CHMOD "${FE_APPDIR}/usr/bin/${_binary}"
+       PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+endforeach()
 
-# The content, at the paths the game resolves by relative path, so the shipped
-# binary is the one CI tests and no path is rewritten for the package.
+# The content, at the paths each binary resolves by relative path, so the shipped
+# binaries are the ones CI tests and no path is rewritten for the package.
+#   * the game reads examples/breakout/{assets,scenes}
+#   * the editor opens examples/demo_project, which is small and gives the panels
+#     something to draw on the first run
 file(MAKE_DIRECTORY "${FE_APPDIR}/examples/breakout")
 foreach(_dir assets scenes)
   file(COPY "${FE_SCRIPT_DIR}/../examples/breakout/${_dir}"
        DESTINATION "${FE_APPDIR}/examples/breakout")
 endforeach()
+# The demo project's import cache is build output (it is regenerated on open), so
+# it is excluded: shipping it would put a stale cache in the download.
+file(COPY "${FE_SCRIPT_DIR}/../examples/demo_project"
+     DESTINATION "${FE_APPDIR}/examples"
+     PATTERN ".fork" EXCLUDE)
+# The editor's built-in sample assets. The editor and the demo project both
+# reference `tex:assets/textures/checker.png`, which the resource manager resolves
+# against the process working directory (a project's asset root points the asset
+# *database* at the project, but a path-keyed `tex:` reference is still read from
+# cwd). The binaries run with the AppDir root as their cwd, so the sample tree
+# must be there or the texture fails to load and the sprite renders untextured.
+# Shipping it makes the download match the layout CI runs the editor against.
+file(COPY "${FE_SCRIPT_DIR}/../assets" DESTINATION "${FE_APPDIR}")
 file(COPY "${FE_SCRIPT_DIR}/../LICENSE" DESTINATION "${FE_APPDIR}")
 
 # ---------------------------------------------------------------------------
@@ -182,50 +217,61 @@ set(FE_HOST_ONLY
 )
 
 file(MAKE_DIRECTORY "${FE_APPDIR}/usr/lib")
-execute_process(COMMAND ldd "${FE_APPDIR}/usr/bin/${FE_GAME_BINARY}"
-                OUTPUT_VARIABLE _ldd OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE _ldd_rc)
-if(NOT _ldd_rc EQUAL 0)
-  message(FATAL_ERROR "ldd failed on the game binary (${_ldd_rc})")
-endif()
-string(REPLACE "\n" ";" _ldd_lines "${_ldd}")
-
+# Both binaries are scanned: the game and the editor link the same runtime today,
+# but bundling from one and not the other would leave whichever is not scanned
+# needing a library the host may not have. The union is what must travel.
 set(FE_BUNDLED "")
-foreach(_line IN LISTS _ldd_lines)
-  # Only resolved entries name a file: "libfoo.so => /path (0x..)". An entry
-  # with "not found" means the build host cannot run its own binary, which is a
-  # broken build rather than something to package.
-  if(_line MATCHES "=> not found")
-    message(FATAL_ERROR "the game binary needs a library that is not present: ${_line}")
+foreach(_binary IN ITEMS "${FE_GAME_BINARY}" "${FE_EDITOR_BINARY}")
+  execute_process(COMMAND ldd "${FE_APPDIR}/usr/bin/${_binary}"
+                  OUTPUT_VARIABLE _ldd OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE _ldd_rc)
+  if(NOT _ldd_rc EQUAL 0)
+    message(FATAL_ERROR "ldd failed on ${_binary} (${_ldd_rc})")
   endif()
-  if(NOT _line MATCHES "=>[ \t]+(/[^ \t]+)")
-    continue()
-  endif()
-  set(_path "${CMAKE_MATCH_1}")
-  get_filename_component(_name "${_path}" NAME)
-  # Compare on the soname's stem so libstdc++.so.6 matches the "libstdc++"
-  # family entry, and libm.so.6 matches "libm".
-  string(REGEX REPLACE "\\.[0-9].*$" "" _stem "${_name}")
-  string(REGEX REPLACE "\\.so$" "" _stem "${_stem}")
+  string(REPLACE "\n" ";" _ldd_lines "${_ldd}")
 
-  set(_host_only FALSE)
-  foreach(_prefix IN LISTS FE_HOST_ONLY)
-    if(_stem STREQUAL "${_prefix}")
-      set(_host_only TRUE)
-      break()
+  foreach(_line IN LISTS _ldd_lines)
+    # Only resolved entries name a file: "libfoo.so => /path (0x..)". An entry
+    # with "not found" means the build host cannot run its own binary, which is a
+    # broken build rather than something to package.
+    if(_line MATCHES "=> not found")
+      message(FATAL_ERROR "${_binary} needs a library that is not present: ${_line}")
     endif()
-  endforeach()
-  if(_host_only)
-    continue()
-  endif()
+    if(NOT _line MATCHES "=>[ \t]+(/[^ \t]+)")
+      continue()
+    endif()
+    set(_path "${CMAKE_MATCH_1}")
+    get_filename_component(_name "${_path}" NAME)
+    # Compare on the soname's stem so libstdc++.so.6 matches the "libstdc++"
+    # family entry, and libm.so.6 matches "libm".
+    string(REGEX REPLACE "\\.[0-9].*$" "" _stem "${_name}")
+    string(REGEX REPLACE "\\.so$" "" _stem "${_stem}")
 
-  # The name under usr/lib is the soname the loader asks for, but the bytes must
-  # be the real file: on a normal host libstdc++.so.6 is a symlink to
-  # libstdc++.so.6.0.33, and copying the symlink leaves a dangling link in the
-  # AppImage, so the loader silently falls back to the host's library and the
-  # bundle does nothing on the older machine it was meant to help. configure_file
-  # reads the contents (following the symlink) and writes them under the soname.
-  configure_file("${_path}" "${FE_APPDIR}/usr/lib/${_name}" COPYONLY)
-  list(APPEND FE_BUNDLED "${_name}")
+    set(_host_only FALSE)
+    foreach(_prefix IN LISTS FE_HOST_ONLY)
+      if(_stem STREQUAL "${_prefix}")
+        set(_host_only TRUE)
+        break()
+      endif()
+    endforeach()
+    if(_host_only)
+      continue()
+    endif()
+    # A library both binaries need is copied once; the second sighting is a
+    # no-op, but appending only on the first keeps the status message honest.
+    if(_name IN_LIST FE_BUNDLED)
+      continue()
+    endif()
+
+    # The name under usr/lib is the soname the loader asks for, but the bytes must
+    # be the real file: on a normal host libstdc++.so.6 is a symlink to
+    # libstdc++.so.6.0.33, and copying the symlink leaves a dangling link in the
+    # AppImage, so the loader silently falls back to the host's library and the
+    # bundle does nothing on the older machine it was meant to help.
+    # configure_file reads the contents (following the symlink) and writes them
+    # under the soname.
+    configure_file("${_path}" "${FE_APPDIR}/usr/lib/${_name}" COPYONLY)
+    list(APPEND FE_BUNDLED "${_name}")
+  endforeach()
 endforeach()
 
 if(FE_BUNDLED STREQUAL "")
@@ -243,28 +289,62 @@ message(STATUS "appimage: bundling ${FE_BUNDLED}")
 # than left to a caller.
 # ---------------------------------------------------------------------------
 file(COPY "${FE_SCRIPT_DIR}/fork-engine.png" DESTINATION "${FE_APPDIR}")
+# Two desktop actions: the editor is the default, the game is one click away in
+# the same menu. Exec goes through AppRun rather than naming a binary directly,
+# because AppRun is what sets the working directory and the library path; a
+# desktop launcher does not inherit either. The action carries the same icon so
+# the choice is legible in a menu.
 file(WRITE "${FE_APPDIR}/fork-engine.desktop"
 "[Desktop Entry]
 Type=Application
-Name=Fork Engine Breakout
-Comment=The Fork Engine breakout vertical slice
-Exec=fork_breakout
+Name=Fork Engine Editor
+Comment=The Fork Engine editor: open the demo project, or play the breakout slice
+Exec=AppRun --editor
 Icon=fork-engine
-Categories=Game;
+Categories=Development;Game;
 Terminal=false
+Actions=PlayBreakout;
+
+[Desktop Action PlayBreakout]
+Name=Play Breakout
+Exec=AppRun --game
+Icon=fork-engine
 ")
 
-# AppRun is what the AppImage executes. It cd's to the content root (the game
-# resolves examples/breakout/... relatively), points the loader at the bundled
-# libraries, and execs the game - so `./fork-engine-*.AppImage --headless 300`
-# behaves exactly like running the binary from the repository root.
+# AppRun is what the AppImage executes. It cd's to the content root (both binaries
+# resolve examples/... relatively), points the loader at the bundled libraries,
+# and dispatches:
+#
+#   no argument / --editor   the editor, opened on the bundled demo project
+#   --game                   the breakout slice
+#   anything else            the game, so the AppImage stays a drop-in for the
+#                            `--headless N` / `--save-scene` flags the container
+#                            smoke test and the README already use
+#
+# The demo project is passed as an absolute path under $HERE, so the editor finds
+# it whatever directory the AppImage was launched from.
 file(WRITE "${FE_APPDIR}/AppRun"
 "#!/bin/sh
 # Fork Engine AppImage entry point.
 HERE=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"
 cd \"\$HERE\" || exit 1
 export LD_LIBRARY_PATH=\"\$HERE/usr/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"
-exec \"\$HERE/usr/bin/${FE_GAME_BINARY}\" \"\$@\"
+case \"\${1:-}\" in
+  --game)
+    shift
+    exec \"\$HERE/usr/bin/${FE_GAME_BINARY}\" \"\$@\"
+    ;;
+  --editor)
+    shift
+    exec \"\$HERE/usr/bin/${FE_EDITOR_BINARY}\" --project \"\$HERE/examples/demo_project\" \"\$@\"
+    ;;
+  '')
+    exec \"\$HERE/usr/bin/${FE_EDITOR_BINARY}\" --project \"\$HERE/examples/demo_project\"
+    ;;
+  *)
+    exec \"\$HERE/usr/bin/${FE_GAME_BINARY}\" \"\$@\"
+    ;;
+esac
 ")
 file(CHMOD "${FE_APPDIR}/AppRun"
      PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
@@ -340,6 +420,11 @@ endif()
 # the AppImage mounts, AppRun runs, the loader resolves the bundled libraries,
 # and the binary starts - with no display and no GPU. Playing it needs a GL 3.3
 # context, so FE_SMOKE_GAME turns that half on where one exists.
+#
+# Both entry points are checked, because both are shipped: the editor is the
+# default, so its failure would be the one a downloader hits first. The editor
+# runs headless frames (`--headless`) so a bundle that starts the editor but
+# cannot draw is caught here rather than by the friend.
 # ---------------------------------------------------------------------------
 if(FE_SMOKE)
   execute_process(COMMAND ${CMAKE_COMMAND} -E env "APPIMAGE_EXTRACT_AND_RUN=1"
@@ -358,6 +443,17 @@ if(FE_SMOKE)
       message(FATAL_ERROR "the AppImage did not play (${_play_rc})")
     endif()
     message(STATUS "appimage: the AppImage played ${FE_SMOKE_FRAMES} headless frames")
+
+    # The default entry point: the editor, opened on the bundled demo project,
+    # drawing a few frames and exiting. This is the path a downloader takes when
+    # they double-click the file, so it is the one worth exercising.
+    execute_process(COMMAND ${CMAKE_COMMAND} -E env "APPIMAGE_EXTRACT_AND_RUN=1"
+                            ${FE_SMOKE_PREFIX} "${FE_APPIMAGE}" --editor --headless --frames "${FE_SMOKE_FRAMES}"
+                    RESULT_VARIABLE _editor_rc)
+    if(NOT _editor_rc EQUAL 0)
+      message(FATAL_ERROR "the AppImage editor did not run (${_editor_rc})")
+    endif()
+    message(STATUS "appimage: the AppImage editor ran ${FE_SMOKE_FRAMES} headless frames")
   endif()
 endif()
 
