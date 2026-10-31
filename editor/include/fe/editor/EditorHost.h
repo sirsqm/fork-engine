@@ -55,6 +55,10 @@ public:
         // closes". A non-zero limit with a hidden window is the headless smoke
         // test used by CI, where there is no display to close the window.
         u32 max_frames = 0;
+        // The colour scheme to start in. The View menu switches it at run time;
+        // this only sets the initial one, so a shell can open light without a
+        // click (and a screenshot script can capture both).
+        EditorTheme theme = EditorTheme::Dark;
     };
 
     explicit EditorHost(Config config);
@@ -128,10 +132,20 @@ private:
     // colour from the active camera exactly as the runtime does.
     void render_scene(const Scene& scene);
 
+    // Keeps the window icon in step with the editor theme: the mark is white on
+    // the dark chrome and black on the light, so it stays legible in the title
+    // bar. Called after the UI has drawn, because that is where the theme can
+    // change; a no-op unless the theme changed since the last call.
+    void sync_window_icon();
+
     Config config_;
     Engine engine_;
     EditorContext context_;
     EditorUi ui_;
+    // The theme the window icon currently reflects, so sync_window_icon() is a
+    // no-op unless it changed. Dark matches the initial WindowDesc icon, so no
+    // icon is set until the user picks a different theme.
+    EditorTheme icon_theme_ = EditorTheme::Dark;
     // Borrowed from the panel set owned by `ui_`; used to release the viewport's
     // GPU target before the device shuts down.
     ViewportPanel* viewport_panel_ = nullptr;

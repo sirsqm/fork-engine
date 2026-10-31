@@ -122,8 +122,27 @@ void EditorUi::draw_dock_space(unsigned int dockspace_id) {
     ImGui::End();
 }
 
+void EditorUi::apply_theme(EditorTheme theme) {
+    // Re-applying a style is cheap but not free, and a per-frame call would
+    // reset any colour the user had tweaked, so this is a no-op unless the theme
+    // actually changed. `initialize()` already applied dark, so the first frame
+    // with the default theme does nothing.
+    if (theme_applied_ && theme == applied_theme_) {
+        return;
+    }
+    if (theme == EditorTheme::Light) {
+        ImGui::StyleColorsLight();
+    } else {
+        ImGui::StyleColorsDark();
+    }
+    applied_theme_ = theme;
+    theme_applied_ = true;
+}
+
 void EditorUi::draw_panels(EditorContext& context) {
     FE_CHECK(initialized_);
+
+    apply_theme(context.theme());
 
     draw_toolbar(context);
     draw_dock_space(kDockSpaceId);
@@ -217,6 +236,19 @@ void EditorUi::draw_toolbar(EditorContext& context) {
         }
         if (ImGui::MenuItem(redo_label.c_str(), "Ctrl+Y", false, context.can_redo())) {
             context.redo();
+        }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("View")) {
+        // The colour scheme. A radio pair so the current choice is visible, the
+        // same idiom the viewport mode uses. The change is applied by
+        // apply_theme() on this frame, so it is immediate.
+        if (ImGui::MenuItem("Dark Theme", nullptr, context.theme() == EditorTheme::Dark)) {
+            context.set_theme(EditorTheme::Dark);
+        }
+        if (ImGui::MenuItem("Light Theme", nullptr, context.theme() == EditorTheme::Light)) {
+            context.set_theme(EditorTheme::Light);
         }
         ImGui::EndMenu();
     }

@@ -297,3 +297,24 @@ TEST_CASE("the confirmation prompt is explicit state the UI projects") {
     CHECK_FALSE(context.is_confirming());
     CHECK(context.confirm_message().empty());
 }
+
+TEST_CASE("the editor theme defaults to dark and is view state, not document state") {
+    // The theme lives on the context beside the viewport mode, so the menu that
+    // sets it and the UI that applies it share one source of truth. It must not
+    // travel with the document: a saved scene says nothing about the scheme it
+    // was authored under.
+    EditorContext context;
+    CHECK(context.theme() == EditorTheme::Dark);
+    CHECK(context.is_dark_theme());
+
+    context.set_theme(EditorTheme::Light);
+    CHECK(context.theme() == EditorTheme::Light);
+    CHECK_FALSE(context.is_dark_theme());
+
+    context.set_theme(EditorTheme::Dark);
+    CHECK(context.is_dark_theme());
+
+    // A fresh document keeps the default, so the theme is not serialized.
+    EditorContext reloaded;
+    CHECK(reloaded.theme() == EditorTheme::Dark);
+}

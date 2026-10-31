@@ -6,6 +6,7 @@
 #include "fe/core/Profiler.h"
 #include "fe/editor/Command.h"
 #include "fe/editor/Commands.h"
+#include "fe/editor/EditorTheme.h"
 #include "fe/editor/HierarchyViewModel.h"
 #include "fe/editor/PlaySession.h"
 #include "fe/editor/ProjectSettings.h"
@@ -317,6 +318,15 @@ public:
     [[nodiscard]] ViewportMode viewport_mode() const noexcept { return viewport_mode_; }
     void set_viewport_mode(ViewportMode mode) noexcept { viewport_mode_ = mode; }
 
+    // --- Theme -------------------------------------------------------------
+    // The editor's colour scheme. It lives here, like the viewport mode, so the
+    // menu that sets it and the UI that applies it read one source of truth. The
+    // UI reads it each frame and re-applies ImGui's colours when it changes, so a
+    // toggle takes effect immediately rather than at the next launch.
+    [[nodiscard]] EditorTheme theme() const noexcept { return theme_; }
+    void set_theme(EditorTheme theme) noexcept { theme_ = theme; }
+    [[nodiscard]] bool is_dark_theme() const noexcept { return theme_ == EditorTheme::Dark; }
+
     // Ends the current coalescing group, so the next property edit is a new undo
     // step. The panels call this when an edit gesture finishes.
     void break_undo_coalescing() noexcept { commands_.break_coalescing(); }
@@ -362,6 +372,7 @@ private:
     std::string confirm_message_;
     std::optional<Profiler> profiler_;
     ViewportMode viewport_mode_ = ViewportMode::Auto;
+    EditorTheme theme_ = EditorTheme::Dark;
 };
 
 } // namespace editor

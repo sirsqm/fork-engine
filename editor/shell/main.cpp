@@ -50,6 +50,8 @@ struct Options {
     // docs/adr/0029-import-cache.md.
     bool import_cache = true;
     std::string import_cache_dir;
+    // The starting colour scheme; the View menu switches it at run time.
+    fe::editor::EditorTheme theme = fe::editor::EditorTheme::Dark;
 };
 
 // The directory a project lives in, used to place its import cache beside it.
@@ -100,6 +102,17 @@ struct Options {
             options.import_cache = false;
         } else if (arg == "--cache-dir" && i + 1 < argc) {
             options.import_cache_dir = argv[++i];
+        } else if (arg == "--theme" && i + 1 < argc) {
+            const std::string_view theme = argv[++i];
+            if (theme == "light") {
+                options.theme = fe::editor::EditorTheme::Light;
+            } else if (theme == "dark") {
+                options.theme = fe::editor::EditorTheme::Dark;
+            } else {
+                std::fprintf(stderr, "fork_editor_shell: --theme expects 'dark' or 'light', got '%s'\n",
+                             std::string(theme).c_str());
+                std::exit(2);
+            }
         } else if (arg == "--verbose") {
             options.log_level = fe::LogLevel::Debug;
         } else if (arg == "--quiet") {
@@ -107,7 +120,7 @@ struct Options {
         } else if (arg == "--help" || arg == "-h") {
             std::puts(
                 "usage: fork_editor_shell [--project DIR|FILE] [--project-file FILE] [--scene PATH] [--module PATH] "
-                "[--headless] [--frames N] [--cache-dir DIR] [--no-cache] [--verbose] [--quiet]");
+                "[--theme dark|light] [--headless] [--frames N] [--cache-dir DIR] [--no-cache] [--verbose] [--quiet]");
             std::exit(0);
         }
     }
@@ -143,6 +156,7 @@ int main(int argc, char** argv) {
     config.scene_to_open = options.scene_to_open;
     config.modules = options.modules;
     config.max_frames = options.max_frames;
+    config.theme = options.theme;
 
     fe::editor::EditorHost host(std::move(config));
     return host.run();

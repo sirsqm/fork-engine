@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/core/Error.h"
+#include "fe/editor/EditorTheme.h"
 #include "fe/editor/Panel.h"
 
 #include <memory>
@@ -73,6 +74,11 @@ public:
 private:
     void draw_dock_space(unsigned int dockspace_id);
 
+    // Applies the ImGui colour scheme for `theme`, if it differs from the one
+    // currently in effect. Called at the top of every frame, so a toggle in the
+    // menu takes effect on the frame it is clicked.
+    void apply_theme(EditorTheme theme);
+
     // The top menu bar: play/stop control and the scene's identity. Kept here
     // rather than in a panel so it is always visible regardless of the dock
     // layout, the way a real editor's transport bar is.
@@ -84,6 +90,11 @@ private:
     // layout is not overwritten on every launch.
     bool default_layout_applied_ = false;
     std::string layout_ini_path_;
+    // The scheme currently applied to ImGui, so apply_theme() is a no-op unless
+    // the requested theme differs. `Dark` matches the StyleColorsDark() call in
+    // initialize(), so the first frame does not re-apply.
+    EditorTheme applied_theme_ = EditorTheme::Dark;
+    bool theme_applied_ = false;
 };
 
 } // namespace editor

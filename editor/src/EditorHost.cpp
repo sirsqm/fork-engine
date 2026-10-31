@@ -12,6 +12,7 @@
 #include "fe/editor/PlayPanel.h"
 #include "fe/editor/ProfilerPanel.h"
 #include "fe/editor/ViewportPanel.h"
+#include "fe/platform/WindowIcon.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/scene/Scene.h"
@@ -39,6 +40,9 @@ Error EditorHost::initialize() {
     // The document and its copy factories exist independently of the engine,
     // but must be registered before the first play request.
     context_.register_default_component_factories();
+    // The starting colour scheme. Set before the UI is initialised, so the very
+    // first frame is drawn in it rather than flashing the default.
+    context_.set_theme(config_.theme);
     // Point the inspector's resource fields at the embedded engine's manager.
     context_.set_resources(&engine_.resources());
 
@@ -183,6 +187,10 @@ void EditorHost::step() {
     // time passes.
     ui_.begin_frame();
     ui_.draw_panels(context_);
+
+    // The theme can change in the menu, which the UI has just drawn; the window
+    // icon follows it so the mark stays legible in the title bar.
+    sync_window_icon();
 
     if (context_.play().is_playing()) {
         // tick() begins the frame and draws the play scene; end_frame() is
@@ -418,6 +426,18 @@ void EditorHost::render_scene(const Scene& scene) {
     if (!result) {
         FE_LOG_ERROR("editor: render failed: %s", result.error().message().c_str());
     }
+}
+
+void EditorHost::sync_window_icon() {
+    const EditorTheme theme = context_.theme();
+    if (theme == icon_theme_) {
+        return;
+    }
+    icon_theme_ = theme;
+    // White on the dark chrome, black on the light, so the mark reads against
+    // whatever the title bar is. The descriptor already carried the dark-theme
+    // icon, so this only runs after the user has switched.
+    engine_.window().set_icon(theme == EditorTheme::Light ? WindowIcon::black() : WindowIcon::white());
 }
 
 } // namespace fe::editor
